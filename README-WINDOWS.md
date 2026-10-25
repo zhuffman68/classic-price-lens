@@ -12,4 +12,4 @@ Minimize the control panel to keep only the labels. Closing it ends capture and 
 
 Resource use is bounded: capture is capped where Qt supports it, frame queues apply backpressure, OCR skips unchanged shop pixels, known shops use a small read region, and the OCR worker uses two threads. Network requests are independent of the screen-reading rate. No telemetry or screenshot uploads.
 
-This build targets **Windows 10/11 x64**. Real Windows desktop capture, mixed DPI and fullscreen behavior still need a Windows playtest; the verification file distinguishes local Windows-binary tests from native Windows acceptance. See `THIRD_PARTY.md` for component licenses and data attribution.
+The target platform is **Windows 10/11 x64**. The Windows binaries are tested under Wine; native Windows desktop capture, mixed-DPI and fullscreen behavior still require validation. See `THIRD_PARTY.md` for component licenses and data attribution.
