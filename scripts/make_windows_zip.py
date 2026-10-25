@@ -27,7 +27,7 @@ def main():
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
     files.append(manifest_path)
     output = ROOT / "dist/ClassicPriceLens-Windows-x64.zip"
-    with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
+    with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6, strict_timestamps=False) as archive:
         for path in sorted(files):
             name = FOLDER.name + "/" + path.relative_to(FOLDER).as_posix()
             if any(part in name for part in ("/evidence/", ".sqlite", "/.build-tools/", "__pycache__")):
