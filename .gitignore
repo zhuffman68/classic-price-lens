@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+reader/target/
+vendor/
+evidence/
+.venv/
+*.sqlite*
+.cache/
+.build-tools/
+dist/
+
+/Classic Price Lens.desktop

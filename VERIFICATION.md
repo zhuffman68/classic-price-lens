@@ -1,0 +1,36 @@
+# Verification — 2026-10-25
+
+## Current build
+
+- **47 tests pass on Linux and in the bundled Windows Python runtime under an isolated Wine prefix.** The Windows x64 OCR executable is cross-compiled with official Rust 1.98.1 and llvm-mingw 20261020. Python 3.14.9 and Qt/PySide 6.12.0 are bundled; end users do not need Python or Rust installed.
+- Windows offline self-test passes real OCR, module loading, and independent overlay-helper stdin/stdout and OS-pointer reporting. This is Windows-binary compatibility evidence, **not a live Windows game/capture acceptance test**. The user will try that later.
+- Inventory/equipment tooltip pricing is **on by default**, persists as a setting, and can be disabled. Shop-row labels take priority when the pointer is over the store list; tests verify no duplicate inventory label there while allowing inventory tooltips outside the list.
+- NX/cash catalog data is loaded separately. Live source lookups succeeded for coupons, pet skills and cosmetics. White Jeans and Sailor Outfit resolve through the provider's unique current catalog entries. Blue Hawkeye's live source response also contains a price; narrow y/v glyph correction handles the Classic font's known OCR confusion without unconstrained fuzzy matching.
+- The MesoWatch import button is removed. Known `fm_not_tradeable` HTTP 400 responses become a cached source-coverage result rather than a raw error or a claim about what the game permits. Errors from earlier stores no longer remain on the status line.
+- API-count tests run 500 repeated item reads with **one price-summary request**, and only one new request at the cache boundary. Successful empty, unsupported and old-data responses retain the same 15-minute HTTP cache lifetime, independently of whether the market data is fresh enough for a deal rating. Item-ID discovery is separately cached. Network failures use a retry cooldown.
+- Streaming capture reuses one OS sharing session across UI handoffs. It crops a shared workspace to the selected monitor; no repeated Spectacle startup/PNG compression in the fast path. Latest-frame delivery uses backpressure, unchanged shop pixels skip OCR, and known shops use a small capture region.
+- A live sample after the streaming changes measured about **200 ms median / 276 ms p95 capture-to-reading delay**. A later sample measured about **181 / 200 ms**. These are reading-pipeline timings, not promises for an uncached remote-price request.
+- A 15-second sample across the four app processes measured about **7.1% of this 12-logical-CPU machine and 449 MiB proportional RAM**, with three-display workspace capture. Earlier unthrottled capture used more CPU. These are local samples under changing game content, not a controlled cross-machine benchmark. Windows captures the selected monitor and caps capture at 10 FPS where supported.
+
+## Initial live calibration
+
+**Live on Manjaro KDE Wayland:** the game was already running with the user's own Classic World shop open. All observations came from normal OS screenshots. No game input was sent.
+
+- The reader identified Green Bamboo Hat, Weighted Earrings and the truncated Overall Armor LUK Scroll listing. The gold scroll icon uniquely resolved the latter to **Overall Armor LUK Scroll: Greater**.
+- It read their prices as 2,000 / 10,000 / 20,000 mesos, quantity one each. The grey sold-out Brown Bamboo Hat was omitted.
+- Real NiaMeowDB Classic World requests resolved game IDs to database IDs `790`, `901`, `141`, verified by both item name and `iconKey`. The cached 24h reference medians were 2,500 / 5,555 / 17,999 mesos when checked. These are dated observations, not permanent price recommendations.
+- The final rendered OS screenshot shows small item names above the references, with −20% / +80% / +11% and visible cache ages. Equipment uses the user's explicit **unscrolled assumption**, with no stats question mark.
+- Labels are drawn by a separate, independent XWayland window. A direct query of **our own test annotation window's** X11 input shape returned **zero input rectangles**. This verifies click transparency without clicking or sending input to the game. Its screen origin was `(1920, 0)` after correcting KDE's initial vertical placement shift.
+- The vendor checkout remains unchanged. The runtime bridge links only its headless core. No game-specific OS adapters from upstream run.
+
+**Automated checks:** 18 tests passed, including real OCR fixtures for ore/gem names and prices, scroll tiers and sold-row omission; cache expiry boundaries; failed refreshes; wrong-world and wrong-ID rejection; bundle/set normalization; and unscrolled-equipment comparisons. `cargo check --locked --manifest-path reader/Cargo.toml -j 2` passed.
+
+**Not verified live:** native Windows/macOS game capture, mixed DPI alignment, a live import from MesoWatch, or actual purchases/resales. Windows packaging and the Linux streaming path are now checked as described above. MesoWatch direct requests returned HTTP 403; the working automatic source is NiaMeowDB. No profitability guarantee is inferred from a median reference.
+
+Local, ignored evidence:
+
+- `evidence/classic-shop-overlay-final.png` (local only)
+- `evidence/live-shop-reading.json` (local only)
+- `evidence/overlay-input-check.json` (local only)
+
+The app is now running in streaming mode on `DP-2`, with inventory tooltip pricing enabled. Minimize the control panel to keep just the labels visible. Close it to end the sharing session, reader and annotation window. No real Windows capture/playtest has been performed.
