@@ -25,10 +25,15 @@ class PriceService(QObject):
         self.closed = False
         self.identity_pending = set()
         self.identity_retry = {}
+        self.catalog_pending = False
 
     def start(self):
+        if self.closed or self.catalog_pending:
+            return
+        self.catalog_pending = True
         future = self.pool.submit(load_catalog, self.cache)
         def done(result):
+            self.catalog_pending = False
             if self.closed:
                 return
             try:

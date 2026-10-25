@@ -19,7 +19,7 @@ python scripts/package_linux.py
 python scripts/build_linux_packages.py
 ```
 
-The notice collector expects the official Rust 1.98.1 source-distribution notice files at `.build-tools/rustc-1.98.1-x86_64-unknown-linux-gnu/rustc/share/doc/rust/`. When using another build layout, stage those notices at that path before packaging. `license-sources.json` pins upstream notices omitted from some crates.io archives. Application version comes from `price_lens/__init__.py`; keep the reader crate and PKGBUILD version aligned when releasing.
+The notice collector expects the official Rust 1.98.1 source-distribution notice files at `.build-tools/rustc-1.98.1-x86_64-unknown-linux-gnu/rustc/share/doc/rust/`. When using another build layout, stage those notices at that path before packaging. `license-sources.json` pins upstream notices omitted from some crates.io archives. Application/package version comes from `price_lens/__init__.py`; the package builder updates the staged PKGBUILD accordingly. The unchanged OCR reader can retain its own component version across Python/UI releases.
 
 Output: `dist/classic-price-lens_VERSION-1_amd64.deb` and `dist/classic-price-lens-VERSION-1-x86_64.pkg.tar.zst`. Both install to `/opt/classic-price-lens`, with a launcher in `/usr/bin` and normal application-menu/icon entries. User caches and preferences are kept outside those paths. Neither package adds a daemon, service, autostart entry or custom system Qt libraries.
 
@@ -53,6 +53,6 @@ python scripts/build_windows_installer.py --iscc 'C:\Program Files (x86)\Inno Se
 
 For cross-building on Linux, pass the compiler's filesystem path and an explicit, isolated Wine prefix using `--wine-prefix`. The script never chooses the default Wine prefix. `windows.iss` creates a per-user x64 installer with Start-menu/optional desktop shortcuts, a stable upgrade identifier, and an Apps uninstall entry. Upgrade and uninstall request shutdown only through Classic Price Lens's own local IPC endpoint; no game process is inspected or controlled.
 
-The installed entry point is `runtime/pythonw.exe -B -m price_lens --capture`. `selftest-windows.bat` runs an offline check. `scripts/make_windows_zip.py` can also create a portable ZIP; archives remain unencrypted.
+The installed entry point is `runtime/pythonw.exe -B -m price_lens`. It waits for the user's **Start reading** action. `selftest-windows.bat` runs an offline check. `scripts/make_windows_zip.py` can also create a portable ZIP; archives remain unencrypted.
 
 On Linux, `scripts/test_windows_installer.py --wine-prefix /path/to/isolated-prefix` validates install/upgrade/removal and the installed suite. Never point it at a game or default Wine prefix. Native Windows capture/physical hotkey testing remains separate from Wine verification.

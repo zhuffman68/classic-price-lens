@@ -2,6 +2,7 @@
 import hashlib
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -62,7 +63,7 @@ def main():
     if payload.exists() or payload.is_symlink():
         payload.unlink() if payload.is_symlink() else shutil.rmtree(payload)
     payload.symlink_to(stage, target_is_directory=True)
-    text = (ROOT / "packaging/PKGBUILD").read_text().replace("pkgver=0.2.0", "pkgver=" + __version__)
+    text = re.sub(r"(?m)^pkgver=.*$", "pkgver=" + __version__, (ROOT / "packaging/PKGBUILD").read_text())
     (arch / "PKGBUILD").write_text(text)
     env = {**os.environ, "PKGDEST": str(ROOT / "dist"), "COMPRESSZST": "(zstd -c -T2 -10 -)",
            "MAKEFLAGS": "-j2"}

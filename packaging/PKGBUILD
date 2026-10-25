@@ -1,6 +1,6 @@
 # Generated payload is built by scripts/package_linux.py; no runtime downloads.
 pkgname=classic-price-lens
-pkgver=0.2.0
+pkgver=0.3.0
 pkgrel=1
 pkgdesc='Screen-only MapleStory Classic World market overlay'
 arch=('x86_64')

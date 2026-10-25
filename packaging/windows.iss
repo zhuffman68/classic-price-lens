@@ -1,5 +1,5 @@
 #ifndef AppVersion
-  #define AppVersion "0.2.0"
+  #define AppVersion "0.3.0"
 #endif
 #ifndef StageDir
   #define StageDir "..\dist\ClassicPriceLens-Windows-x64"
@@ -40,11 +40,11 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 Source: "{#StageDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "__pycache__\*,*.pyc,*.sqlite*,build-manifest.json"
 
 [Icons]
-Name: "{group}\Classic Price Lens"; Filename: "{app}\runtime\pythonw.exe"; Parameters: "-B -m price_lens --capture"; WorkingDir: "{app}"; IconFilename: "{app}\classic-price-lens.ico"; AppUserModelID: "io.github.zhuffman68.ClassicPriceLens"
-Name: "{autodesktop}\Classic Price Lens"; Filename: "{app}\runtime\pythonw.exe"; Parameters: "-B -m price_lens --capture"; WorkingDir: "{app}"; IconFilename: "{app}\classic-price-lens.ico"; Tasks: desktopicon; AppUserModelID: "io.github.zhuffman68.ClassicPriceLens"
+Name: "{group}\Classic Price Lens"; Filename: "{app}\runtime\pythonw.exe"; Parameters: "-B -m price_lens"; WorkingDir: "{app}"; IconFilename: "{app}\classic-price-lens.ico"; AppUserModelID: "io.github.zhuffman68.ClassicPriceLens"
+Name: "{autodesktop}\Classic Price Lens"; Filename: "{app}\runtime\pythonw.exe"; Parameters: "-B -m price_lens"; WorkingDir: "{app}"; IconFilename: "{app}\classic-price-lens.ico"; Tasks: desktopicon; AppUserModelID: "io.github.zhuffman68.ClassicPriceLens"
 
 [Run]
-Filename: "{app}\runtime\pythonw.exe"; Parameters: "-B -m price_lens --capture"; WorkingDir: "{app}"; Description: "Launch Classic Price Lens"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\runtime\pythonw.exe"; Parameters: "-B -m price_lens"; WorkingDir: "{app}"; Description: "Launch Classic Price Lens"; Flags: nowait postinstall skipifsilent
 
 [Code]
 function CloseLens(): Boolean;

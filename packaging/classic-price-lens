@@ -9,7 +9,4 @@ export RAYON_NUM_THREADS=2
 export OMP_NUM_THREADS=2
 export PYTHONNOUSERSITE=1
 export PYTHONDONTWRITEBYTECODE=1
-if [ "$#" -eq 0 ]; then
-    set -- --capture
-fi
 exec "$app_root/runtime/bin/python3" -m price_lens "$@"

@@ -1,15 +1,16 @@
 """Exercise real UI context rules with fake pixel/input data and no OS capture."""
 import os
+from dataclasses import replace
 from pathlib import Path
 import time
 import unittest
 from unittest.mock import patch
 
-from PySide6.QtCore import QCoreApplication, QEvent, QObject, QRect, QTimer, Signal
-from PySide6.QtGui import QImage, QKeySequence
-from PySide6.QtWidgets import QApplication, QDialog, QKeySequenceEdit, QPushButton
+from PySide6.QtCore import QCoreApplication, QEvent, QObject, QRect, Qt, QTimer, Signal
+from PySide6.QtGui import QImage, QKeySequence, QMouseEvent
+from PySide6.QtWidgets import QApplication, QDialog, QKeySequenceEdit, QLabel, QPushButton
 
-from price_lens.domain import Catalog
+from price_lens.domain import Catalog, Quote
 from price_lens.ui import LensWindow
 
 
@@ -63,9 +64,10 @@ class FakeService(QObject):
     def __init__(self, path, parent=None):
         super().__init__(parent)
         self.requests = []
+        self.catalog_starts = 0
 
     def start(self):
-        pass
+        self.catalog_starts += 1
 
     def request(self, item, ttl):
         self.requests.append(item.game_id)
@@ -113,7 +115,7 @@ class ContextUiTests(unittest.TestCase):
             patcher.start()
         self.window = LensWindow(Path.cwd(), Path("unused-cache"))
         self.window.monitor.setCurrentIndex(1)
-        self.window.catalog = Catalog({"items": [{"id": 1, "name": "Example Hat"}], "scrolls": []})
+        self.window.on_catalog(Catalog({"items": [{"id": 1, "name": "Example Hat"}], "scrolls": []}))
         self.window.mode = "live"
         self.window.last_screen = time.time()
 
@@ -172,18 +174,18 @@ class ContextUiTests(unittest.TestCase):
             self.assertEqual(fresh.reader.starts, 0)
             fresh.monitor.setCurrentIndex(1)
             self.assertTrue(fresh.share.isEnabled())
-            self.assertEqual(fresh.share.text(), "Start")
+            self.assertEqual(fresh.share.text(), "Start reading")
             fresh.share.click()
             self.assertEqual(fresh.reader.starts, 1)
             self.assertFalse(fresh.share.isEnabled())
-            self.assertEqual(fresh.share.text(), "Starting…")
+            self.assertEqual(fresh.share.text(), "Waiting for sharing…")
             fresh.reader.image = QImage(800, 800, QImage.Format.Format_RGBA8888)
             fresh.on_image(fresh.reader.image)
             self.assertTrue(fresh.share.isEnabled())
-            self.assertEqual(fresh.share.text(), "Pause")
+            self.assertEqual(fresh.share.text(), "Pause reading")
             fresh.share.click()
             self.assertEqual(fresh.mode, "paused")
-            self.assertEqual(fresh.share.text(), "Resume")
+            self.assertEqual(fresh.share.text(), "Resume reading")
             self.assertEqual(fresh.reader.pauses, [True])
             self.assertEqual(fresh.overlay.rows, [])
             fresh.share.click()
@@ -196,7 +198,7 @@ class ContextUiTests(unittest.TestCase):
     def test_hotkey_and_button_share_the_same_toggle(self):
         self.window.hotkeys.activated.emit()
         self.assertEqual(self.window.mode, "paused")
-        self.assertEqual(self.window.share.text(), "Resume")
+        self.assertEqual(self.window.share.text(), "Resume reading")
         self.window.hotkeys.activated.emit()
         self.assertEqual(self.window.mode, "live")
         self.assertEqual(self.window.reader.starts, 1)
@@ -213,7 +215,7 @@ class ContextUiTests(unittest.TestCase):
 
     def test_key_combination_is_configurable_and_saved(self):
         def edit():
-            dialog = self.window.findChild(QDialog)
+            dialog = self.window.findChild(QDialog, "hotkeyDialog")
             editor = dialog.findChild(QKeySequenceEdit)
             editor.setKeySequence(QKeySequence("Ctrl+Shift+F10"))
             next(button for button in dialog.findChildren(QPushButton) if button.text() == "Set hotkey").click()
@@ -222,3 +224,187 @@ class ContextUiTests(unittest.TestCase):
         self.window.configure_hotkey()
         self.assertEqual(self.window.settings.values["hotkey-sequence"], "Ctrl+Shift+F10")
         self.assertTrue(self.window.settings.values["hotkey-enabled"])
+
+    def test_first_run_display_selection_waits_for_explicit_start(self):
+        fresh = LensWindow(Path.cwd(), Path("unused-cache"), auto_capture=True)
+        try:
+            fresh.monitor.setCurrentIndex(1)
+            self.app.processEvents()
+            self.assertEqual(fresh.reader.starts, 0)
+            self.assertEqual(fresh.mode, "idle")
+            self.assertEqual(fresh.status_badge.text(), "Ready to start")
+            self.assertIn("Click Start reading", fresh.capture_info.text())
+            self.assertFalse(fresh.windowFlags() & Qt.WindowType.WindowStaysOnTopHint)
+        finally:
+            fresh.close()
+            fresh.deleteLater()
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+    def test_sharing_setup_can_be_canceled_and_late_readings_are_ignored(self):
+        self.window.mode = "idle"
+        self.window.start_capture()
+        self.assertEqual(self.window.status_badge.text(), "Waiting for screen sharing")
+        self.assertFalse(self.window.cancel_setup.isHidden())
+        self.window.cancel_setup.click()
+        self.window.on_reading(self.reading(shop_hover=True))
+        self.assertEqual(self.window.mode, "idle")
+        self.assertEqual(self.window.rows, [])
+        self.assertEqual(self.window.reader.pauses[-1], False)
+        self.assertIn("canceled", self.window.capture_info.text())
+
+    def test_lost_sharing_waits_for_explicit_reconnect(self):
+        self.window.show_status("OS capture: user stopped sharing")
+        self.assertEqual(self.window.reader.starts, 0)
+        self.assertEqual(self.window.status_badge.text(), "Sharing needs attention")
+        self.assertFalse(self.window.recovery_button.isHidden())
+        self.window.recovery_button.click()
+        self.assertEqual(self.window.reader.starts, 1)
+
+    def test_changing_display_stops_the_old_source_without_opening_another_picker(self):
+        self.window.monitor.setCurrentIndex(0)
+        self.window.monitor.setCurrentIndex(1)
+        self.assertEqual(self.window.mode, "idle")
+        self.assertEqual(self.window.reader.starts, 0)
+        self.assertEqual(self.window.reader.pauses, [False])
+
+    def test_catalog_retry_is_bounded_while_a_request_is_in_progress(self):
+        self.window.catalog = None
+        self.window.on_error(0, "HTTP Error 503")
+        self.assertTrue(self.window.catalog_error)
+        for _ in range(500):
+            self.window.retry_catalog()
+        self.assertEqual(self.window.service.catalog_starts, 2)
+        self.assertTrue(self.window.catalog_loading)
+
+    def test_example_preview_needs_neither_capture_nor_price_requests(self):
+        self.window.mode = "idle"
+        self.window.rows = []
+        snapshot = []
+        def inspect():
+            dialog = self.window.findChild(QDialog, "exampleDialog")
+            try:
+                snapshot.extend(widget.text() for widget in dialog.findChildren(QLabel))
+            finally:
+                dialog.reject()
+        QTimer.singleShot(0, inspect)
+        self.window.preview_examples()
+        self.assertIn("EXAMPLE PRICES", snapshot)
+        self.assertTrue(any("made-up" in value for value in snapshot))
+        self.assertEqual(self.window.reader.starts, 0)
+        self.assertEqual(self.window.service.requests, [])
+
+    def test_recognised_item_without_reports_is_not_called_unreadable(self):
+        self.window.on_reading(self.reading(shop_hover=True))
+        now = time.time()
+        self.window.on_quote(1, Quote(1, None, now, None, 0, "Test", "", "24h"))
+        content = "\n".join(widget.text() for widget in self.window.cards.findChildren(QLabel))
+        self.assertIn("Item name recognised", content)
+        self.assertIn("No market reports", content)
+        self.assertNotIn("unreadable", content.lower())
+
+    def test_empty_hover_reference_is_not_left_checking_forever(self):
+        self.window.reader.pointer = (100, 100)
+        self.window.on_reading(self.reading(shop_hover=False))
+        self.window.on_quote(1, Quote(1, None, time.time(), None, 0, "Test", "", "24h"))
+        self.assertEqual(len(self.window.overlay.rows), 2)
+        self.assertEqual(self.window.overlay.rows[-1]["text"], "FM • source has no market data")
+
+    def test_saved_screenshot_is_labeled_even_without_a_display_selected(self):
+        self.window.monitor.setCurrentIndex(0)
+        self.window.mode = "screenshot"
+        self.window.render()
+        self.assertEqual(self.window.status_badge.text(), "Saved screenshot")
+        self.assertFalse(self.window.share.isEnabled())
+        self.assertIn("saved image", self.window.capture_info.text())
+        self.assertEqual(self.window.overlay.rows, [])
+
+    def test_first_real_price_offers_optional_hotkey_and_minimize(self):
+        self.window.on_reading(self.reading(shop_hover=True))
+        now = time.time()
+        self.window.on_quote(1, Quote(1, 1000, now, now, 20, "Test", "", "24h"))
+        self.assertTrue(self.window.settings.values["first-price-seen"])
+        self.assertFalse(self.window.success_frame.isHidden())
+        self.assertTrue(any(button.text() == "Minimize panel" for button in self.window.success_frame.findChildren(QPushButton)))
+        self.window.dismiss_setup()
+        self.assertTrue(self.window.success_frame.isHidden())
+
+    def test_details_remain_open_across_price_card_updates(self):
+        self.window.on_reading(self.reading(shop_hover=True))
+        details = next(button for button in self.window.cards.findChildren(QPushButton) if button.text() == "Details")
+        details.click()
+        self.window.card_key = None
+        self.window.render()
+        self.assertTrue(any(button.text() == "Hide details" for button in self.window.cards.findChildren(QPushButton)))
+
+    def test_expiration_removes_comparison_inside_the_same_age_bucket(self):
+        with patch("price_lens.ui.time.time", return_value=1001):
+            self.window.last_screen = 1001
+            self.window.on_reading(self.reading(shop_hover=True))
+            self.window.on_quote(1, Quote(1, 1000, 101.2, 1000, 20, "Test", "", "24h"))
+            previous = self.window.card_key
+            self.assertTrue(any("below reference" in widget.text() for widget in self.window.cards.findChildren(QLabel)))
+        with patch("price_lens.ui.time.time", return_value=1001.3):
+            self.window.render()
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+            self.assertNotEqual(previous, self.window.card_key)
+            content = "\n".join(widget.text() for widget in self.window.cards.findChildren(QLabel))
+            self.assertIn("Older reference", content)
+            self.assertNotIn("below reference", content)
+            self.assertTrue(any("EXPIRED" in row["text"] for row in self.window.overlay.rows))
+
+    def test_hidden_labels_can_be_restored_without_reconnecting(self):
+        self.window.on_reading(self.reading(shop_hover=True))
+        self.window.labels_check.setChecked(False)
+        self.window.on_pointer(100, 100)
+        self.assertFalse(self.window.reader.tooltip_enabled)
+        self.assertIsNone(self.window.reader.pointer)
+        self.assertEqual(self.window.overlay.rows, [])
+        self.assertEqual(self.window.recovery_button.text(), "Show price labels")
+        self.window.recovery_button.click()
+        self.assertTrue(self.window.labels_enabled)
+        self.assertTrue(self.window.reader.tooltip_enabled)
+        self.assertEqual(self.window.reader.starts, 0)
+
+    def test_mismatched_references_never_reach_overlay_or_success_message(self):
+        self.window.on_reading(self.reading(shop_hover=True))
+        now = time.time()
+        valid = Quote(1, 987654, now, now, 20, "Test", "", "24h")
+        for change in ({"world": "Other World"}, {"game_id": 2}, {"condition": "scrolled"}, {"per_set": True}):
+            with self.subTest(change=change):
+                self.window.on_quote(1, replace(valid, **change))
+                self.assertFalse(self.window.first_price_seen)
+                self.assertNotIn("987,654", "\n".join(row["text"] for row in self.window.overlay.rows))
+                self.assertIn("0 market references ready", self.window.summary.text())
+
+    def test_display_diagram_selects_friendly_display_without_starting_capture(self):
+        class Screen:
+            def __init__(self, number):
+                self.number = number
+
+            def name(self):
+                return f"DEVICE-{self.number}"
+
+            def geometry(self):
+                return QRect(self.number * 1280, 0, 1280, 720)
+
+            def devicePixelRatio(self):
+                return 1.5
+
+        with patch("price_lens.ui.QApplication.screens", return_value=[Screen(i) for i in range(3)]):
+            fresh = LensWindow(Path.cwd(), Path("unused-cache"))
+            try:
+                self.assertEqual(fresh.monitor.itemText(2), "Display 2 · Centre · 1920 × 1080")
+                fresh.display_map.resize(400, 78)
+                fresh.display_map.grab()
+                point = fresh.display_map.boxes[1].center()
+                event = QMouseEvent(QEvent.Type.MouseButtonPress, point, point,
+                                    Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton,
+                                    Qt.KeyboardModifier.NoModifier)
+                fresh.display_map.mousePressEvent(event)
+                self.assertEqual(fresh.screen_index, 1)
+                self.assertEqual(fresh.reader.starts, 0)
+                self.assertEqual(fresh.settings.values["monitor-name"], "DEVICE-1")
+            finally:
+                fresh.close()
+                fresh.deleteLater()
+                QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)

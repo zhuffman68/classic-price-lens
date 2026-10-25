@@ -10,17 +10,23 @@ Download an unencrypted installer/package from [GitHub Releases](https://github.
 
 | System | Download | Installation |
 | --- | --- | --- |
-| Windows 10/11 x64 | `ClassicPriceLens-0.2.0-Windows-x64-Setup.exe` | Run the installer, then open **Classic Price Lens** from Start. Installs for the current user without administrator access. |
-| Arch / Manjaro x86_64 | `classic-price-lens-0.2.0-1-x86_64.pkg.tar.zst` | `sudo pacman -U ./classic-price-lens-0.2.0-1-x86_64.pkg.tar.zst` |
-| Debian 12+ / Ubuntu 22.04+ amd64 | `classic-price-lens_0.2.0-1_amd64.deb` | `sudo apt install ./classic-price-lens_0.2.0-1_amd64.deb` |
+| Windows 10/11 x64 | `ClassicPriceLens-0.3.0-Windows-x64-Setup.exe` | Run the installer, then open **Classic Price Lens** from Start. Installs for the current user without administrator access. |
+| Arch / Manjaro x86_64 | `classic-price-lens-0.3.0-1-x86_64.pkg.tar.zst` | `sudo pacman -U ./classic-price-lens-0.3.0-1-x86_64.pkg.tar.zst` |
+| Debian 12+ / Ubuntu 22.04+ amd64 | `classic-price-lens_0.3.0-1_amd64.deb` | `sudo apt install ./classic-price-lens_0.3.0-1_amd64.deb` |
 
 Prerequisites: a supported 64-bit desktop system, about **1 GB free space** including the download, and internet for market-price updates. Linux package managers install the OS library dependencies. Wayland requires PipeWire, XWayland, and a working screen-sharing portal backend matching the desktop, such as `xdg-desktop-portal-kde` or `xdg-desktop-portal-gnome`. KDE Plasma and GNOME desktop installations normally provide one. No service, driver or login startup task is added.
 
-On Linux, open **Classic Price Lens** from the application menu or run `classic-price-lens`. On Windows, use the Start-menu shortcut. Select the monitor containing Classic World and approve the OS screen-sharing picker when shown. Inventory/equipment tooltip prices start enabled. [Windows details and portable alternative](README-WINDOWS.md).
+On Linux, open **Classic Price Lens** from the application menu or run `classic-price-lens`. On Windows, use the Start-menu shortcut. [Windows details and portable alternative](README-WINDOWS.md).
 
-The single capture button changes between **Start**, **Pause** and **Resume**. It stays gray until a valid monitor is selected, and shows **Starting…** until frames arrive. The selected monitor is remembered. Pause hides the overlay and stops OCR/price refreshes; Resume reuses the same sharing session, avoiding another sharing picker. Supported capture backends reduce their frame rate while paused.
+1. Choose the display containing Classic World using the numbered arrangement or the display list. Display names include their position and resolution. Selection is remembered and does not start sharing.
+2. Click **Start reading**. In the OS sharing chooser, select that display or the full workspace. **Waiting for sharing…** explains what is needed and offers **Cancel setup**. Windows may start capture without a chooser.
+3. Open a player shop, or hover an inventory/equipment item. Keep item names and prices visible. The first available overlay price offers optional hotkey setup and a **Minimize panel** button.
 
-Use **Hotkey…** to enable/disable the global shortcut and choose a key or key combination. Windows and X11 default to **Ctrl+Alt+P**. Wayland uses the desktop's shortcut chooser, requested through that button; after the desktop confirms a binding it is remembered. On older Wayland desktops without the GlobalShortcuts portal, create a system keyboard shortcut running `classic-price-lens --toggle`. Hotkeys use OS registration, never a keyboard hook or game attachment.
+**Preview with examples** explains a price comparison using clearly marked, made-up values without screen sharing or item-price requests. **Setup help** repeats the steps. Normal app launches wait for **Start reading**, even with a saved display; the explicit `--capture` command-line option can start a saved display automatically.
+
+The single primary button changes to **Pause reading** and **Resume reading**. It stays gray until a valid display is selected and while sharing starts. Pause hides the overlay and stops OCR/price refreshes; Resume reuses the same sharing session, avoiding another sharing picker. Supported capture backends reduce their frame rate while paused. If sharing ends or the wrong display is shared, the panel explains the problem and offers an explicit **Reconnect display** action. It does not repeatedly open the chooser.
+
+**Settings** contains overlay/hover toggles, the optional always-on-top panel, price update interval, keyboard shortcut and troubleshooting tools. The panel starts as a normal movable window. Open **Settings → Keyboard shortcut…** to enable/disable the global shortcut and choose a key or combination. Windows and X11 default to **Ctrl+Alt+P**. Wayland uses the desktop's shortcut chooser; after the desktop confirms a binding it is remembered. On older Wayland desktops without the GlobalShortcuts portal, create a system keyboard shortcut running `classic-price-lens --toggle`. Hotkeys use OS registration, never a keyboard hook or game attachment.
 
 For an offline installation check on Linux:
 
@@ -38,13 +44,15 @@ Linux packages are checked in isolated Debian 12 and Ubuntu 22.04 filesystems an
 
 In KDE's screen-sharing picker, share the selected monitor or the full workspace; full-workspace frames are cropped locally to the selected monitor. Only one OS sharing session stays open, and the control panel can reuse it across UI handoffs. Closing the panel normally ends sharing and its helpers. Minimize the panel to leave just the labels.
 
-The streaming path reads new frames immediately, with bounded buffers and no queue of old screenshots. Prices already in the cache appear without network access. A first lookup for an unseen item still depends on the provider's response time. The panel displays the measured reading delay separately from price age.
+The streaming path reads new frames immediately, with bounded buffers and no queue of old screenshots. Prices already in the cache appear without network access. A first lookup for an unseen item still depends on the provider's response time. **Settings → Connection details / capture preview…** shows the measured reading delay, existing local image and technical messages without requesting another share.
 
-**Inventory / equipment tooltip prices** is a persistent checkbox, **on by default**. It shows the matched name and meso reference above the game's visible tooltip, including items in inventory and equipment. Shop-row labels take priority while the pointer is on a shop listing; a duplicate inventory label is suppressed there. It reads tooltip pixels and the OS pointer position, with no mouse hook or input injection. Tooltip OCR stops when the checkbox is off. Equipment is assumed unscrolled.
+**Settings → Also show prices when hovering inventory / equipment** is a persistent checkbox, **on by default**. It shows the matched name and meso reference above the game's visible tooltip, including items in inventory and equipment. Shop-row labels take priority while the pointer is on a shop listing; a duplicate inventory label is suppressed there. It reads tooltip pixels and the OS pointer position, with no mouse hook or input injection. Tooltip OCR stops when the checkbox or the master price-label toggle is off. Equipment is assumed unscrolled.
 
-**KDE capture** is a slower fallback using ordinary Spectacle screenshots, one at a time, with uncompressed temporary BMPs instead of PNG compression. **Crop** selects pixels in the capture preview. **Open screenshot** is a clearly marked offline mode and draws no labels over the live game.
+Troubleshooting tools live in **Settings**. **Try KDE screenshot capture** is a slower fallback using ordinary Spectacle screenshots, one at a time, with uncompressed temporary BMPs instead of PNG compression. **Limit the reading area…** selects pixels in the capture preview. **Open a saved screenshot…** reads a static local image and draws no labels over the live game; market-price lookups still use the internet when needed.
 
-Labels contain the matched item name in small type, the reference price, percentage versus that reference, and cache age. Equipment is assumed **unscrolled** and receives the same comparisons as other items. Actual stats, upgrades and remaining slots are not read. The assumption is stated once in the panel instead of repeated on each label. For items with fewer than five reference samples, it says `thin data`. The panel gives the source, window, sample count, latest report time, and exact cache expiration.
+Labels contain the matched item name in small type, the reference price, percentage versus that reference, and cache age. Equipment is assumed **unscrolled** and receives the same comparisons as other items. Actual stats, upgrades and remaining slots are not read. The assumption is stated once in the panel instead of repeated on each label. For items with fewer than five reference samples, labels say `few reports` and receive no comparison rating.
+
+Each panel card puts **Store price** beside **Market reference**, with an explicit per-item or per-set unit. **Price checked** is the local lookup age; **latest market report** is the source observation age. **Details** expands to show the source, report count, fee calculation and next check, and remains open while prices update. A recognised item with no source coverage says **No market reports**; an unclear name asks for a clearer item name. Older references are muted and receive no comparison rating. Technical HTTP errors stay in connection details.
 
 ## Boundary: pixels only
 
@@ -83,7 +91,7 @@ python -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
 ./setup.sh
-./run.sh --capture
+./run.sh
 ```
 
 The reader uses Minerva's MIT headless core, pinned at `7e1aa7d418fb255bd66eb4dce848fc9eb305cd81`. `setup.sh` clones this revision if missing and builds the OCR helper and headless core. Rust build concurrency is limited to two jobs. The OCR model is bundled by upstream; see [THIRD_PARTY.md](THIRD_PARTY.md).
