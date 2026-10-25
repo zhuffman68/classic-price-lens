@@ -2,8 +2,10 @@
 
 - **Minerva core**: [itechify/minerva](https://github.com/itechify/minerva), revision `7e1aa7d418fb255bd66eb4dce848fc9eb305cd81`, MIT. The cloned repository retains its `LICENSE` and notices. Only the headless Rust library is linked; no upstream OS adapters, telemetry, branding or game-control features are run. Upstream's OCR fixtures remain in the local vendor checkout.
 - **ocrs text-recognition.onnx**: Robert Knight, model unmodified, CC BY-SA 4.0. [Model](https://huggingface.co/robertknight/ocrs), [license](https://creativecommons.org/licenses/by-sa/4.0/). Full upstream notice: `vendor/minerva/crates/minerva-core/models/NOTICE.md`. ocrs/rten code uses MIT OR Apache-2.0.
-- **PySide6 / Qt**: installed system package, LGPLv3/GPLv3/commercial options; see [Qt for Python licenses](https://doc.qt.io/qtforpython-6/licenses.html).
-- **Windows portable runtime**: CPython 3.14.9 from python.org (PSF license), PySide6/Essentials/Addons/shiboken6 6.12.0 from their official PyPI distributions. Their licenses and unmodified DLLs remain in `runtime`. Unused WebEngine/PDF distributions are omitted. Download URLs and SHA-256 values are recorded in `runtime-sources.json`.
+- **PySide6 / Qt**: LGPLv3/GPLv3/commercial options; see [Qt for Python licenses](https://doc.qt.io/qtforpython-6/licenses.html). Installed packages bundle unmodified shared libraries with their original license files; source checkouts can use system packages instead.
+- **Linux packaged runtime**: CPython 3.14.9 from [Astral python-build-standalone 20261021](https://github.com/astral-sh/python-build-standalone/releases/tag/20261021), PSF license and included dependency notices. PySide6/Essentials/Addons/shiboken6 6.12.0 come from official PyPI manylinux x86_64 distributions. Download URLs and SHA-256 values are in `runtime-sources.json`. The OCR reader is statically linked with Rust's musl target; musl's MIT notices are included with the Rust standard-library notices.
+- **Linux desktop shortcuts**: [dbus-next 0.2.3](https://github.com/altdesktop/python-dbus-next), MIT, bundled with its license file. It communicates only with the desktop's GlobalShortcuts portal. Windows uses `RegisterHotKey`; X11 uses a passive grab for the chosen chord. No keyboard-hook library is used.
+- **Windows packaged/portable runtime**: CPython 3.14.9 from python.org (PSF license), PySide6/Essentials/Addons/shiboken6 6.12.0 from their official PyPI distributions. Their licenses and unmodified DLLs remain in `runtime`. Unused WebEngine/PDF distributions are omitted. Download URLs and SHA-256 values are recorded in `runtime-sources.json`.
 - **Windows reader runtime**: LLVM `libunwind.dll` from the verified llvm-mingw 20261020 release, Apache-2.0 with LLVM exceptions and included notices. `licenses/LLVM-MinGW-LICENSE.txt` is included in the portable folder.
 - **Classic World reference catalog**: [OSMS Data Explorer](https://osmsdataexplorer.com/), cached locally at runtime, not bundled in our code.
 - **Market prices**: [NiaMeowDB Classic World](https://meowdb.com/msclassic/free-market), requested at runtime with a descriptive application User-Agent. The app visibly credits and links each reference.
@@ -13,7 +15,7 @@ MapleStory item names, game artwork and screenshots belong to their respective o
 
 ## Corresponding library sources
 
-The portable build uses unmodified shared libraries; the application Python source is included and the DLLs can be replaced with interface-compatible builds. Source downloads for the bundled versions are available here:
+The packaged builds use unmodified shared libraries; application Python source is included and the libraries can be replaced with interface-compatible builds. Source downloads for the bundled versions are available here:
 
 - [Qt 6.12.0 complete source](https://download.qt.io/official_releases/qt/6.12/6.12.0/single/qt-everywhere-src-6.12.0.tar.xz)
 - [Qt for Python / shiboken 6.12.0 source](https://download.qt.io/official_releases/QtForPython/pyside6/PySide6-6.12.0-src/pyside-setup-everywhere-src-6.12.0.tar.xz)

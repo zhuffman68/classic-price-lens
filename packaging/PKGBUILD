@@ -1,0 +1,24 @@
+# Generated payload is built by scripts/package_linux.py; no runtime downloads.
+pkgname=classic-price-lens
+pkgver=0.2.0
+pkgrel=1
+pkgdesc='Screen-only MapleStory Classic World market overlay'
+arch=('x86_64')
+url='https://github.com/zhuffman68/classic-price-lens'
+license=('custom')
+depends=('glibc>=2.34' 'gcc-libs' 'libglvnd' 'dbus' 'fontconfig' 'freetype2'
+         'libx11' 'libxext' 'libxfixes' 'libxrender' 'libxrandr' 'libdrm' 'libxi' 'libxcb' 'xcb-util'
+         'xcb-util-cursor' 'xcb-util-image' 'xcb-util-keysyms' 'xcb-util-renderutil'
+         'xcb-util-wm' 'libxkbcommon' 'libxkbcommon-x11' 'wayland' 'libpulse'
+         'alsa-lib' 'pipewire' 'xdg-desktop-portal' 'xorg-xwayland' 'ca-certificates')
+optdepends=('xdg-desktop-portal-kde: screen sharing on KDE Plasma'
+            'xdg-desktop-portal-gtk: portal integration on GTK desktops'
+            'xdg-desktop-portal-gnome: screen sharing on GNOME'
+            'spectacle: optional KDE screenshot fallback')
+options=('!strip' '!debug')
+
+package() {
+    cp -a "$startdir/payload/." "$pkgdir/"
+    install -Dm644 "$pkgdir/opt/classic-price-lens/THIRD_PARTY.md" \
+        "$pkgdir/usr/share/licenses/$pkgname/THIRD_PARTY.md"
+}

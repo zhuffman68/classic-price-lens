@@ -1,1 +1,2 @@
 PySide6>=6.8,<6.13
+dbus-next==0.2.3; sys_platform == 'linux'

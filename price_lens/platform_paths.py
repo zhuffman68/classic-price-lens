@@ -1,4 +1,4 @@
-"""Paths for a source checkout or an extracted Windows portable bundle."""
+"""Per-user paths and resources for source, portable and installed copies."""
 from pathlib import Path
 import getpass
 import re
@@ -23,6 +23,14 @@ def capture_socket_name():
 
 
 def capture_lock_path():
+    return str(cache_directory() / "stream.lock")
+
+
+def cache_directory():
     cache = Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.CacheLocation))
     cache.mkdir(parents=True, exist_ok=True)
-    return str(cache / "stream.lock")
+    return cache
+
+
+def control_socket_name():
+    return capture_socket_name().replace("stream-v1", "control-v1")

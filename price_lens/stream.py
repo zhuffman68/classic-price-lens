@@ -6,10 +6,11 @@ import struct
 import sys
 import time
 
-from PySide6.QtCore import QObject, QLockFile, QProcess, QRect, QStandardPaths, QTimer, Signal
+from PySide6.QtCore import QObject, QLockFile, QProcess, QRect, QStandardPaths, QTimer, Signal, Slot
+from shiboken6 import isValid
 from PySide6.QtGui import QImage
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
-from .platform_paths import capture_socket_name, capture_lock_path
+from .platform_paths import cache_directory, capture_socket_name, capture_lock_path
 
 
 def socket_name():
@@ -51,6 +52,7 @@ class StreamClient(QObject):
         self.next_delivery = 0.0
         self.subscription = None
         self.active = False
+        self.paused = False
         self.launched = False
         self.retry_timer = QTimer(self)
         self.retry_timer.setInterval(100)
@@ -58,10 +60,11 @@ class StreamClient(QObject):
         self.launcher = QProcess(self)
 
     def start(self, screen, desktop):
-        self.subscription = {"screen": list(screen.getRect()), "desktop": list(desktop.getRect())}
+        self.paused = False
+        self.subscription = {"screen": list(screen.getRect()), "desktop": list(desktop.getRect()), "paused": False}
         self.active = True
         if self.socket.state() == QLocalSocket.LocalSocketState.ConnectedState:
-            self.connected()
+            self.send_subscription()
             return
         self.launched = False
         self.connect()
@@ -85,12 +88,15 @@ class StreamClient(QObject):
             # A lock in the server prevents simultaneous launchers creating extra
             # sharing sessions. A running server is reused across a UI restart.
             self.launcher.setProgram(sys.executable)
-            self.launcher.setArguments(["-m", "price_lens.stream"])
+            self.launcher.setArguments(["-B", "-m", "price_lens.stream"])
             self.launcher.setWorkingDirectory(str(self.root))
-            log_dir = self.root / "evidence"
-            log_dir.mkdir(exist_ok=True)
-            self.launcher.setStandardOutputFile(str(log_dir / "stream.log"))
-            self.launcher.setStandardErrorFile(str(log_dir / "stream.log"))
+            log_dir = cache_directory()
+            log_path = log_dir / "stream.log"
+            # Bound persistent diagnostics; ordinary capture produces little output.
+            if log_path.exists() and log_path.stat().st_size > 1024 * 1024:
+                log_path.replace(log_dir / "stream.previous.log")
+            self.launcher.setStandardOutputFile(str(log_path))
+            self.launcher.setStandardErrorFile(str(log_path))
             self.launcher.startDetached()
 
     def connected(self):
@@ -98,6 +104,9 @@ class StreamClient(QObject):
         self.header_size = None
         self.metadata = None
         self.next_delivery = 0.0
+        self.send_subscription()
+
+    def send_subscription(self):
         self.socket.write((json.dumps(self.subscription) + "\n").encode())
         self.status.emit("OS sharing session connected • full workspace is supported")
 
@@ -134,13 +143,21 @@ class StreamClient(QObject):
             if self.socket.bytesAvailable() < size:
                 return
             pixels = bytes(self.socket.read(size))
-            image = QImage(pixels, self.metadata["width"], self.metadata["height"], QImage.Format.Format_RGBA8888).copy()
             captured_at = self.metadata["captured_at"]
+            wrong_monitor = self.metadata.get("screen") is not None and self.metadata["screen"] != self.subscription["screen"]
+            image = None if self.paused or wrong_monitor else QImage(pixels, self.metadata["width"], self.metadata["height"], QImage.Format.Format_RGBA8888).copy()
             self.header_size = self.metadata = None
             self.socket.setReadBufferSize(65536)
             self.next_delivery = time.monotonic() + self.delivery_interval
-            if self.active:
+            if self.active and not self.paused and not wrong_monitor:
                 self.frame.emit(image, captured_at)
+
+    def set_paused(self, paused):
+        self.paused = paused
+        if self.subscription is not None:
+            self.subscription["paused"] = paused
+        if self.socket.state() == QLocalSocket.LocalSocketState.ConnectedState:
+            self.socket.write((json.dumps({"paused": paused}) + "\n").encode())
 
     def stop(self, keep_session=False):
         self.active = False
@@ -164,6 +181,8 @@ class CaptureServer(QObject):
         self.server.setSocketOptions(QLocalServer.SocketOption.UserAccessOption)
         self.server.newConnection.connect(self.accept)
         self.clients = {}
+        self.paused_clients = set()
+        self.closing = False
         self.last_frame = 0.0
         self.session = QMediaCaptureSession(self)
         self.capture = QScreenCapture(self)
@@ -187,8 +206,20 @@ class CaptureServer(QObject):
         socket = self.server.nextPendingConnection()
         self.clients[socket] = None
         self.idle.stop()
-        socket.readyRead.connect(lambda: self.command(socket))
-        socket.disconnected.connect(lambda: self.disconnect(socket))
+        socket.readyRead.connect(self.client_ready)
+        socket.disconnected.connect(self.client_disconnected)
+
+    @Slot()
+    def client_ready(self):
+        socket = self.sender()
+        if not self.closing and socket in self.clients and isValid(socket):
+            self.command(socket)
+
+    @Slot()
+    def client_disconnected(self):
+        socket = self.sender()
+        if not self.closing and socket in self.clients:
+            self.disconnect(socket)
 
     def command(self, socket):
         while socket.canReadLine():
@@ -197,6 +228,12 @@ class CaptureServer(QObject):
                 self.capture.stop()
                 self.app.quit()
                 return
+            if "paused" in data:
+                if data["paused"]:
+                    self.paused_clients.add(socket)
+                else:
+                    self.paused_clients.discard(socket)
+                self.update_frame_rate()
             if "screen" in data and "desktop" in data:
                 self.clients[socket] = (QRect(*data["screen"]), QRect(*data["desktop"]))
                 if not self.capture.isActive():
@@ -213,10 +250,20 @@ class CaptureServer(QObject):
 
     def disconnect(self, socket):
         self.clients.pop(socket, None)
-        socket.deleteLater()
+        self.paused_clients.discard(socket)
+        self.update_frame_rate()
+        if isValid(socket):
+            socket.deleteLater()
         if not self.clients:
             # An intentional UI handoff can reconnect without another OS picker.
             self.idle.start()
+
+    def update_frame_rate(self):
+        if self.closing:
+            return
+        if hasattr(self.capture, "setMaximumFrameRate"):
+            paused = bool(self.clients) and all(socket in self.paused_clients for socket in self.clients)
+            self.capture.setMaximumFrameRate(1.0 if paused else 10.0)
 
     @staticmethod
     def send(socket, metadata, pixels=None):
@@ -234,15 +281,17 @@ class CaptureServer(QObject):
             self.send(socket, {"error": "OS capture: " + description})
 
     def on_frame(self, frame):
+        if self.closing:
+            return
         captured_at = time.monotonic()
-        if captured_at - self.last_frame < 0.075 or not self.clients:
+        if captured_at - self.last_frame < 0.075 or not self.clients or all(s in self.paused_clients for s in self.clients):
             return
         if all(socket.bytesToWrite() for socket in self.clients):
             return
         self.last_frame = captured_at
         image = frame.toImage()
         for socket, target in list(self.clients.items()):
-            if not target or socket.bytesToWrite():
+            if not target or socket.bytesToWrite() or socket in self.paused_clients:
                 continue
             # The Linux portal can return a whole workspace. Windows/macOS
             # native QScreenCapture already returns the selected monitor.
@@ -250,8 +299,29 @@ class CaptureServer(QObject):
             image_region = selected.convertToFormat(QImage.Format.Format_RGBA8888)
             if image_region.isNull():
                 continue
-            metadata = {"width": image_region.width(), "height": image_region.height(), "captured_at": captured_at}
+            metadata = {"width": image_region.width(), "height": image_region.height(), "captured_at": captured_at,
+                        "screen": list(target[0].getRect())}
             self.send(socket, metadata, image_region.constBits())
+
+    def close(self):
+        if self.closing:
+            return
+        self.closing = True
+        self.idle.stop()
+        self.server.close()
+        for socket in list(self.clients):
+            if isValid(socket):
+                socket.readyRead.disconnect(self.client_ready)
+                socket.disconnected.disconnect(self.client_disconnected)
+                socket.abort()
+                socket.deleteLater()
+        self.clients.clear()
+        self.paused_clients.clear()
+        capture = self.session.screenCapture()
+        if capture is not None:
+            capture.stop()
+        self.session.setScreenCapture(None)
+        self.session.setVideoSink(None)
 
 
 def main():
@@ -259,14 +329,13 @@ def main():
     app = QGuiApplication(sys.argv[:1])
     app.setApplicationName("Classic Price Lens")
     app.setOrganizationName("LocalTools")
-    app.setDesktopFileName("classic-price-lens")
+    app.setDesktopFileName("io.github.zhuffman68.ClassicPriceLens")
     lock = QLockFile(capture_lock_path())
     if not lock.tryLock(0):
         return 0
     server = CaptureServer(app)
     result = app.exec()
-    server.capture.stop()
-    server.server.close()
+    server.close()
     lock.unlock()
     return result
 

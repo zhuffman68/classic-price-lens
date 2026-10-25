@@ -41,6 +41,9 @@ class PixelReader(QObject):
         self.shop_context = None
         self.crop = None
         self.pending = False
+        self.paused = False
+        self.generation = 0
+        self.pending_generation = 0
         self.pending_since = 0.0
         self.buffer = b""
         self.kde_screen = None
@@ -70,6 +73,9 @@ class PixelReader(QObject):
         self.screenshot_timer.timeout.connect(self.take_screenshot)
 
     def start(self, screen, desktop):
+        self.generation += 1
+        self.paused = False
+        self.timer.start()
         self.screenshot_timer.stop()
         self.shop_rect = self.shop_fingerprint = None
         self.shop_context = None
@@ -77,12 +83,20 @@ class PixelReader(QObject):
         self.status.emit("Capturing the selected monitor" if sys.platform == "win32" else "Choose a monitor or full workspace in the OS sharing dialog")
         self.stream.start(screen, desktop)
 
-    def pause(self):
+    def pause(self, keep_stream=False):
+        self.generation += 1
+        self.paused = True
+        self.timer.stop()
         self.screenshot_timer.stop()
-        self.stream.stop()
+        if keep_stream:
+            self.stream.set_paused(True)
+        else:
+            self.stream.stop()
 
     def start_kde(self, screen, desktop):
         self.pause()
+        self.paused = False
+        self.timer.start()
         self.shop_rect = self.shop_fingerprint = None
         self.kde_screen = screen
         self.kde_desktop = desktop
@@ -112,6 +126,8 @@ class PixelReader(QObject):
         self.scan()
 
     def on_stream_frame(self, image, captured_at):
+        if self.paused:
+            return
         if not image.isNull():
             self.last_frame = captured_at
             self.image = image
@@ -121,6 +137,8 @@ class PixelReader(QObject):
 
     def load_image(self, path):
         self.pause()
+        self.paused = False
+        self.timer.start()
         self.image = QImage(str(path))
         if self.image.isNull():
             self.status.emit("Could not open screenshot")
@@ -134,6 +152,8 @@ class PixelReader(QObject):
         self.scan()
 
     def scan(self):
+        if self.paused:
+            return
         if self.pending:
             if time.monotonic() - self.pending_since > 25:
                 self.process.kill()
@@ -173,6 +193,7 @@ class PixelReader(QObject):
         path = Path(self.temp.name) / "frame.rgba"
         path.write_bytes(image.constBits())
         self.pending = True
+        self.pending_generation = self.generation
         self.pending_since = time.monotonic()
         self.submitted_sequence = self.image_sequence
         self.last_pointer = self.pointer
@@ -190,6 +211,8 @@ class PixelReader(QObject):
             self.pending = False
             try:
                 result = json.loads(line)
+                if self.paused or self.pending_generation != self.generation:
+                    continue
                 if result.get("error"):
                     self.status.emit("Reader: " + result["error"])
                 else:

@@ -5,6 +5,8 @@ from pathlib import Path
 import shutil
 import zipfile
 
+from package_common import stage_application, stage_notices, assert_public_tree
+
 ROOT = Path(__file__).resolve().parents[1]
 DOWNLOADS = ROOT / ".build-tools/windows-downloads"
 OUT = ROOT / "dist/ClassicPriceLens-Windows-x64"
@@ -12,10 +14,12 @@ READER = ROOT / "reader/target/x86_64-pc-windows-gnullvm/release/classic-screen-
 
 
 def main():
+    if OUT.exists():
+        shutil.rmtree(OUT)
     OUT.mkdir(parents=True, exist_ok=True)
     runtime = OUT / "runtime"
     runtime.mkdir(exist_ok=True)
-    manifest = json.loads((DOWNLOADS / "downloads.json").read_text())
+    manifest = json.loads((ROOT / "packaging/runtime-windows.json").read_text())
     for entry in manifest:
         path = DOWNLOADS / entry["name"]
         assert hashlib.sha256(path.read_bytes()).hexdigest() == entry["sha256"], path.name
@@ -31,10 +35,10 @@ def main():
     pth = next(runtime.glob("python*._pth"))
     python_zip = next(runtime.glob("python3*.zip"))
     pth.write_text(f"{python_zip.name}\n.\n..\nLib/site-packages\nimport site\n", encoding="utf-8")
-    shutil.copytree(ROOT / "price_lens", OUT / "price_lens", dirs_exist_ok=True,
-                    ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
-    for name in ("run-windows.bat", "selftest-windows.bat", "windows-selftest.py", "README-WINDOWS.md", "THIRD_PARTY.md", "VERIFICATION.md"):
+    stage_application(OUT)
+    for name in ("run-windows.bat", "selftest-windows.bat", "windows-selftest.py"):
         shutil.copy2(ROOT / name, OUT / name)
+    shutil.copy2(ROOT / "packaging/icon.ico", OUT / "classic-price-lens.ico")
     (OUT / "bin").mkdir(exist_ok=True)
     if READER.is_file():
         shutil.copy2(READER, OUT / "bin/classic-screen-reader.exe")
@@ -42,30 +46,14 @@ def main():
         shutil.copy2(toolchain / "x86_64-w64-mingw32/bin/libunwind.dll", OUT / "bin/libunwind.dll")
     else:
         print("Runtime staged; Windows reader build still pending")
-    fixture_dir = ROOT / "vendor/minerva/samples"
-    # Keep the tiny upstream OCR fixtures for the offline self-test, with notices.
-    for category, names in {"player-shop": ["gems-and-ores", "live-greater-chaos-and-intermediate-scrolls", "equips-two-sold-out"],
-                            "item-tooltip": ["screw@60,20"]}.items():
-        destination = OUT / "vendor/minerva/samples" / category
-        destination.mkdir(parents=True, exist_ok=True)
-        for name in names:
-            for suffix in (".png", ".json"):
-                source = fixture_dir / category / (name + suffix)
-                if source.exists():
-                    shutil.copy2(source, destination / source.name)
-    selftest = OUT / "selftest-data"
-    selftest.mkdir(exist_ok=True)
-    for name in ("gems-and-ores.png", "gems-and-ores.json"):
-        shutil.copy2(fixture_dir / "player-shop" / name, selftest / name)
-    shutil.copytree(ROOT / "tests", OUT / "tests", dirs_exist_ok=True,
-                    ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    stage_notices(OUT)
     licenses = OUT / "licenses"
-    licenses.mkdir(exist_ok=True)
-    shutil.copy2(ROOT / "vendor/minerva/LICENSE", licenses / "MINERVA-LICENSE.txt")
-    shutil.copy2(ROOT / "vendor/minerva/crates/minerva-core/models/NOTICE.md", licenses / "OCR-MODEL-NOTICE.md")
     toolchain = ROOT / ".build-tools/llvm-mingw-20261020-ucrt-ubuntu-22.04-x86_64"
     shutil.copy2(toolchain / "LICENSE.TXT", licenses / "LLVM-MinGW-LICENSE.txt")
     (OUT / "runtime-sources.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    for path in list(OUT.rglob("__pycache__")):
+        shutil.rmtree(path)
+    assert_public_tree(OUT)
     print("Portable folder:", OUT)
     print("Files:", sum(1 for path in OUT.rglob("*") if path.is_file()))
 

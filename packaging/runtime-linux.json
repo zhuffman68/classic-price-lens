@@ -1,0 +1,32 @@
+[
+  {
+    "name": "cpython-3.14.9+20261021-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz",
+    "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261021/cpython-3.14.9%2B20261021-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz",
+    "sha256": "561e91c1cadf30e84aec94d1917384ae3267e5f3e6e135e51fd1578bb19f4064"
+  },
+  {
+    "name": "shiboken6-6.12.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+    "url": "https://files.pythonhosted.org/packages/49/c2/a04fa003b4360e99d8e3fc2829abacf37396ace63ea1cd616402209ec7c6/shiboken6-6.12.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+    "sha256": "3bde565bb0890044b5c7f63808adddede5abc241e9395a2bfed61919884d6240"
+  },
+  {
+    "name": "pyside6_essentials-6.12.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+    "url": "https://files.pythonhosted.org/packages/7b/3c/7597d8dcb36aa8315427635ec6ec9d850ffbad4ce78b9118ac854889f2d3/pyside6_essentials-6.12.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+    "sha256": "16f4b5e41daf49235ae048458243da9efe5f3d8040f9cc5aa454ce69893d3bd9"
+  },
+  {
+    "name": "pyside6_addons-6.12.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+    "url": "https://files.pythonhosted.org/packages/ff/3e/0d6c5934de575286ac0699a701d4155048185035b8da0ee78d57a38bc7ef/pyside6_addons-6.12.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+    "sha256": "4ab38c0017f0453671a9313d3a53ca1c0e378924f54b07e596bcea94a9642391"
+  },
+  {
+    "name": "pyside6-6.12.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+    "url": "https://files.pythonhosted.org/packages/2f/53/db0cabed1e70d0bc4666b8cbc2611b72bff2f9d2c4813820182621a8c6ee/pyside6-6.12.0-cp310-abi3-manylinux_2_34_x86_64.whl",
+    "sha256": "d13ed4d0053cc20f3e4e0fdbf12790a9b7f958d7e22c0843411ecfa8c799e2a9"
+  },
+  {
+    "name": "dbus_next-0.2.3-py3-none-any.whl",
+    "url": "https://files.pythonhosted.org/packages/d2/fc/c0a3f4c4eaa5a22fbef91713474666e13d0ea2a69c84532579490a9f2cc8/dbus_next-0.2.3-py3-none-any.whl",
+    "sha256": "58948f9aff9db08316734c0be2a120f6dc502124d9642f55e90ac82ffb16a18b"
+  }
+]

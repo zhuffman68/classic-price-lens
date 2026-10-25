@@ -1,0 +1,5 @@
+{
+  "name": "rust-std-1.98.1-x86_64-unknown-linux-musl.tar.xz",
+  "url": "https://static.rust-lang.org/dist/rust-std-1.98.1-x86_64-unknown-linux-musl.tar.xz",
+  "sha256": "bd9f35880de21dab0e387e84009c00001ae7836a4ba565cb16823f13f75f325f"
+}

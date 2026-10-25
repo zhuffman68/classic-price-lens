@@ -4,23 +4,39 @@ A screen-only market-price companion for **MapleStory Classic World**.
 
 It reads visible player-shop listings from OS screenshots, looks up a market reference, and draws a small item name and price beside each row in an independent, transparent, click-through window. A separate control panel shows the details. You open shops and scroll yourself.
 
-## Windows download
+## Install
 
-Get the unencrypted portable ZIP from [GitHub Releases](https://github.com/zhuffman68/classic-price-lens/releases/tag/v0.1.0). Extract it completely and run `run-windows.bat`. Python, Qt and the OCR reader are included.
+Download an unencrypted installer/package from [GitHub Releases](https://github.com/zhuffman68/classic-price-lens/releases). **Python, Qt and the OCR reader are included.** Python, Rust, Minerva, an AI account and API keys are not prerequisites for installed builds.
 
-Requires Windows 10/11 x64, about 600 MB of free space, and internet for price updates. Select the monitor containing Classic World. Inventory/equipment tooltip prices are enabled by default; shop labels take priority over inventory labels while pointing at a store listing. [Windows instructions](README-WINDOWS.md).
+| System | Download | Installation |
+| --- | --- | --- |
+| Windows 10/11 x64 | `ClassicPriceLens-0.2.0-Windows-x64-Setup.exe` | Run the installer, then open **Classic Price Lens** from Start. Installs for the current user without administrator access. |
+| Arch / Manjaro x86_64 | `classic-price-lens-0.2.0-1-x86_64.pkg.tar.zst` | `sudo pacman -U ./classic-price-lens-0.2.0-1-x86_64.pkg.tar.zst` |
+| Debian 12+ / Ubuntu 22.04+ amd64 | `classic-price-lens_0.2.0-1_amd64.deb` | `sudo apt install ./classic-price-lens_0.2.0-1_amd64.deb` |
 
-The Windows binaries and all 47 tests pass under Wine. Live Windows capture and alignment still need a Windows playtest; this is a preview build.
+Prerequisites: a supported 64-bit desktop system, about **1 GB free space** including the download, and internet for market-price updates. Linux package managers install the OS library dependencies. Wayland requires PipeWire, XWayland, and a working screen-sharing portal backend matching the desktop, such as `xdg-desktop-portal-kde` or `xdg-desktop-portal-gnome`. KDE Plasma and GNOME desktop installations normally provide one. No service, driver or login startup task is added.
 
-## Run on Linux
+On Linux, open **Classic Price Lens** from the application menu or run `classic-price-lens`. On Windows, use the Start-menu shortcut. Select the monitor containing Classic World and approve the OS screen-sharing picker when shown. Inventory/equipment tooltip prices start enabled. [Windows details and portable alternative](README-WINDOWS.md).
 
-Complete the [source setup](#build--other-systems), then start the app from the project directory:
+The single capture button changes between **Start**, **Pause** and **Resume**. It stays gray until a valid monitor is selected, and shows **Starting…** until frames arrive. The selected monitor is remembered. Pause hides the overlay and stops OCR/price refreshes; Resume reuses the same sharing session, avoiding another sharing picker. Supported capture backends reduce their frame rate while paused.
+
+Use **Hotkey…** to enable/disable the global shortcut and choose a key or key combination. Windows and X11 default to **Ctrl+Alt+P**. Wayland uses the desktop's shortcut chooser, requested through that button; after the desktop confirms a binding it is remembered. On older Wayland desktops without the GlobalShortcuts portal, create a system keyboard shortcut running `classic-price-lens --toggle`. Hotkeys use OS registration, never a keyboard hook or game attachment.
+
+For an offline installation check on Linux:
 
 ```bash
-./run.sh --capture
+classic-price-lens --self-test
 ```
 
-Choose the monitor containing the game in the control panel. In KDE's screen-sharing picker, share that monitor or the full workspace; full-workspace frames are cropped locally to the selected monitor. Only one OS sharing session stays open, and the control panel can reuse it across restarts. Closing the panel normally ends sharing and its helpers. Minimize the panel to leave just the labels.
+This reads a bundled test image and checks the separate overlay process, without capturing a desktop. Installed builds support `--version`, `--toggle` and `--quit`; a second normal launch activates the existing panel. Windows installation/upgrade/removal controls only the app's own local IPC connection. Close an older portable copy before switching to the installed version. User settings and cached prices are kept during upgrades and removal.
+
+Uninstall through **Settings → Apps** on Windows, `sudo pacman -R classic-price-lens` on Arch/Manjaro, or `sudo apt remove classic-price-lens` on Debian/Ubuntu.
+
+Linux packages are checked in isolated Debian 12 and Ubuntu 22.04 filesystems and with pacman. Windows install, upgrade, uninstall and offline checks run under Wine; live native Windows capture, alignment and mixed-DPI behavior still need a Windows playtest. See [VERIFICATION.md](VERIFICATION.md) for the exact validation boundary.
+
+## Use
+
+In KDE's screen-sharing picker, share the selected monitor or the full workspace; full-workspace frames are cropped locally to the selected monitor. Only one OS sharing session stays open, and the control panel can reuse it across UI handoffs. Closing the panel normally ends sharing and its helpers. Minimize the panel to leave just the labels.
 
 The streaming path reads new frames immediately, with bounded buffers and no queue of old screenshots. Prices already in the cache appear without network access. A first lookup for an unseen item still depends on the provider's response time. The panel displays the measured reading delay separately from price age.
 
@@ -56,7 +72,7 @@ On KDE Wayland, labels use a separate **XWayland** window because ordinary Wayla
 
 Resource controls: frames use local uncompressed RGBA instead of PNG encode/decode, local frame buffers provide backpressure, unchanged shop pixels skip OCR, known shops are read from a small capture region, and a moved shop triggers a full search immediately. The UI rebuilds item cards only when their content changes or ages tick. Rust/OCR uses at most two worker threads; network requests are deduplicated and time-limited. SQLite connections close after each operation. No full-market polling at the screen-reading rate.
 
-The cache uses Qt's standard per-user cache directory. On Linux, the default is typically `~/.cache/LocalTools/Classic Price Lens/prices.sqlite`. `--cache /path/prices.sqlite` selects another location.
+The cache and bounded capture log use Qt's standard per-user cache directory. On Linux, the default is typically `~/.cache/LocalTools/Classic Price Lens/`. `--cache /path/prices.sqlite` selects another price-cache location. Installed files remain separate from settings, logs and prices; normal use does not require administrator access.
 
 ## Build / other systems
 
@@ -72,7 +88,7 @@ python -m pip install -r requirements.txt
 
 The reader uses Minerva's MIT headless core, pinned at `7e1aa7d418fb255bd66eb4dce848fc9eb305cd81`. `setup.sh` clones this revision if missing and builds the OCR helper and headless core. Rust build concurrency is limited to two jobs. The OCR model is bundled by upstream; see [THIRD_PARTY.md](THIRD_PARTY.md).
 
-For a Windows source build, run `setup-windows.ps1` followed by `run-windows.bat`. The [portable Windows build](README-WINDOWS.md) includes the runtime and OCR executable and does not require build tools. Windows binaries are tested under Wine; native Windows capture, alignment and mixed-DPI behavior still require validation.
+For a Windows source build, run `setup-windows.ps1` followed by `run-windows.bat`. To build the native installer/package formats, see [packaging/README.md](packaging/README.md).
 
 macOS remains untested. The intended capture path uses Qt's OS screen capture through the same local helper (`python -m price_lens --capture`), with screen-recording permission on macOS. KDE/Spectacle and XWayland are Linux-specific adapters.
 

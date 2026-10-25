@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Classic Price Lens
+GenericName=Classic World market overlay
+Comment=Show Classic World market prices beside visible items
+Exec=classic-price-lens
+Icon=io.github.zhuffman68.ClassicPriceLens
+Terminal=false
+Categories=Game;
+StartupNotify=true
+StartupWMClass=classic-price-lens

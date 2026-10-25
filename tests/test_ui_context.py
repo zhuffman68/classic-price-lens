@@ -5,9 +5,9 @@ import time
 import unittest
 from unittest.mock import patch
 
-from PySide6.QtCore import QObject, QRect, Signal
-from PySide6.QtGui import QImage
-from PySide6.QtWidgets import QApplication, QPushButton
+from PySide6.QtCore import QCoreApplication, QEvent, QObject, QRect, QTimer, Signal
+from PySide6.QtGui import QImage, QKeySequence
+from PySide6.QtWidgets import QApplication, QDialog, QKeySequenceEdit, QPushButton
 
 from price_lens.domain import Catalog
 from price_lens.ui import LensWindow
@@ -40,6 +40,15 @@ class FakeReader(QObject):
         self.shop_context = QRect(300, 200, 240, 300)
         self.latest_latency_ms = 30
         self.image_sequence = 0
+        self.last_frame = time.monotonic()
+        self.starts = 0
+        self.pauses = []
+
+    def start(self, *args):
+        self.starts += 1
+
+    def pause(self, keep_stream=False):
+        self.pauses.append(keep_stream)
 
     def close(self, keep_stream=False):
         pass
@@ -53,12 +62,13 @@ class FakeService(QObject):
 
     def __init__(self, path, parent=None):
         super().__init__(parent)
+        self.requests = []
 
     def start(self):
         pass
 
     def request(self, item, ttl):
-        pass
+        self.requests.append(item.game_id)
 
     def close(self):
         pass
@@ -75,6 +85,20 @@ class FakeSettings:
         self.values[key] = value
 
 
+class FakeHotkeys(QObject):
+    activated = Signal()
+    changed = Signal(str)
+    status = Signal(str)
+    portal = False
+
+    def start(self, text):
+        self.changed.emit(text)
+        return True
+
+    def close(self):
+        pass
+
+
 class ContextUiTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -84,10 +108,11 @@ class ContextUiTests(unittest.TestCase):
     def setUp(self):
         self.patchers = [patch("price_lens.ui." + name, replacement) for name, replacement in
                          [("Overlay", FakeOverlay), ("PixelReader", FakeReader),
-                          ("PriceService", FakeService), ("QSettings", FakeSettings)]]
+                          ("PriceService", FakeService), ("QSettings", FakeSettings), ("HotkeyManager", FakeHotkeys)]]
         for patcher in self.patchers:
             patcher.start()
         self.window = LensWindow(Path.cwd(), Path("unused-cache"))
+        self.window.monitor.setCurrentIndex(1)
         self.window.catalog = Catalog({"items": [{"id": 1, "name": "Example Hat"}], "scrolls": []})
         self.window.mode = "live"
         self.window.last_screen = time.time()
@@ -95,6 +120,7 @@ class ContextUiTests(unittest.TestCase):
     def tearDown(self):
         self.window.close()
         self.window.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
         self.app.processEvents()
         for patcher in reversed(self.patchers):
             patcher.stop()
@@ -135,3 +161,64 @@ class ContextUiTests(unittest.TestCase):
         self.window.errors[999] = "HTTP Error 400"
         self.window.on_reading(self.reading(shop_hover=True))
         self.assertNotIn("400", self.window.status_label.text())
+
+    def test_one_button_covers_monitor_selection_start_pause_and_resume(self):
+        fresh = LensWindow(Path.cwd(), Path("unused-cache"))
+        try:
+            self.assertIsNone(fresh.screen_index)
+            self.assertFalse(fresh.share.isEnabled())
+            self.assertFalse(fresh.crop_button.isEnabled())
+            fresh.toggle_capture()
+            self.assertEqual(fresh.reader.starts, 0)
+            fresh.monitor.setCurrentIndex(1)
+            self.assertTrue(fresh.share.isEnabled())
+            self.assertEqual(fresh.share.text(), "Start")
+            fresh.share.click()
+            self.assertEqual(fresh.reader.starts, 1)
+            self.assertFalse(fresh.share.isEnabled())
+            self.assertEqual(fresh.share.text(), "Starting…")
+            fresh.reader.image = QImage(800, 800, QImage.Format.Format_RGBA8888)
+            fresh.on_image(fresh.reader.image)
+            self.assertTrue(fresh.share.isEnabled())
+            self.assertEqual(fresh.share.text(), "Pause")
+            fresh.share.click()
+            self.assertEqual(fresh.mode, "paused")
+            self.assertEqual(fresh.share.text(), "Resume")
+            self.assertEqual(fresh.reader.pauses, [True])
+            self.assertEqual(fresh.overlay.rows, [])
+            fresh.share.click()
+            self.assertEqual(fresh.reader.starts, 2)
+        finally:
+            fresh.close()
+            fresh.deleteLater()
+            QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+    def test_hotkey_and_button_share_the_same_toggle(self):
+        self.window.hotkeys.activated.emit()
+        self.assertEqual(self.window.mode, "paused")
+        self.assertEqual(self.window.share.text(), "Resume")
+        self.window.hotkeys.activated.emit()
+        self.assertEqual(self.window.mode, "live")
+        self.assertEqual(self.window.reader.starts, 1)
+
+    def test_pause_ignores_pending_readings_and_does_not_refresh_prices(self):
+        self.window.on_reading(self.reading(shop_hover=True))
+        count = len(self.window.service.requests)
+        self.window.pause()
+        self.window.on_reading(self.reading(shop_hover=False))
+        self.window.tick()
+        self.assertIsNone(self.window.tooltip_result)
+        self.assertEqual(len(self.window.service.requests), count)
+        self.assertFalse(self.window.overlay.rows)
+
+    def test_key_combination_is_configurable_and_saved(self):
+        def edit():
+            dialog = self.window.findChild(QDialog)
+            editor = dialog.findChild(QKeySequenceEdit)
+            editor.setKeySequence(QKeySequence("Ctrl+Shift+F10"))
+            next(button for button in dialog.findChildren(QPushButton) if button.text() == "Set hotkey").click()
+            dialog.reject()
+        QTimer.singleShot(0, edit)
+        self.window.configure_hotkey()
+        self.assertEqual(self.window.settings.values["hotkey-sequence"], "Ctrl+Shift+F10")
+        self.assertTrue(self.window.settings.values["hotkey-enabled"])

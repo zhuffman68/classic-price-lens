@@ -20,11 +20,12 @@ class Overlay(QObject):
         environment = QProcessEnvironment.systemEnvironment()
         # Wayland does not let an ordinary client position a window globally.
         # XWayland lets our independent transparent window use desktop coordinates.
-        if sys.platform.startswith("linux") and os.environ.get("WAYLAND_DISPLAY") and os.environ.get("DISPLAY"):
+        if (sys.platform.startswith("linux") and os.environ.get("WAYLAND_DISPLAY") and os.environ.get("DISPLAY")
+                and os.environ.get("QT_QPA_PLATFORM") != "offscreen"):
             environment.insert("QT_QPA_PLATFORM", "xcb")
         self.process.setProcessEnvironment(environment)
         self.process.setWorkingDirectory(str(root))
-        self.process.start(sys.executable, ["-m", "price_lens.annotations"])
+        self.process.start(sys.executable, ["-B", "-m", "price_lens.annotations"])
 
     def read_error(self):
         self.last_error = (self.last_error + bytes(self.process.readAllStandardError()).decode(errors="replace"))[-3000:]

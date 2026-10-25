@@ -8,7 +8,7 @@ import sys
 import uuid
 from unittest.mock import patch
 
-from PySide6.QtCore import QRect
+from PySide6.QtCore import QCoreApplication, QEvent, QRect
 from PySide6.QtGui import QColor, QGuiApplication, QImage
 from PySide6.QtWidgets import QApplication
 
@@ -19,6 +19,10 @@ class FakeCapture:
     def __init__(self):
         self.active = False
         self.starts = 0
+        self.frame_rate = 10
+
+    def setMaximumFrameRate(self, value):
+        self.frame_rate = value
 
     def setScreen(self, screen):
         pass
@@ -69,9 +73,10 @@ class LocalFrameTransportTests(unittest.TestCase):
     def tearDown(self):
         self.client.stop(keep_session=True)
         self.app.processEvents()
-        self.server.idle.stop()
-        self.server.server.close()
+        self.server.close()
+        self.client.deleteLater()
         self.server.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
         self.app.processEvents()
         self.patcher.stop()
         self.directory.cleanup()
@@ -105,3 +110,19 @@ class LocalFrameTransportTests(unittest.TestCase):
         self.server.last_frame = 0
         self.server.on_frame(FakeFrame(self.image()))
         self.until(lambda: len(self.received) == 1)
+
+    def test_pause_resume_keeps_the_same_session_and_skips_frame_delivery(self):
+        self.client.set_paused(True)
+        self.until(lambda: len(self.server.paused_clients) == 1)
+        self.assertEqual(self.fake_capture.frame_rate, 1)
+        self.server.on_frame(FakeFrame(self.image()))
+        self.app.processEvents()
+        self.assertEqual(self.received, [])
+        self.assertTrue(self.fake_capture.isActive())
+        self.assertFalse(self.server.idle.isActive())
+        self.client.start(QRect(10, 0, 10, 6), QRect(0, 0, 30, 6))
+        self.until(lambda: not self.server.paused_clients)
+        self.server.on_frame(FakeFrame(self.image()))
+        self.until(lambda: len(self.received) == 1)
+        self.assertEqual(self.fake_capture.frame_rate, 10)
+        self.assertEqual(self.fake_capture.starts, 1)

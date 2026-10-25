@@ -1,0 +1,27 @@
+[
+  {
+    "name": "pyside6-6.12.0-cp310-abi3-win_amd64.whl",
+    "url": "https://files.pythonhosted.org/packages/a1/da/8e8514fc29ea916c3cd71a524480b77409e19ed12d709e8a5d73be089b81/pyside6-6.12.0-cp310-abi3-win_amd64.whl",
+    "sha256": "31a8d2893f2f28ab483b1534dde0438f27af6e234593de30425cb4729052d8f8"
+  },
+  {
+    "name": "pyside6_essentials-6.12.0-cp310-abi3-win_amd64.whl",
+    "url": "https://files.pythonhosted.org/packages/03/61/9a7e32a37b224f68506785bfb0f288d516098ec71681782d72b695a6c95d/pyside6_essentials-6.12.0-cp310-abi3-win_amd64.whl",
+    "sha256": "c9a95102aa23c1f86516a30d5a9be37552d324eee7e567eb7508973f1218cb42"
+  },
+  {
+    "name": "pyside6_addons-6.12.0-cp310-abi3-win_amd64.whl",
+    "url": "https://files.pythonhosted.org/packages/02/41/ba3d52fe2acd942ebf71eb02b3bdf0897f7f6f4ce8f52289cb50228e48d3/pyside6_addons-6.12.0-cp310-abi3-win_amd64.whl",
+    "sha256": "98d8d62010da6605344cee83e5c96fb846170a1f2d924523f10f5d92078b02b0"
+  },
+  {
+    "name": "shiboken6-6.12.0-cp310-abi3-win_amd64.whl",
+    "url": "https://files.pythonhosted.org/packages/2a/b6/bee97e7a2edeab72aafabb46ee5adc939790a638d107860b4cad7a20e407/shiboken6-6.12.0-cp310-abi3-win_amd64.whl",
+    "sha256": "a1906cb8116869178c64b6bab52623bbc8b4ceed7b30bfc3c9aa0f6e67f6438e"
+  },
+  {
+    "name": "python-3.14.9-embed-amd64.zip",
+    "url": "https://www.python.org/ftp/python/3.14.9/python-3.14.9-embed-amd64.zip",
+    "sha256": "3c01d7cfc666f746a6f064f60fb2156ab0ec464d3d738ab796371a46a9bb24a2"
+  }
+]

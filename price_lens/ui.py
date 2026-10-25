@@ -3,10 +3,10 @@ import sys
 import time
 
 from PySide6.QtCore import QPoint, QRect, Qt, QTimer, QSettings
-from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPixmap
+from PySide6.QtGui import QColor, QImage, QKeySequence, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
-    QFrame, QHBoxLayout, QLabel, QMainWindow, QMessageBox, QPushButton,
+    QFrame, QHBoxLayout, QKeySequenceEdit, QLabel, QMainWindow, QMessageBox, QPushButton,
     QScrollArea, QVBoxLayout, QWidget,
 )
 
@@ -14,6 +14,7 @@ from .capture import PixelReader, pointer_in_shop
 from .domain import DEFAULT_TTL, age_text, compare
 from .service import PriceService
 from .overlay import Overlay
+from .hotkeys import HotkeyManager, DEFAULT_HOTKEY, parse_shortcut
 
 COLORS = {"green": "#86ceac", "red": "#ed9394", "amber": "#e4bd7b", "blue": "#9ebde3", "muted": "#98a3b1"}
 
@@ -89,10 +90,23 @@ class LensWindow(QMainWindow):
         self.overlay = Overlay(root, self)
         self.labels_enabled = True
         self.screens = sorted(QApplication.screens(), key=lambda screen: screen.geometry().x())
-        self.screen_index = len(self.screens) // 2
+        self.screen_index = None
+        self.capture_starting = False
+        self.auto_capture_pending = auto_capture
         self.capture_kind = "portal"
         self.keep_capture = False
         self.settings = QSettings("LocalTools", "Classic Price Lens")
+        self.hotkey_sequence = self.settings.value("hotkey-sequence", DEFAULT_HOTKEY)
+        self.hotkey_description = self.settings.value("hotkey-description", "")
+        self.hotkey_status = ""
+        self.hotkey_dialog_open = False
+        self.hotkeys = HotkeyManager(self)
+        # A Wayland portal may show a consent dialog. Let users request that once
+        # through Hotkey… instead of opening two OS dialogs during first capture.
+        self.hotkey_enabled = self.settings.value("hotkey-enabled", not self.hotkeys.portal, type=bool)
+        self.hotkeys.activated.connect(self.on_hotkey)
+        self.hotkeys.changed.connect(self.on_hotkey_changed)
+        self.hotkeys.status.connect(self.on_hotkey_status)
         self.hover_enabled = self.settings.value("tooltip-prices", True, type=bool)
         self.tooltip_result = None
         self.service = PriceService(cache_path, self)
@@ -112,6 +126,9 @@ class LensWindow(QMainWindow):
         layout.setContentsMargins(18, 18, 18, 12)
         layout.setSpacing(12)
         heading = QHBoxLayout()
+        mark = QLabel()
+        mark.setPixmap(QPixmap(str(root / "price_lens/resources/icon.png")).scaled(24, 24, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+        heading.addWidget(mark)
         heading.addWidget(label("Classic Price Lens", "font-size: 21px; font-weight: 650; color: #f1e6d5"))
         heading.addStretch()
         pin = QCheckBox("Pin")
@@ -122,15 +139,17 @@ class LensWindow(QMainWindow):
         layout.addWidget(label("CLASSIC WORLD  ·  SCREEN PIXELS ONLY", "color: #c7a978; font-size: 10px; letter-spacing: 1px"))
 
         controls = QHBoxLayout()
-        self.share = QPushButton("Start capture" if sys.platform == "win32" else "Share screen / window")
-        self.share.clicked.connect(self.start_capture)
+        self.share = QPushButton("Start")
+        self.share.setEnabled(False)
+        self.share.clicked.connect(self.toggle_capture)
         controls.addWidget(self.share)
-        pause = QPushButton("Pause")
-        pause.clicked.connect(self.pause)
-        controls.addWidget(pause)
-        crop = QPushButton("Crop…")
-        crop.clicked.connect(self.crop)
-        controls.addWidget(crop)
+        self.hotkey_button = QPushButton("Hotkey…")
+        self.hotkey_button.clicked.connect(self.configure_hotkey)
+        controls.addWidget(self.hotkey_button)
+        self.crop_button = QPushButton("Crop…")
+        self.crop_button.setEnabled(False)
+        self.crop_button.clicked.connect(self.crop)
+        controls.addWidget(self.crop_button)
         layout.addLayout(controls)
         display_controls = QHBoxLayout()
         self.labels_check = QCheckBox("Prices beside items")
@@ -138,15 +157,19 @@ class LensWindow(QMainWindow):
         self.labels_check.toggled.connect(lambda enabled: (setattr(self, "labels_enabled", enabled), self.render()))
         display_controls.addWidget(self.labels_check)
         self.monitor = QComboBox()
-        for screen in self.screens:
-            self.monitor.addItem(screen.name())
-        self.monitor.setCurrentIndex(self.screen_index)
+        self.monitor.addItem("Select monitor…", None)
+        selected = self.settings.value("monitor-name", "")
+        for index, screen in enumerate(self.screens):
+            self.monitor.addItem(screen.name(), index)
+            if selected and selected == screen.name():
+                self.screen_index = index
+        self.monitor.setCurrentIndex(self.screen_index + 1 if self.screen_index is not None else 0)
         self.monitor.currentIndexChanged.connect(self.set_screen)
         display_controls.addWidget(self.monitor)
         if shutil.which("spectacle"):
-            kde = QPushButton("KDE capture")
-            kde.clicked.connect(self.start_kde)
-            display_controls.addWidget(kde)
+            self.kde_button = QPushButton("KDE capture")
+            self.kde_button.clicked.connect(self.start_kde)
+            display_controls.addWidget(self.kde_button)
         layout.addLayout(display_controls)
         self.hover_check = QCheckBox("Inventory / equipment tooltip prices")
         self.hover_check.setChecked(self.hover_enabled)
@@ -165,7 +188,7 @@ class LensWindow(QMainWindow):
         ttl.currentIndexChanged.connect(lambda index: self.set_ttl(ttl.itemData(index)))
         second.addWidget(ttl)
         layout.addLayout(second)
-        self.capture_info = label("Choose a screen/window or open a screenshot", "color: #a6b1bf; font-size: 11px", True)
+        self.capture_info = label("Select a monitor to enable reading, or open a screenshot", "color: #a6b1bf; font-size: 11px", True)
         layout.addWidget(self.capture_info)
         self.summary = label("Loading Classic World item names…", "font-size: 12px; color: #dde1e7", True)
         layout.addWidget(self.summary)
@@ -192,9 +215,10 @@ class LensWindow(QMainWindow):
         self.setCentralWidget(body)
         self.setStyleSheet("""
             QMainWindow, QWidget { background: #171c25; color: #dce1e8; font-family: 'Noto Sans', sans-serif; font-size: 12px; }
-            QPushButton, QComboBox { background: #252d3b; border: 1px solid #354052; border-radius: 6px; padding: 7px 9px; }
+            QPushButton, QComboBox, QKeySequenceEdit { background: #252d3b; border: 1px solid #354052; border-radius: 6px; padding: 7px 9px; }
             QPushButton:hover { background: #323c4c; border-color: #927b58; }
             QPushButton:pressed { background: #404655; }
+            QPushButton:disabled { background: #202630; border-color: #2c333e; color: #626c7a; }
             QCheckBox { color: #aab4c2; }
             QScrollArea, QScrollArea > QWidget > QWidget { background: transparent; }
             QFrame#card { background: #202734; border: 1px solid #303b4b; border-radius: 9px; }
@@ -211,8 +235,102 @@ class LensWindow(QMainWindow):
             QTimer.singleShot(300, lambda: self.load_screenshot(snapshot))
         elif kde_capture:
             QTimer.singleShot(500, self.start_kde)
-        elif auto_capture:
+        elif auto_capture and self.screen_index is not None:
             QTimer.singleShot(500, self.start_capture)
+        self.update_capture_controls()
+        QApplication.instance().screenAdded.connect(self.refresh_monitors)
+        QApplication.instance().screenRemoved.connect(self.refresh_monitors)
+        if QApplication.platformName() != "offscreen":
+            QTimer.singleShot(700, self.initialize_hotkey)
+
+    def initialize_hotkey(self):
+        if self.hotkey_enabled:
+            self.hotkeys.start(self.hotkey_sequence)
+
+    def on_hotkey(self):
+        if not self.hotkey_dialog_open:
+            self.toggle_capture()
+
+    def on_hotkey_changed(self, description):
+        self.hotkey_description = description
+        self.hotkey_status = ""
+        self.settings.setValue("hotkey-description", description)
+        self.hotkey_button.setToolTip("Pause / resume: " + description)
+
+    def on_hotkey_status(self, message):
+        self.hotkey_status = message
+        self.hotkey_button.setToolTip(message)
+        self.status_label.setText(message)
+
+    def configure_hotkey(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Keyboard shortcut")
+        dialog.setMinimumWidth(360)
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(label("Toggle reading and price labels while any window is focused.", wrap=True))
+        enabled = QCheckBox("Enable global hotkey")
+        enabled.setChecked(self.hotkey_enabled)
+        layout.addWidget(enabled)
+        details = label(self.hotkey_status or self.hotkey_description or "Default: " + self.hotkey_sequence, wrap=True)
+        layout.addWidget(details)
+        self.hotkey_dialog_open = True
+        if not self.hotkeys.portal:
+            # Let the key editor receive a chord already registered by this app.
+            self.hotkeys.close()
+        def set_enabled(checked):
+            self.hotkey_enabled = checked
+            self.settings.setValue("hotkey-enabled", checked)
+            if not checked:
+                self.hotkeys.close()
+                details.setText("Hotkey disabled")
+            elif self.hotkeys.portal:
+                self.initialize_hotkey()
+        enabled.toggled.connect(set_enabled)
+        if self.hotkeys.portal:
+            choose = QPushButton("Choose shortcut in desktop settings…")
+            def choose_shortcut():
+                enabled.setChecked(True)
+                set_enabled(True)
+                self.hotkeys.configure()
+            choose.clicked.connect(choose_shortcut)
+            layout.addWidget(choose)
+            layout.addWidget(label("The desktop confirms and saves the key combination. On older desktops, assign classic-price-lens --toggle in system keyboard shortcuts.", wrap=True))
+        else:
+            editor = QKeySequenceEdit(QKeySequence(self.hotkey_sequence))
+            editor.setMaximumSequenceLength(1)
+            layout.addWidget(editor)
+            apply = QPushButton("Set hotkey")
+            def apply_shortcut():
+                try:
+                    spec = parse_shortcut(editor.keySequence().toString(QKeySequence.SequenceFormat.PortableText))
+                except ValueError as error:
+                    details.setText(str(error))
+                    return
+                enabled.setChecked(True)
+                set_enabled(True)
+                if self.hotkeys.start(spec.text):
+                    self.hotkey_sequence = spec.text
+                    self.settings.setValue("hotkey-sequence", spec.text)
+                    details.setText("Shortcut saved: " + spec.text)
+                else:
+                    details.setText(self.hotkey_status)
+            apply.clicked.connect(apply_shortcut)
+            layout.addWidget(apply)
+            layout.addWidget(label("Press a key combination, then Set hotkey. Function keys can also be used alone.", wrap=True))
+        self.hotkeys.changed.connect(details.setText)
+        self.hotkeys.status.connect(details.setText)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        try:
+            dialog.exec()
+        finally:
+            self.hotkeys.changed.disconnect(details.setText)
+            self.hotkeys.status.disconnect(details.setText)
+            self.hotkey_dialog_open = False
+            if self.hotkey_enabled and not self.hotkeys.portal:
+                self.initialize_hotkey()
+            dialog.deleteLater()
 
     def pin(self, checked):
         self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, checked)
@@ -220,15 +338,43 @@ class LensWindow(QMainWindow):
 
     def show_status(self, message):
         self.status_label.setText(message)
-        if message.startswith("Screen sharing stopped") and self.mode == "live":
+        if message.startswith(("Screen sharing stopped", "OS capture:")) and self.mode == "live":
             self.mode = "paused"
+            self.capture_starting = False
+            self.reader.pause(keep_stream=True)
+        self.update_capture_controls()
+
+    def update_capture_controls(self):
+        valid = self.screen_index is not None and 0 <= self.screen_index < len(self.screens)
+        self.share.setEnabled(valid and not self.capture_starting)
+        self.share.setText("Starting…" if self.capture_starting else "Pause" if self.mode == "live" else "Resume" if self.mode == "paused" else "Start")
+        self.share.setToolTip("Select a monitor first" if not valid else "Toggle reading and the overlay")
+        self.crop_button.setEnabled(not self.reader.image.isNull() and self.mode in ("live", "screenshot"))
+        if hasattr(self, "kde_button"):
+            self.kde_button.setEnabled(valid and not self.capture_starting)
+
+    def toggle_capture(self):
+        if self.screen_index is None or self.capture_starting:
+            return
+        if self.mode == "live":
+            self.pause()
+        elif self.capture_kind == "kde":
+            self.start_kde()
+        else:
+            self.start_capture()
 
     def start_capture(self):
+        if self.screen_index is None:
+            return
+        resume = self.mode == "paused"
+        self.auto_capture_pending = False
+        self.capture_starting = True
         self.mode = "live"
         self.capture_kind = "portal"
         self.rows = []
         self.last_screen = 0
-        self.reader.crop = None
+        if not resume:
+            self.reader.crop = None
         self.reader.image = QImage()
         desktop = QRect()
         for screen in self.screens:
@@ -237,20 +383,53 @@ class LensWindow(QMainWindow):
         self.render()
 
     def set_screen(self, index):
-        self.screen_index = index
+        previous = self.screen_index
+        self.screen_index = self.monitor.itemData(index)
+        if self.screen_index != previous:
+            self.reader.crop = None
+        if self.screen_index is None:
+            self.settings.setValue("monitor-name", "")
+            if self.mode == "live":
+                self.pause()
+            self.update_capture_controls()
+            return
+        self.settings.setValue("monitor-name", self.screens[self.screen_index].name())
         if self.mode == "live" and self.capture_kind == "kde":
             self.start_kde()
         elif self.mode == "live":
             self.start_capture()
+        elif self.auto_capture_pending:
+            self.start_capture()
         self.render()
 
+    def refresh_monitors(self, *args):
+        selected = self.monitor.currentText() if self.screen_index is not None else ""
+        self.screens = sorted(QApplication.screens(), key=lambda screen: screen.geometry().x())
+        self.monitor.blockSignals(True)
+        self.monitor.clear()
+        self.monitor.addItem("Select monitor…", None)
+        chosen = 0
+        for index, screen in enumerate(self.screens):
+            self.monitor.addItem(screen.name(), index)
+            if screen.name() == selected:
+                chosen = index + 1
+        self.monitor.setCurrentIndex(chosen)
+        self.monitor.blockSignals(False)
+        self.set_screen(chosen)
+
     def start_kde(self):
+        if self.screen_index is None:
+            return
+        resume = self.mode == "paused"
+        self.auto_capture_pending = False
+        self.capture_starting = True
         self.mode = "live"
         self.capture_kind = "kde"
         self.rows = []
         self.last_screen = 0
         self.reader.image = QImage()
-        self.reader.crop = None
+        if not resume:
+            self.reader.crop = None
         desktop = QRect()
         for screen in self.screens:
             desktop = desktop.united(screen.geometry())
@@ -258,9 +437,10 @@ class LensWindow(QMainWindow):
         self.render()
 
     def pause(self):
-        self.reader.pause()
+        self.reader.pause(keep_stream=self.capture_kind == "portal")
         self.mode = "paused"
-        self.show_status("Paused • last captured rows are for reference")
+        self.capture_starting = False
+        self.show_status("Paused • labels hidden; sharing session kept for quick resume")
         self.render()
 
     def set_hover(self, enabled):
@@ -275,6 +455,9 @@ class LensWindow(QMainWindow):
         self.render()
 
     def on_pointer(self, x, y):
+        if self.screen_index is None:
+            self.reader.pointer = None
+            return
         geometry = self.screens[self.screen_index].geometry()
         image = self.reader.image
         if not self.hover_enabled or self.mode != "live" or image.isNull() or not geometry.contains(QPoint(x, y)):
@@ -294,9 +477,15 @@ class LensWindow(QMainWindow):
                 self.render()
 
     def on_image(self, image):
+        if self.mode == "paused":
+            return
+        self.capture_starting = False
         self.last_screen = time.time() - max(0, time.monotonic() - self.reader.last_frame)
+        self.update_capture_controls()
 
     def on_reading(self, result):
+        if self.mode == "paused":
+            return
         self.ocr_ms = result.get("atMs")
         rows = (result.get("shop") or {}).get("rows", [])
         tooltip = result.get("tooltip")
@@ -327,7 +516,7 @@ class LensWindow(QMainWindow):
         self.render()
 
     def request_prices(self):
-        if not self.catalog:
+        if not self.catalog or self.mode in ("paused", "idle"):
             return
         observations = self.rows + ([self.tooltip_result] if self.tooltip_result else [])
         for row in observations:
@@ -367,7 +556,8 @@ class LensWindow(QMainWindow):
 
     def tick(self):
         self.render()
-        self.request_prices()
+        if self.mode in ("live", "screenshot"):
+            self.request_prices()
 
     def set_ttl(self, value):
         self.ttl = value
@@ -377,6 +567,7 @@ class LensWindow(QMainWindow):
     def render(self):
         if not hasattr(self, "cards_layout"):
             return
+        self.update_capture_controls()
         now = time.time()
         screen_old = not self.last_screen or now - self.last_screen > 8
         if self.mode == "screenshot":
@@ -460,6 +651,9 @@ class LensWindow(QMainWindow):
         self.draw_labels(now, screen_old)
 
     def draw_labels(self, now, screen_old):
+        if self.screen_index is None:
+            self.overlay.update([0, 0, 1, 1], [], hover_enabled=False)
+            return
         geometry = self.screens[self.screen_index].geometry()
         annotations = []
         # Whole-screen pixels establish an unambiguous coordinate space. A shared
@@ -558,6 +752,7 @@ class LensWindow(QMainWindow):
 
     def closeEvent(self, event):
         self.timer.stop()
+        self.hotkeys.close()
         self.reader.close(keep_stream=self.keep_capture)
         self.service.close()
         self.overlay.close()
