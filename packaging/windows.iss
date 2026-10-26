@@ -1,5 +1,5 @@
 #ifndef AppVersion
-  #define AppVersion "0.4.1"
+  #define AppVersion "0.4.2"
 #endif
 #ifndef StageDir
   #define StageDir "..\dist\ClassicPriceLens-Windows-x64"

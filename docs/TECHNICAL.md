@@ -28,6 +28,10 @@ On KDE Wayland, labels use a separate **XWayland** window because ordinary Wayla
 
 Resource controls: frames use local uncompressed RGBA instead of PNG encode/decode, local frame buffers provide backpressure, unchanged shop pixels skip OCR, known shops are read from a small capture region, and a moved shop triggers a full search immediately. The UI rebuilds item cards only when their content changes or ages tick. Rust/OCR uses at most two worker threads; network requests are deduplicated and time-limited. SQLite connections close after each operation. No full-market polling at the screen-reading rate.
 
+In v0.4.2, a visible-item priority queue submits at most three running jobs and keeps at most 64 queued jobs. Missing/expired hovered items take the next available slot ahead of other visible items; queued requests from earlier shops are discarded. Provider completions return to the owning Qt thread before changing scheduler state. Old references stay visible with their original age and explicit queued/refreshing/retry status, while expired prices have no deal rating. Pausing or losing fresh screen/game-area context discards queued price work.
+
+Visible, well-supported references with recent reports can refresh 7.5–30 seconds before expiry, depending on the selected TTL and an item-specific stagger. Other responses retain the full TTL. A successful request resets only lookup age, never source-report age; repeated screen readings still share one request. Failed early checks may retry at expiry, then normal failures use the existing two-minute backoff. [ARCHITECTURE.md](../ARCHITECTURE.md) explains the complete flow and invariants.
+
 The cache and bounded capture log use Qt's standard per-user cache directory. On Linux, the default is typically `~/.cache/LocalTools/Classic Price Lens/`. `--cache /path/prices.sqlite` selects another price-cache location. Installed files remain separate from settings, logs and prices; normal use does not require administrator access.
 
 ## Build / other systems

@@ -1,6 +1,6 @@
 # Classic Price Lens for Windows
 
-1. Download **ClassicPriceLens-0.4.1-Windows-x64-Setup.exe** from [GitHub Releases](https://github.com/zhuffman68/classic-price-lens/releases).
+1. Download **ClassicPriceLens-0.4.2-Windows-x64-Setup.exe** from [GitHub Releases](https://github.com/zhuffman68/classic-price-lens/releases).
 2. Run it, then open **Classic Price Lens** from Start. Administrator access is not needed.
 3. Choose the display containing Classic World and click **Start reading**. Approve sharing if prompted.
 4. Keep the bottom status bar visible. The app finds the game area automatically. Open a shop or hover an inventory/equipment item to see meso references.

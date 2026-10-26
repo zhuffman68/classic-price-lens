@@ -66,17 +66,32 @@ class FakeService(QObject):
     quote_ready = Signal(int, object)
     error = Signal(int, str)
     identity_ready = Signal(object, object)
+    state_changed = Signal()
 
     def __init__(self, path, parent=None):
         super().__init__(parent)
         self.requests = []
         self.catalog_starts = 0
+        self.visible = []
+        self.hovered_id = None
+        self.states = {}
 
     def start(self):
         self.catalog_starts += 1
 
     def request(self, item, ttl):
         self.requests.append(item.game_id)
+
+    def observe(self, items, ttl, *, hovered_id=None, identities=(), hovered_identity=None):
+        self.visible = [item.game_id for item in items]
+        self.hovered_id = hovered_id
+        self.requests.extend(self.visible)
+
+    def clear_visible(self):
+        self.visible = []
+
+    def state_for(self, item_id):
+        return self.states.get(item_id, "")
 
     def close(self):
         pass
@@ -454,7 +469,42 @@ class ContextUiTests(unittest.TestCase):
             content = "\n".join(widget.text() for widget in self.window.cards.findChildren(QLabel))
             self.assertIn("Older reference", content)
             self.assertNotIn("below reference", content)
-            self.assertTrue(any("EXPIRED" in row["text"] for row in self.window.overlay.rows))
+            self.assertTrue(any("refresh needed" in row["text"] for row in self.window.overlay.rows))
+
+    def test_hovered_item_is_the_priority_even_when_shop_rows_are_present(self):
+        self.window.on_catalog(Catalog({"items": [{"id": 1, "name": "Example Hat"},
+                                                  {"id": 2, "name": "Other Hat"}], "scrolls": []}))
+        self.window.reader.pointer = (100, 100)
+        reading = self.reading(shop_hover=False)
+        reading["tooltip"]["found"]["name"] = "Other Hat"
+        self.window.on_reading(reading)
+        self.assertEqual(self.window.service.hovered_id, 2)
+        self.assertEqual(self.window.service.visible, [2, 1])
+
+    def test_refresh_progress_updates_cards_and_both_overlay_contexts(self):
+        self.window.reader.pointer = (100, 100)
+        self.window.on_reading(self.reading(shop_hover=False))
+        now = time.time()
+        self.window.on_quote(1, Quote(1, 1000, now - 1080, now, 20, "Test", "", "24h"))
+        self.window.service.states[1] = "refreshing"
+        self.window.service.state_changed.emit()
+        self.app.processEvents()
+        content = "\n".join(widget.text() for widget in self.window.cards.findChildren(QLabel))
+        self.assertIn("Refreshing market reference", content)
+        self.assertEqual(len(self.window.overlay.rows), 2)
+        for row in self.window.overlay.rows:
+            self.assertIn("18m old", row["text"])
+            self.assertIn("refreshing", row["text"])
+            self.assertNotEqual(row["color"], "#86ceac")
+        self.window.pause()
+        self.assertEqual(self.window.service.visible, [])
+
+    def test_recent_lookup_with_old_reports_explains_the_market_data_age(self):
+        self.window.on_reading(self.reading(shop_hover=True))
+        now = time.time()
+        self.window.on_quote(1, Quote(1, 1000, now, now - 90000, 20, "Test", "", "24h"))
+        self.assertIn("old market reports", self.window.overlay.rows[0]["text"])
+        self.assertNotIn("EXPIRED", self.window.overlay.rows[0]["text"])
 
     def test_hidden_labels_can_be_restored_without_reconnecting(self):
         self.window.on_reading(self.reading(shop_hover=True))

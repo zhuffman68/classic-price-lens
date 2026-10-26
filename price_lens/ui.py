@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 from .capture import PixelReader, pointer_in_shop
 from .domain import DEFAULT_TTL, WORLD, age_text, compare
 from .service import PriceService
+from .price_status import reference_status
 from .overlay import Overlay
 from .hotkeys import HotkeyManager, DEFAULT_HOTKEY, parse_shortcut
 from .ui_components import DisplayMap, display_labels, price_card
@@ -143,6 +144,7 @@ class LensWindow(QMainWindow):
         self.service.quote_ready.connect(self.on_quote)
         self.service.error.connect(self.on_error)
         self.service.identity_ready.connect(self.on_identity)
+        self.service.state_changed.connect(self.on_price_state, Qt.ConnectionType.QueuedConnection)
 
         body = QWidget()
         layout = QVBoxLayout(body)
@@ -326,7 +328,7 @@ class LensWindow(QMainWindow):
         self.ttl_combo.setCurrentIndex((300, 900, 1800, 3600).index(self.ttl))
         self.ttl_combo.currentIndexChanged.connect(lambda index: self.set_ttl(self.ttl_combo.itemData(index)))
         layout.addWidget(self.ttl_combo)
-        layout.addWidget(label("A checked price is reused during this interval. Pausing stops new price lookups. Cache age and the latest market report are shown separately.", "font-size: 11px; color: #a6b1bf", True))
+        layout.addWidget(label("Prices are reused for this interval. Visible references may refresh up to 30 seconds early. Pausing stops new lookups. Cache age and market-report age are shown separately.", "font-size: 11px; color: #a6b1bf", True))
         layout.addWidget(label("Troubleshooting", "font-size: 15px; font-weight: 650"))
         self.crop_button = QPushButton("Limit the reading area…")
         self.crop_button.clicked.connect(self.crop)
@@ -829,6 +831,7 @@ class LensWindow(QMainWindow):
             self.reader.pointer = point
             self.reader.image_sequence += 1
             if had_tooltip:
+                self.request_prices()
                 self.render()
 
     def on_image(self, image):
@@ -900,20 +903,46 @@ class LensWindow(QMainWindow):
         self.request_prices()
         self.render()
 
+    def prices_active(self):
+        return bool(self.catalog and self.mode in ("live", "screenshot")
+                    and (self.mode != "live" or self.last_screen and time.time() - self.last_screen <= 8)
+                    and (not self.reader.auto_active or self.reader.game_area is not None))
+
     def request_prices(self):
-        if not self.catalog or self.mode in ("paused", "idle"):
+        if not self.prices_active():
+            self.service.clear_visible()
             return
-        if self.reader.auto_active and self.reader.game_area is None:
-            return
-        observations = self.rows + ([self.tooltip_result] if self.tooltip_result else [])
+        observations = ([self.tooltip_result] if self.tooltip_result else []) + self.rows
+        items, identities = [], []
+        hovered_id = hovered_identity = None
+        pointer = self.reader.pointer
+        if pointer and self.reader.crop:
+            pointer = (pointer[0] - self.reader.crop.x(), pointer[1] - self.reader.crop.y())
         for row in observations:
+            if row.get("covered"):
+                continue
+            area = row.get("area") or {}
+            hovered = row is self.tooltip_result or bool(pointer and area and
+                      QRect(area["x"], area["y"], area["width"], area["height"]).contains(QPoint(*pointer)))
             item = self.catalog.resolve(row.get("name"), row.get("tier"))
             if item:
-                self.service.request(item, self.ttl)
+                items.append(item)
+                if hovered:
+                    hovered_id = item.game_id
             else:
                 candidates = self.catalog.candidates(row.get("name"), row.get("tier"))
                 if len(candidates) > 1:
-                    self.service.resolve_identity((row.get("name"), row.get("tier")), candidates, self.ttl)
+                    identity = (row.get("name"), row.get("tier"))
+                    identities.append((identity, candidates))
+                    if hovered:
+                        hovered_identity = identity
+        self.service.observe(items, self.ttl, hovered_id=hovered_id,
+                             identities=identities, hovered_identity=hovered_identity)
+
+    def on_price_state(self):
+        if not self.closing:
+            self.update_price_status()
+            self.render()
 
     def on_quote(self, item_id, quote):
         self.quotes[item_id] = quote
@@ -996,6 +1025,8 @@ class LensWindow(QMainWindow):
     def render(self):
         if not hasattr(self, "cards_layout"):
             return
+        if not self.prices_active():
+            self.service.clear_visible()
         self.update_capture_controls()
         now = time.time()
         screen_old = not self.last_screen or now - self.last_screen > 8
@@ -1018,7 +1049,10 @@ class LensWindow(QMainWindow):
         card_key = (repr(self.rows), repr(tooltip_content), repr(self.quotes), repr(self.errors),
                     self.mode, screen_old, self.capture_starting, self.catalog_loading,
                     self.catalog_error, id(self.catalog), self.ttl, int(now // 5), tuple(sorted(map(str, self.expanded_details))),
-                    tuple((key, quote.cache_valid(now, self.ttl), quote.fresh(now, self.ttl)) for key, quote in self.quotes.items()))
+                    tuple((key, quote.cache_valid(now, self.ttl), quote.fresh(now, self.ttl), self.service.state_for(key))
+                          for key, quote in self.quotes.items()),
+                    tuple((item.game_id, self.service.state_for(item.game_id)) for row in observations
+                          if self.catalog and (item := self.catalog.resolve(row.get("name"), row.get("tier")))))
         if card_key != getattr(self, "card_key", None):
             self.card_key = card_key
             position = self.scroll.verticalScrollBar().value()
@@ -1036,6 +1070,7 @@ class LensWindow(QMainWindow):
                 card = price_card(item=item, row=row, quote=quote, now=now, ttl=self.ttl,
                                   paused=self.mode == "paused", old_capture=self.mode == "live" and screen_old,
                                   lookup_error=bool(item and item.game_id in self.errors), hovered=hovered,
+                                  lookup_state=self.service.state_for(item.game_id) if item else "",
                                   expanded=key in self.expanded_details,
                                   details_changed=lambda expanded, key=key: self.set_details_open(key, expanded),
                                   open_source=self.open_source)
@@ -1068,20 +1103,24 @@ class LensWindow(QMainWindow):
                 area = row["area"]
                 item = self.catalog.resolve(row.get("name"), row.get("tier"))
                 quote = self.quote_for(item)
+                state = self.service.state_for(item.game_id) if item else ""
+                status = reference_status(quote, state, now, self.ttl)
                 price = row.get("price") or {}
                 verdict = compare(item, price.get("quantity"), price.get("mesos"), quote, now, self.ttl)
                 if quote and quote.price is not None and quote.fresh(now, self.ttl):
                     ready_price = True
                     suffix = f"{verdict.delta:+.0f}%" if verdict.delta is not None else ("listing price unclear" if verdict.label == "Unreadable" else verdict.label)
-                    text = f"FM {mesos(quote.price)} • {suffix} • {age_text(now - quote.fetched_at)}"
+                    text = f"FM {mesos(quote.price)} • {suffix} • {status}"
                     if verdict.label == "Thin data":
-                        text = f"FM {mesos(quote.price)} • few reports • {age_text(now - quote.fetched_at)}"
+                        text = f"FM {mesos(quote.price)} • few reports • {status}"
                 elif quote and quote.price is None:
                     text = "FM • source has no market data"
+                    if state in ("queued", "refreshing"):
+                        text += " • " + state
                 elif quote:
-                    text = f"FM {mesos(quote.price)} • EXPIRED"
+                    text = f"FM {mesos(quote.price)} • {status}"
                 elif item:
-                    text = "FM unavailable" if item.game_id in self.errors else "FM checking…"
+                    text = "FM " + (status if state else "unavailable" if item.game_id in self.errors else "checking…")
                 else:
                     text = "FM • checking item version" if item is None and row.get("name") else "FM • name unreadable"
                 annotations.append({"x": round((area["x"] + area["width"] + offset_x) * sx) + 9,
@@ -1096,17 +1135,21 @@ class LensWindow(QMainWindow):
             name = found.get("name")
             item = self.catalog.resolve(name) if name else None
             quote = self.quote_for(item)
+            state = self.service.state_for(item.game_id) if item else ""
+            status = reference_status(quote, state, now, self.ttl)
             sx, sy = geometry.width() / image.width(), geometry.height() / image.height()
             crop = self.reader.crop
             ox, oy = (crop.x(), crop.y()) if crop else (0, 0)
             if quote and quote.price is not None:
                 fresh = quote.fresh(now, self.ttl)
                 ready_price = ready_price or fresh
-                text = f"FM {mesos(quote.price)} mesos • " + (age_text(now - quote.fetched_at) if fresh else "EXPIRED")
+                text = f"FM {mesos(quote.price)} mesos • {status}"
                 if fresh and quote.sample_count < 5:
                     text += " • few reports"
             else:
-                text = "FM • source has no market data" if quote else "FM no price data" if item and item.game_id in self.errors else "FM checking reference…"
+                text = "FM • source has no market data" if quote else "FM " + status
+                if quote and state in ("queued", "refreshing"):
+                    text += " • " + state
                 fresh = False
             # Unreadable/unknown candidates are common on ordinary scenery.
             # Draw a hover reference only after identifying a catalog item.

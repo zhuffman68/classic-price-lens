@@ -14,7 +14,7 @@ IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc", "*.sqlite*")
 def stage_application(out):
     shutil.copytree(ROOT / "price_lens", out / "price_lens", dirs_exist_ok=True, ignore=IGNORE)
     shutil.copytree(ROOT / "tests", out / "tests", dirs_exist_ok=True, ignore=IGNORE)
-    for name in ("README.md", "README-WINDOWS.md", "THIRD_PARTY.md", "VERIFICATION.md"):
+    for name in ("README.md", "README-WINDOWS.md", "THIRD_PARTY.md", "VERIFICATION.md", "ARCHITECTURE.md"):
         shutil.copy2(ROOT / name, out / name)
     documentation = out / "docs"
     documentation.mkdir(exist_ok=True)

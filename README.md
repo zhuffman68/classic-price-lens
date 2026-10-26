@@ -15,8 +15,8 @@ Get the latest files from **[GitHub Releases](https://github.com/zhuffman68/clas
 | System | Choose | Install |
 | --- | --- | --- |
 | Windows 10/11 x64 | `Windows-x64-Setup.exe` | Run it, then open Classic Price Lens from Start. |
-| Arch / Manjaro | `.pkg.tar.zst` | `sudo pacman -U ./classic-price-lens-0.4.1-1-x86_64.pkg.tar.zst` |
-| Debian 12+ / Ubuntu 22.04+ | `.deb` | `sudo apt install ./classic-price-lens_0.4.1-1_amd64.deb` |
+| Arch / Manjaro | `.pkg.tar.zst` | `sudo pacman -U ./classic-price-lens-0.4.2-1-x86_64.pkg.tar.zst` |
+| Debian 12+ / Ubuntu 22.04+ | `.deb` | `sudo apt install ./classic-price-lens_0.4.2-1_amd64.deb` |
 
 You'll need a supported 64-bit desktop, about **1 GB free space**, and internet for price updates. Python, Qt and the reader are included. Linux screen sharing needs PipeWire and a working desktop sharing portal; KDE and GNOME normally provide them.
 
@@ -41,6 +41,8 @@ A portable Windows ZIP is also available: extract it fully and open `run-windows
 
 Prices are cached for **15 minutes** by default. **Price checked** shows when the app last looked up a price; **latest market report** shows how old the source data is. Expand **Details** for the source and more information. References are a guide, not guaranteed sale prices. Few reports or old data receive no deal rating.
 
+Visible prices can refresh shortly before expiry. During a refresh, the previous value stays visible with its age and progress; the hovered item takes priority over queued shop lookups.
+
 ## If something isn't working
 
 - **Can't find the game:** uncover the bottom status bar and the game window. For a cropped, covered or unusual layout, use **Settings → Limit the reading area…** to select it yourself. Multiple visible game windows also need a manual area.
@@ -50,4 +52,4 @@ Prices are cached for **15 minutes** by default. **Price checked** shows when th
 
 Upgrades keep settings and cached prices. Windows installation is checked under Wine; live native Windows capture and mixed-DPI alignment still need a Windows playtest.
 
-[Windows help](README-WINDOWS.md) · [Technical details and source builds](docs/TECHNICAL.md) · [Building installers](packaging/README.md) · [Validation](VERIFICATION.md) · [Credits and licenses](THIRD_PARTY.md)
+[Windows help](README-WINDOWS.md) · [Architecture](ARCHITECTURE.md) · [Technical details and source builds](docs/TECHNICAL.md) · [Building installers](packaging/README.md) · [Validation](VERIFICATION.md) · [Credits and licenses](THIRD_PARTY.md)

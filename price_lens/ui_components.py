@@ -96,7 +96,7 @@ class DisplayMap(QWidget):
 
 
 def price_card(*, item, row, quote, now, ttl, paused=False, old_capture=False,
-               lookup_error=False, expanded=False, details_changed=None, open_source=None,
+               lookup_error=False, lookup_state="", expanded=False, details_changed=None, open_source=None,
                hovered=False, example=False):
     """Keep identity, availability and age separate; retain conservative domain rules."""
     frame = QFrame()
@@ -121,10 +121,15 @@ def price_card(*, item, row, quote, now, ttl, paused=False, old_capture=False,
     elif stale:
         message, tone = ("Paused · last read item" if paused else "Waiting for a fresh screen"), "muted"
     elif not compatible or quote.price is None:
-        message = "Price lookup unavailable" if lookup_error else "No market reports" if quote else "Checking market price…"
+        message = ("Market price lookup queued…" if lookup_state == "queued" and not quote else
+                   "Price lookup unavailable" if lookup_error else "No market reports" if quote else "Checking market price…")
         tone = "muted"
     elif not fresh:
-        message, tone = "Older reference · comparison unavailable", "muted"
+        message = {"refreshing": "Refreshing market reference…", "queued": "Market refresh queued…",
+                   "retry": "Refresh unavailable · retry later"}.get(lookup_state,
+                   ("Market report age unknown · reference only" if quote.observed_at is None else
+                    "Older market reports · reference only") if quote.cache_valid(now, ttl) else "Older reference · refresh needed")
+        tone = "muted"
     elif quote.sample_count < 5 or quote.uncertain:
         message, tone = "Few price reports · reference only", "muted"
     elif hovered:
@@ -163,6 +168,10 @@ def price_card(*, item, row, quote, now, ttl, paused=False, old_capture=False,
             reported = f"{age_text(max(0, now - quote.observed_at))} ago" if quote.observed_at else "unknown"
             layout.addWidget(text_label(f"Price checked {age_text(fetched)} ago · latest market report {reported}",
                                         "font-size: 10px; color: #98a3b1", True))
+            if fresh and lookup_state in ("queued", "refreshing", "retry"):
+                progress = {"queued": "Background refresh queued", "refreshing": "Refreshing in the background…",
+                            "retry": "Last refresh unavailable · retry later"}[lookup_state]
+                layout.addWidget(text_label(progress, "font-size: 10px; color: #98a3b1"))
         if value is None:
             layout.addWidget(text_label("Item name recognised. The price source has no market reference for this item.",
                                         "font-size: 11px; color: #aab5c4", True))
