@@ -17,7 +17,8 @@ def main():
     prefix = args.wine_prefix.resolve()
     if prefix == Path.home() / ".wine":
         parser.error("Use an isolated test prefix, never the default/game prefix")
-    env = {**os.environ, "WINEPREFIX": str(prefix), "WINEDEBUG": "-all", "WINEDLLOVERRIDES": "mscoree,mshtml=",
+    # Windows tests must not export test shortcuts/icons onto the Linux desktop.
+    env = {**os.environ, "WINEPREFIX": str(prefix), "WINEDEBUG": "-all", "WINEDLLOVERRIDES": "mscoree,mshtml=;winemenubuilder.exe=d",
            "QT_QPA_PLATFORM": "offscreen"}
     installer = max((ROOT / "dist").glob("ClassicPriceLens-*-Windows-x64-Setup.exe"), key=lambda p: p.stat().st_mtime)
     evidence = ROOT / "evidence"
@@ -75,12 +76,15 @@ def main():
             raise RuntimeError("Own app IPC did not become ready")
 
         first = start_ui()
+        run([gui_runtime, "-B", "-m", "price_lens", "--minimize"], app, timeout=10)
+        assert first.poll() is None, "Minimizing closed the app"
         run([gui_runtime, "-B", "-m", "price_lens"], app, timeout=10)
         assert first.poll() is None, "Second launch replaced the existing app"
         run([installer, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-"])
         assert first.wait(timeout=30) == 0, "Upgrade did not close the existing app cleanly"
         assert marker.is_file(), "Upgrade removed user cache"
         second = start_ui()
+        run([gui_runtime, "-B", "-m", "price_lens", "--minimize"], app, timeout=10)
         run([app / "unins000.exe", "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"])
         assert second.wait(timeout=30) == 0, "Uninstall did not close the app cleanly"
         deadline = time.monotonic() + 10

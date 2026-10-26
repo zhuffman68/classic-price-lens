@@ -32,6 +32,7 @@ class FakeReader(QObject):
     reading = Signal(dict)
     status = Signal(str)
     image_ready = Signal(QImage)
+    area_changed = Signal()
 
     def __init__(self, root, parent=None):
         super().__init__(parent)
@@ -44,6 +45,11 @@ class FakeReader(QObject):
         self.last_frame = time.monotonic()
         self.starts = 0
         self.pauses = []
+        self.auto_active = True
+        self.game_area = QRect(0, 0, 800, 800)
+
+    def set_auto_area(self, enabled):
+        self.auto_active = enabled
 
     def start(self, *args):
         self.starts += 1
@@ -113,6 +119,8 @@ class ContextUiTests(unittest.TestCase):
                           ("PriceService", FakeService), ("QSettings", FakeSettings), ("HotkeyManager", FakeHotkeys)]]
         for patcher in self.patchers:
             patcher.start()
+        self.tray_show = patch("price_lens.tray.QSystemTrayIcon.show")
+        self.tray_show.start()
         self.window = LensWindow(Path.cwd(), Path("unused-cache"))
         self.window.monitor.setCurrentIndex(1)
         self.window.on_catalog(Catalog({"items": [{"id": 1, "name": "Example Hat"}], "scrolls": []}))
@@ -126,6 +134,7 @@ class ContextUiTests(unittest.TestCase):
         self.app.processEvents()
         for patcher in reversed(self.patchers):
             patcher.stop()
+        self.tray_show.stop()
 
     def reading(self, shop_hover):
         return {"atMs": 123, "shop": {"area": {"x": 300, "y": 200, "width": 240, "height": 300},
@@ -138,6 +147,29 @@ class ContextUiTests(unittest.TestCase):
         self.assertTrue(self.window.hover_check.isChecked())
         self.assertTrue(self.window.reader.tooltip_enabled)
         self.assertFalse(any("Import MesoWatch" in button.text() for button in self.window.findChildren(QPushButton)))
+
+    def test_automatic_game_area_is_enabled_by_default(self):
+        self.assertTrue(self.window.auto_area_check.isChecked())
+        self.assertTrue(self.window.reader.auto_enabled)
+
+    def test_lost_game_area_hides_labels_and_stops_price_requests(self):
+        self.window.on_reading(self.reading(shop_hover=True))
+        count=len(self.window.service.requests)
+        self.window.reader.game_area=None
+        self.window.reader.area_changed.emit()
+        self.assertEqual(self.window.rows,[])
+        self.assertEqual(self.window.overlay.rows,[])
+        self.assertEqual(self.window.status_badge.text(),"Looking for Classic World")
+        self.window.on_reading(self.reading(shop_hover=True))
+        self.window.tick()
+        self.assertEqual(len(self.window.service.requests),count)
+        self.assertEqual(self.window.overlay.rows,[])
+
+    def test_auto_area_toggle_is_saved_without_restarting_capture(self):
+        self.window.auto_area_check.setChecked(False)
+        self.assertFalse(self.window.settings.values["auto-game-area"])
+        self.assertFalse(self.window.reader.auto_active)
+        self.assertEqual(self.window.reader.starts,0)
 
     def test_store_hover_never_draws_a_duplicate_inventory_label(self):
         self.window.on_reading(self.reading(shop_hover=True))

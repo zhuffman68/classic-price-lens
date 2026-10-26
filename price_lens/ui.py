@@ -3,7 +3,7 @@ import shutil
 import sys
 import time
 
-from PySide6.QtCore import QPoint, QRect, Qt, QTimer, QSettings
+from PySide6.QtCore import QEvent, QPoint, QRect, Qt, QTimer, QSettings, Signal
 from PySide6.QtGui import QColor, QImage, QKeySequence, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
@@ -17,6 +17,7 @@ from .service import PriceService
 from .overlay import Overlay
 from .hotkeys import HotkeyManager, DEFAULT_HOTKEY, parse_shortcut
 from .ui_components import DisplayMap, display_labels, price_card
+from .tray import TrayController
 
 COLORS = {"green": "#86ceac", "red": "#ed9394", "amber": "#e4bd7b", "blue": "#9ebde3", "muted": "#98a3b1"}
 
@@ -74,6 +75,8 @@ class CropCanvas(QLabel):
 
 
 class LensWindow(QMainWindow):
+    closed = Signal()
+
     def __init__(self, root, cache_path, snapshot=None, auto_capture=False, kde_capture=False):
         super().__init__()
         self.root = Path(root)
@@ -103,11 +106,14 @@ class LensWindow(QMainWindow):
         self.capture_starting = False
         self.capture_kind = "kde" if kde_capture else "portal"
         self.keep_capture = False
+        self.closing = False
         self.settings = QSettings("LocalTools", "Classic Price Lens")
         self.first_price_seen = self.settings.value("first-price-seen", False, type=bool)
         self.setup_dismissed = self.settings.value("setup-help-dismissed", False, type=bool)
         self.labels_enabled = self.settings.value("show-prices", True, type=bool)
         self.pinned = self.settings.value("keep-on-top", False, type=bool)
+        self.minimize_to_tray = self.settings.value("minimize-to-tray", True, type=bool)
+        self.auto_game_area = self.settings.value("auto-game-area", True, type=bool)
         self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, self.pinned)
         self.ttl = self.settings.value("cache-ttl", DEFAULT_TTL, type=int)
         if self.ttl not in (300, 900, 1800, 3600):
@@ -125,11 +131,13 @@ class LensWindow(QMainWindow):
         self.tooltip_result = None
         self.service = PriceService(cache_path, self)
         self.reader = PixelReader(root, self)
+        self.reader.auto_enabled = self.auto_game_area
         self.reader.tooltip_enabled = self.hover_enabled and self.labels_enabled
         self.overlay.pointer.connect(self.on_pointer)
         self.reader.reading.connect(self.on_reading)
         self.reader.status.connect(self.show_status)
         self.reader.image_ready.connect(self.on_image)
+        self.reader.area_changed.connect(self.on_area_changed)
         self.service.catalog_ready.connect(self.on_catalog)
         self.service.quote_ready.connect(self.on_quote)
         self.service.error.connect(self.on_error)
@@ -141,7 +149,7 @@ class LensWindow(QMainWindow):
         layout.setSpacing(10)
         heading = QHBoxLayout()
         mark = QLabel()
-        mark.setPixmap(QPixmap(str(self.root / "price_lens/resources/icon.png")).scaled(27, 27, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+        mark.setPixmap(QPixmap(str(self.root / "price_lens/resources/icon.png")).scaled(32, 32, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.FastTransformation))
         heading.addWidget(mark)
         heading.addWidget(label("Classic Price Lens", "font-size: 21px; font-weight: 650; color: #f1e6d5"))
         heading.addStretch()
@@ -262,6 +270,7 @@ class LensWindow(QMainWindow):
             QScrollBar::handle:vertical { background: #455064; border-radius: 3px; min-height: 20px; }
         """)
         self.build_settings()
+        self.tray = TrayController(self)
         self.timer = QTimer(self)
         self.timer.setInterval(1000)
         self.timer.timeout.connect(self.tick)
@@ -284,6 +293,11 @@ class LensWindow(QMainWindow):
         layout = QVBoxLayout(self.settings_dialog)
         layout.setSpacing(10)
         layout.addWidget(label("Overlay", "font-size: 15px; font-weight: 650"))
+        self.auto_area_check = QCheckBox("Automatically find the Classic World area")
+        self.auto_area_check.setChecked(self.auto_game_area)
+        self.auto_area_check.setToolTip("Finds visible Classic UI in the shared pixels. A manually selected area takes priority until reset.")
+        self.auto_area_check.toggled.connect(self.set_auto_area)
+        layout.addWidget(self.auto_area_check)
         self.labels_check = QCheckBox("Show market prices beside items")
         self.labels_check.setChecked(self.labels_enabled)
         self.labels_check.toggled.connect(self.set_labels)
@@ -297,6 +311,10 @@ class LensWindow(QMainWindow):
         self.pin_check.setChecked(self.pinned)
         self.pin_check.toggled.connect(self.pin)
         layout.addWidget(self.pin_check)
+        self.tray_check = QCheckBox("Minimize to the system tray")
+        self.tray_check.setChecked(self.minimize_to_tray)
+        self.tray_check.toggled.connect(self.set_minimize_to_tray)
+        layout.addWidget(self.tray_check)
         self.hotkey_button = QPushButton("Keyboard shortcut…")
         self.hotkey_button.clicked.connect(self.configure_hotkey)
         layout.addWidget(self.hotkey_button)
@@ -332,6 +350,30 @@ class LensWindow(QMainWindow):
     def open_settings(self):
         self.update_capture_controls()
         self.settings_dialog.exec()
+
+    def set_minimize_to_tray(self, enabled):
+        self.minimize_to_tray = enabled
+        self.settings.setValue("minimize-to-tray", enabled)
+
+    def set_auto_area(self, enabled):
+        self.auto_game_area = enabled
+        self.settings.setValue("auto-game-area", enabled)
+        self.rows = []
+        self.tooltip_result = None
+        self.reader.set_auto_area(enabled)
+        self.render()
+
+    def on_area_changed(self):
+        if self.reader.auto_active and self.reader.game_area is None:
+            self.rows = []
+            self.tooltip_result = None
+        self.render()
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if (event.type() == QEvent.Type.WindowStateChange and self.isMinimized()
+                and hasattr(self, "tray")):
+            self.tray.schedule_minimize()
 
     def set_labels(self, enabled):
         self.labels_enabled = enabled
@@ -546,6 +588,8 @@ class LensWindow(QMainWindow):
                 return ("Waiting for a fresh screen", "The last screen is no longer current. References stay visible here, and overlay labels are hidden until reading resumes.", "amber", "Reconnect display")
             if not self.image_matches_screen():
                 return ("Share the selected display", f"The shared image does not match {display}. Reconnect and choose that display, or share the full workspace, so labels can line up.", "amber", "Reconnect display")
+            if self.reader.auto_active and self.reader.game_area is None:
+                return ("Looking for Classic World", "Keep the bottom status bar visible and uncover the game window. The reading area follows it automatically. If needed, choose an area in Settings → Limit the reading area.", "amber", "")
             if not self.labels_enabled:
                 return ("Reading · labels hidden", "Price labels are disabled. Item prices still appear in this panel; enable labels to show them beside the game.", "blue", "Show price labels")
             return ("Reading " + display, "Open a Classic World shop or hover over an inventory / equipment item. Keep names and prices visible.", "green", "")
@@ -596,6 +640,8 @@ class LensWindow(QMainWindow):
             self.crop_button.setEnabled(not self.reader.image.isNull() and self.mode in ("live", "screenshot") and not self.capture_starting)
         if hasattr(self, "kde_button"):
             self.kde_button.setEnabled(valid and not self.capture_starting)
+        if hasattr(self, "tray"):
+            self.tray.update()
 
     def cancel_capture_setup(self):
         if not self.capture_starting:
@@ -826,6 +872,8 @@ class LensWindow(QMainWindow):
     def request_prices(self):
         if not self.catalog or self.mode in ("paused", "idle"):
             return
+        if self.reader.auto_active and self.reader.game_area is None:
+            return
         observations = self.rows + ([self.tooltip_result] if self.tooltip_result else [])
         for row in observations:
             item = self.catalog.resolve(row.get("name"), row.get("tier"))
@@ -900,6 +948,8 @@ class LensWindow(QMainWindow):
             title, detail = "Item names are unavailable", self.catalog_error
         elif self.catalog_loading:
             title, detail = "Getting item names ready", "The first launch downloads the Classic World item list. Saved item names are reused on later launches."
+        elif self.mode == "live" and self.reader.auto_active and self.reader.game_area is None:
+            title, detail = "Waiting for the game area", "Keep the bottom status bar visible. The minimap can be moved or closed. You can also select an area under Settings → Limit the reading area."
         elif self.mode == "screenshot":
             title, detail = "No items found in this image", "Use a clear screenshot with full item names and visible prices. Live reading is available from Start reading above."
         else:
@@ -975,7 +1025,8 @@ class LensWindow(QMainWindow):
         dpr = self.screens[self.screen_index].devicePixelRatio()
         screen_matches = (not image.isNull() and abs(image.width() - geometry.width() * dpr) <= 2
                           and abs(image.height() - geometry.height() * dpr) <= 2)
-        if self.labels_enabled and self.mode == "live" and not screen_old and screen_matches and self.catalog:
+        game_visible = not self.reader.auto_active or self.reader.game_area is not None
+        if self.labels_enabled and self.mode == "live" and not screen_old and screen_matches and self.catalog and game_visible:
             sx, sy = geometry.width() / image.width(), geometry.height() / image.height()
             crop = self.reader.crop
             offset_x, offset_y = (crop.x(), crop.y()) if crop else (0, 0)
@@ -1003,7 +1054,7 @@ class LensWindow(QMainWindow):
                                     "y": round((area["y"] + offset_y + area["height"] / 2) * sy) - 12,
                                     "name": item.name if item else row.get("name") or "Unresolved item",
                                     "text": text, "color": COLORS[verdict.tone]})
-        if self.labels_enabled and self.hover_enabled and self.tooltip_result and self.mode == "live" and not screen_old and screen_matches and self.catalog:
+        if self.labels_enabled and self.hover_enabled and self.tooltip_result and self.mode == "live" and not screen_old and screen_matches and self.catalog and game_visible:
             found = self.tooltip_result
             area = found["area"]
             name = found.get("name")
@@ -1064,21 +1115,34 @@ class LensWindow(QMainWindow):
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.Reset)
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
-        buttons.button(QDialogButtonBox.StandardButton.Reset).clicked.connect(lambda: (setattr(self.reader, "crop", None), dialog.reject()))
+        def reset():
+            self.rows = []
+            self.tooltip_result = None
+            self.reader.set_crop(None)
+            dialog.reject()
+            self.render()
+        buttons.button(QDialogButtonBox.StandardButton.Reset).clicked.connect(reset)
         layout.addWidget(buttons)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            self.reader.crop = canvas.selection()
             self.rows = []
-            self.reader.image_sequence += 1
-            self.reader.scan()
+            self.tooltip_result = None
+            self.reader.set_crop(canvas.selection())
+            self.render()
 
     def about(self):
         QMessageBox.information(self, "Classic Price Lens", "Reads OS-shared pixels and draws this independent window.\n\nNo game hooks, memory, files, messages, input or packet access. Screenshots remain local. Only item names/IDs go to public price sources.\n\nOCR: Minerva (MIT), pinned at 7e1aa7d. OCR model: ocrs, CC BY-SA 4.0. Catalog: OSMS Data Explorer. Prices: NiaMeowDB Classic World.\n\n24h median with at least 5 samples, otherwise the site's longer window. These are reported prices, not guaranteed trades. Equipment is assumed unscrolled, as requested. Its actual stats are not assessed.\n\nCache defaults to 15 minutes. Expired data has no deal rating; latest reports over 24h old also have no rating.\n\nPrices and requests are cached locally. No telemetry or screenshot uploads.")
 
     def closeEvent(self, event):
+        if self.closing:
+            event.accept()
+            return
+        self.closing = True
         self.timer.stop()
         self.hotkeys.close()
         self.reader.close(keep_stream=self.keep_capture)
         self.service.close()
         self.overlay.close()
+        if hasattr(self, "tray"):
+            self.tray.close()
         event.accept()
+        self.closed.emit()

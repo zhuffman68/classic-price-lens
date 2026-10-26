@@ -57,6 +57,9 @@ def main():
         "README.md": "usr/share/doc/classic-price-lens/README.md",
         "THIRD_PARTY.md": "usr/share/doc/classic-price-lens/copyright",
     }
+    for size in (16, 24, 32, 48, 64, 128):
+        destinations[f"price_lens/resources/icon-{size}.png"] = (
+            f"usr/share/icons/hicolor/{size}x{size}/apps/io.github.zhuffman68.ClassicPriceLens.png")
     for source, relative in destinations.items():
         target = STAGE / relative
         target.parent.mkdir(parents=True, exist_ok=True)

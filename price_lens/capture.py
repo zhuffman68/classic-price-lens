@@ -18,6 +18,7 @@ class PixelReader(QObject):
     reading = Signal(dict)
     status = Signal(str)
     image_ready = Signal(QImage)
+    area_changed = Signal()
 
     def __init__(self, root, parent=None):
         super().__init__(parent)
@@ -40,6 +41,13 @@ class PixelReader(QObject):
         self.using_roi = False
         self.shop_context = None
         self.crop = None
+        self.auto_enabled = True
+        self.live_source = False
+        self.game_area = None
+        self.game_guards = []
+        self.submitted_image = QImage()
+        self.next_area_search = 0.0
+        self.last_geometry_check = 0.0
         self.pending = False
         self.paused = False
         self.generation = 0
@@ -75,6 +83,8 @@ class PixelReader(QObject):
     def start(self, screen, desktop):
         self.generation += 1
         self.paused = False
+        self.live_source = True
+        self.reset_area()
         self.timer.start()
         self.screenshot_timer.stop()
         self.shop_rect = self.shop_fingerprint = None
@@ -96,6 +106,8 @@ class PixelReader(QObject):
     def start_kde(self, screen, desktop):
         self.pause()
         self.paused = False
+        self.live_source = True
+        self.reset_area()
         self.timer.start()
         self.shop_rect = self.shop_fingerprint = None
         self.kde_screen = screen
@@ -119,6 +131,7 @@ class PixelReader(QObject):
             self.status.emit("KDE returned an empty screenshot")
             return
         self.image = screen_pixels(image, self.kde_screen, self.kde_desktop)
+        self.validate_area()
         path.unlink(missing_ok=True)
         self.last_frame = time.monotonic()
         self.image_sequence += 1
@@ -131,6 +144,7 @@ class PixelReader(QObject):
         if not image.isNull():
             self.last_frame = captured_at
             self.image = image
+            self.validate_area()
             self.image_sequence += 1
             self.image_ready.emit(self.image)
             self.scan()
@@ -138,6 +152,8 @@ class PixelReader(QObject):
     def load_image(self, path):
         self.pause()
         self.paused = False
+        self.live_source = False
+        self.reset_area()
         self.timer.start()
         self.image = QImage(str(path))
         if self.image.isNull():
@@ -151,6 +167,47 @@ class PixelReader(QObject):
         self.status.emit("Screenshot mode • saved image, not a live capture")
         self.scan()
 
+    @property
+    def auto_active(self):
+        return self.auto_enabled and self.live_source and self.crop is None
+
+    def reset_area(self):
+        self.game_area = None
+        self.game_guards = []
+        self.next_area_search = 0
+        self.shop_rect = self.shop_fingerprint = self.shop_context = None
+        self.tooltip_rect = self.tooltip_fingerprint = None
+        self.area_changed.emit()
+
+    def set_auto_area(self, enabled):
+        self.auto_enabled = enabled
+        if enabled:
+            self.crop = None
+        self.generation += 1
+        self.reset_area()
+        self.image_sequence += 1
+        self.scan()
+
+    def set_crop(self, area):
+        self.generation += 1
+        self.crop = area
+        self.reset_area()
+        self.image_sequence += 1
+        self.scan()
+
+    @staticmethod
+    def fingerprint(image, area):
+        # constBits() borrows storage; retain the QImage until hashing completes.
+        patch = image.copy(area)
+        return hashlib.blake2b(patch.constBits(), digest_size=8).digest()
+
+    def validate_area(self):
+        if self.auto_active and self.game_area and any(
+                self.fingerprint(self.image, area) != digest for area, digest in self.game_guards):
+            # Discard results from the old position before drawing another label.
+            self.generation += 1
+            self.reset_area()
+
     def scan(self):
         if self.paused:
             return
@@ -163,19 +220,24 @@ class PixelReader(QObject):
             return
         if self.image_sequence == self.submitted_sequence:
             return
+        if self.auto_active and self.game_area is None and time.monotonic() < self.next_area_search:
+            return
         image = self.image.copy(self.crop) if self.crop else self.image
         pointer = self.pointer
         if pointer and self.crop:
             pointer = (pointer[0] - self.crop.x(), pointer[1] - self.crop.y())
         in_shop = pointer_in_shop(pointer, self.shop_context)
         hover_check = self.tooltip_enabled and pointer is not None and not in_shop
+        if self.auto_active:
+            hover_check = bool(hover_check and self.game_area and self.game_area.contains(QPoint(*pointer)))
         tooltip_same = False
         if hover_check and self.tooltip_rect and self.tooltip_fingerprint is not None and self.pointer == self.last_pointer:
-            tooltip_same = hashlib.blake2b(image.copy(self.tooltip_rect).constBits(), digest_size=8).digest() == self.tooltip_fingerprint
+            tooltip_same = self.fingerprint(image, self.tooltip_rect) == self.tooltip_fingerprint
         if self.shop_rect and self.shop_fingerprint is not None:
             patch = image.copy(self.shop_rect)
             fingerprint = hashlib.blake2b(patch.constBits(), digest_size=8).digest()
-            if fingerprint == self.shop_fingerprint and (not hover_check or tooltip_same):
+            if (fingerprint == self.shop_fingerprint and (not hover_check or tooltip_same)
+                    and (not self.auto_active or time.monotonic()-self.last_geometry_check<0.4)):
                 self.submitted_sequence = self.image_sequence
                 return
         elif self.shop_rect is None and tooltip_same:
@@ -187,20 +249,25 @@ class PixelReader(QObject):
         self.using_roi = bool(self.shop_rect and not hover_check)
         if self.using_roi:
             region = self.shop_rect.adjusted(-8, -8, 8, 8).intersected(image.rect())
-            origin = {"x": region.x(), "y": region.y()}
-            image = image.copy(region)
+            if not self.auto_active:
+                origin = {"x": region.x(), "y": region.y()}
+                image = image.copy(region)
         image = image.convertToFormat(QImage.Format.Format_RGBA8888)
         path = Path(self.temp.name) / "frame.rgba"
         path.write_bytes(image.constBits())
         self.pending = True
         self.pending_generation = self.generation
         self.pending_since = time.monotonic()
+        self.last_geometry_check = self.pending_since
         self.submitted_sequence = self.image_sequence
+        self.submitted_image = self.image
         self.last_pointer = self.pointer
         request = {"path": str(path), "at_ms": int(self.last_frame * 1000),
                    "pointer": {"x": pointer[0], "y": pointer[1]} if pointer and self.tooltip_enabled else None,
                    "tooltip": bool(hover_check),
                    "origin": origin,
+                   "auto_game": self.auto_active,
+                   "roi": {"x": region.x(), "y": region.y(), "width": region.width(), "height": region.height()} if self.auto_active and self.using_roi else None,
                    "width": image.width(), "height": image.height()}
         self.process.write((json.dumps(request) + "\n").encode())
 
@@ -216,8 +283,22 @@ class PixelReader(QObject):
                 if result.get("error"):
                     self.status.emit("Reader: " + result["error"])
                 else:
+                    if self.auto_active:
+                        area = result.get("gameArea")
+                        guards = [QRect(r["x"], r["y"], r["width"], r["height"]) for r in result.get("gameGuards") or []]
+                        fingerprints = [(r, self.fingerprint(self.submitted_image, r)) for r in guards]
+                        if area and (not fingerprints or any(self.fingerprint(self.image, r) != digest for r, digest in fingerprints)):
+                            self.reset_area()
+                            continue
+                        selected = QRect(area["x"], area["y"], area["width"], area["height"]) if area else None
+                        changed = selected != self.game_area
+                        self.game_area, self.game_guards = selected, fingerprints
+                        if selected is None:
+                            self.next_area_search = time.monotonic() + 0.4
+                        if changed:
+                            self.area_changed.emit()
                     area = (result.get("shop") or {}).get("area")
-                    if self.using_roi and area is None:
+                    if self.using_roi and area is None and (not self.auto_active or self.game_area):
                         # A moved/closed shop triggers an immediate full search
                         # in the same captured frame, not another polling delay.
                         self.image_sequence += 1
@@ -237,7 +318,7 @@ class PixelReader(QObject):
                     if self.shop_rect:
                         source = self.image.copy(self.crop) if self.crop else self.image
                         # Only bind a fingerprint to the exact frame that was read.
-                        self.shop_fingerprint = (hashlib.blake2b(source.copy(self.shop_rect).constBits(), digest_size=8).digest()
+                        self.shop_fingerprint = (self.fingerprint(source, self.shop_rect)
                                                  if self.image_sequence == self.submitted_sequence else None)
                     else:
                         self.shop_fingerprint = None
@@ -247,7 +328,7 @@ class PixelReader(QObject):
                     self.tooltip_rect = QRect(tooltip_area["x"], tooltip_area["y"], tooltip_area["width"], tooltip_area["height"]) if tooltip_area else None
                     if self.tooltip_rect and self.image_sequence == self.submitted_sequence:
                         source = self.image.copy(self.crop) if self.crop else self.image
-                        self.tooltip_fingerprint = hashlib.blake2b(source.copy(self.tooltip_rect).constBits(), digest_size=8).digest()
+                        self.tooltip_fingerprint = self.fingerprint(source, self.tooltip_rect)
                     else:
                         self.tooltip_fingerprint = None
                     self.latest_latency_ms = time.monotonic() * 1000 - result["atMs"]

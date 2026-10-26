@@ -91,6 +91,14 @@ class ApplicationControlTests(unittest.TestCase):
         self.assertEqual(toggles, [True])
         self.assertTrue(self.control.server.isListening())
 
+    def test_minimize_command_controls_only_our_panel(self):
+        minimized=[]
+        self.control.minimize.connect(lambda:minimized.append(True))
+        self.assertTrue(self.send("minimize"))
+        self.app.processEvents()
+        self.assertEqual(minimized,[True])
+        self.assertTrue(self.control.server.isListening())
+
     def test_capture_diagnostics_do_not_write_to_read_only_app_folder(self):
         root = self.folder / "read-only-installation"
         root.mkdir(mode=0o555)

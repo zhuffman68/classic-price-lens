@@ -16,6 +16,10 @@ def stage_application(out):
     shutil.copytree(ROOT / "tests", out / "tests", dirs_exist_ok=True, ignore=IGNORE)
     for name in ("README.md", "README-WINDOWS.md", "THIRD_PARTY.md", "VERIFICATION.md"):
         shutil.copy2(ROOT / name, out / name)
+    documentation = out / "docs"
+    documentation.mkdir(exist_ok=True)
+    shutil.copy2(ROOT / "docs/TECHNICAL.md", documentation / "TECHNICAL.md")
+    shutil.copy2(ROOT / "docs/ARTWORK.md", documentation / "ARTWORK.md")
     fixtures = ROOT / "vendor/minerva/samples"
     categories = {"player-shop": ["gems-and-ores", "live-greater-chaos-and-intermediate-scrolls", "equips-two-sold-out"],
                   "item-tooltip": ["screw@60,20"]}

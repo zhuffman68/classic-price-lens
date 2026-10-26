@@ -24,7 +24,8 @@ def main():
         if not args.wine_prefix:
             parser.error("Use --wine-prefix with an isolated build prefix")
         os.nice(10)
-        env.update(WINEPREFIX=str(args.wine_prefix.resolve()), WINEDEBUG="-all", WINEDLLOVERRIDES="mscoree,mshtml=")
+        env.update(WINEPREFIX=str(args.wine_prefix.resolve()), WINEDEBUG="-all",
+                   WINEDLLOVERRIDES="mscoree,mshtml=;winemenubuilder.exe=d")
         command[-1] = subprocess.check_output(["winepath", "-w", command[-1]], env=env, text=True).strip()
         command.insert(0, "wine")
     subprocess.run(command, cwd=ROOT, env=env, check=True)

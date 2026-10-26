@@ -1,114 +1,52 @@
+<p align="center"><img src="price_lens/resources/icon.png" width="96" height="96" alt="Classic Price Lens pixel-art skill icon"></p>
+
 # Classic Price Lens
 
-A screen-only market-price companion for **MapleStory Classic World**.
+Market prices beside your **MapleStory Classic World** items.
 
-It reads visible player-shop listings from OS screenshots, looks up a market reference, and draws a small item name and price beside each row in an independent, transparent, click-through window. A separate control panel shows the details. You open shops and scroll yourself.
+Open a player shop or hover over an inventory/equipment item to see its name and a market-price reference. Prices include cash/NX items and are shown in **mesos**. Equipment is treated as unscrolled.
 
-## Install
+The app reads shared screen pixels and draws separate, click-through labels. It never hooks into the game. Screenshots stay on your device.
 
-Download an unencrypted installer/package from [GitHub Releases](https://github.com/zhuffman68/classic-price-lens/releases). **Python, Qt and the OCR reader are included.** Python, Rust, Minerva, an AI account and API keys are not prerequisites for installed builds.
+## Download and install
 
-| System | Download | Installation |
+Get the latest files from **[GitHub Releases](https://github.com/zhuffman68/classic-price-lens/releases)**.
+
+| System | Choose | Install |
 | --- | --- | --- |
-| Windows 10/11 x64 | `ClassicPriceLens-0.3.0-Windows-x64-Setup.exe` | Run the installer, then open **Classic Price Lens** from Start. Installs for the current user without administrator access. |
-| Arch / Manjaro x86_64 | `classic-price-lens-0.3.0-1-x86_64.pkg.tar.zst` | `sudo pacman -U ./classic-price-lens-0.3.0-1-x86_64.pkg.tar.zst` |
-| Debian 12+ / Ubuntu 22.04+ amd64 | `classic-price-lens_0.3.0-1_amd64.deb` | `sudo apt install ./classic-price-lens_0.3.0-1_amd64.deb` |
+| Windows 10/11 x64 | `Windows-x64-Setup.exe` | Run it, then open Classic Price Lens from Start. |
+| Arch / Manjaro | `.pkg.tar.zst` | `sudo pacman -U ./classic-price-lens-0.4.0-1-x86_64.pkg.tar.zst` |
+| Debian 12+ / Ubuntu 22.04+ | `.deb` | `sudo apt install ./classic-price-lens_0.4.0-1_amd64.deb` |
 
-Prerequisites: a supported 64-bit desktop system, about **1 GB free space** including the download, and internet for market-price updates. Linux package managers install the OS library dependencies. Wayland requires PipeWire, XWayland, and a working screen-sharing portal backend matching the desktop, such as `xdg-desktop-portal-kde` or `xdg-desktop-portal-gnome`. KDE Plasma and GNOME desktop installations normally provide one. No service, driver or login startup task is added.
+You'll need a supported 64-bit desktop, about **1 GB free space**, and internet for price updates. Python, Qt and the reader are included. Linux screen sharing needs PipeWire and a working desktop sharing portal; KDE and GNOME normally provide them.
 
-On Linux, open **Classic Price Lens** from the application menu or run `classic-price-lens`. On Windows, use the Start-menu shortcut. [Windows details and portable alternative](README-WINDOWS.md).
+A portable Windows ZIP is also available: extract it fully and open `run-windows.bat`.
 
-1. Choose the display containing Classic World using the numbered arrangement or the display list. Display names include their position and resolution. Selection is remembered and does not start sharing.
-2. Click **Start reading**. In the OS sharing chooser, select that display or the full workspace. **Waiting for sharing…** explains what is needed and offers **Cancel setup**. Windows may start capture without a chooser.
-3. Open a player shop, or hover an inventory/equipment item. Keep item names and prices visible. The first available overlay price offers optional hotkey setup and a **Minimize panel** button.
+## Get started
 
-**Preview with examples** explains a price comparison using clearly marked, made-up values without screen sharing or item-price requests. **Setup help** repeats the steps. Normal app launches wait for **Start reading**, even with a saved display; the explicit `--capture` command-line option can start a saved display automatically.
+1. Open Classic Price Lens and choose the display containing the game.
+2. Click **Start reading** and approve screen sharing if prompted.
+3. Keep the bottom status bar visible. The app finds the game area automatically and follows it when it moves. Moving or closing the minimap is fine.
+4. Open a shop or hover an item. Minimize the panel when you're ready.
 
-The single primary button changes to **Pause reading** and **Resume reading**. It stays gray until a valid display is selected and while sharing starts. Pause hides the overlay and stops OCR/price refreshes; Resume reuses the same sharing session, avoiding another sharing picker. Supported capture backends reduce their frame rate while paused. If sharing ends or the wrong display is shared, the panel explains the problem and offers an explicit **Reconnect display** action. It does not repeatedly open the chooser.
+**Preview with examples** explains the prices without sharing a screen.
 
-**Settings** contains overlay/hover toggles, the optional always-on-top panel, price update interval, keyboard shortcut and troubleshooting tools. The panel starts as a normal movable window. Open **Settings → Keyboard shortcut…** to enable/disable the global shortcut and choose a key or combination. Windows and X11 default to **Ctrl+Alt+P**. Wayland uses the desktop's shortcut chooser; after the desktop confirms a binding it is remembered. On older Wayland desktops without the GlobalShortcuts portal, create a system keyboard shortcut running `classic-price-lens --toggle`. Hotkeys use OS registration, never a keyboard hook or game attachment.
+## Everyday controls
 
-For an offline installation check on Linux:
+- **Pause / Resume:** hides or restores labels. Resume reuses the sharing session.
+- **Minimize:** puts the panel in the system tray by default and sends a notification. Click the tray icon to restore it. Right-click for reading controls, labels, Settings and Quit. If no tray is available, the panel minimizes to the taskbar.
+- **Close or Quit:** ends reading and screen sharing.
+- **Settings:** change the hotkey, hover prices, price update interval, automatic area detection or tray behavior.
 
-```bash
-classic-price-lens --self-test
-```
+Prices are cached for **15 minutes** by default. **Price checked** shows when the app last looked up a price; **latest market report** shows how old the source data is. Expand **Details** for the source and more information. References are a guide, not guaranteed sale prices. Few reports or old data receive no deal rating.
 
-This reads a bundled test image and checks the separate overlay process, without capturing a desktop. Installed builds support `--version`, `--toggle` and `--quit`; a second normal launch activates the existing panel. Windows installation/upgrade/removal controls only the app's own local IPC connection. Close an older portable copy before switching to the installed version. User settings and cached prices are kept during upgrades and removal.
+## If something isn't working
 
-Uninstall through **Settings → Apps** on Windows, `sudo pacman -R classic-price-lens` on Arch/Manjaro, or `sudo apt remove classic-price-lens` on Debian/Ubuntu.
+- **Can't find the game:** uncover the bottom status bar and the game window. For a cropped, covered or unusual layout, use **Settings → Limit the reading area…** to select it yourself. Multiple visible game windows also need a manual area.
+- **Sharing stopped or labels don't line up:** use **Reconnect display** and share the selected display or full workspace.
+- **No market reports:** the item name was recognised, but the source has no price for it.
+- **Need more help:** open **Settings → Connection details / capture preview…**.
 
-Linux packages are checked in isolated Debian 12 and Ubuntu 22.04 filesystems and with pacman. Windows install, upgrade, uninstall and offline checks run under Wine; live native Windows capture, alignment and mixed-DPI behavior still need a Windows playtest. See [VERIFICATION.md](VERIFICATION.md) for the exact validation boundary.
+Upgrades keep settings and cached prices. Windows installation is checked under Wine; live native Windows capture and mixed-DPI alignment still need a Windows playtest.
 
-## Use
-
-In KDE's screen-sharing picker, share the selected monitor or the full workspace; full-workspace frames are cropped locally to the selected monitor. Only one OS sharing session stays open, and the control panel can reuse it across UI handoffs. Closing the panel normally ends sharing and its helpers. Minimize the panel to leave just the labels.
-
-The streaming path reads new frames immediately, with bounded buffers and no queue of old screenshots. Prices already in the cache appear without network access. A first lookup for an unseen item still depends on the provider's response time. **Settings → Connection details / capture preview…** shows the measured reading delay, existing local image and technical messages without requesting another share.
-
-**Settings → Also show prices when hovering inventory / equipment** is a persistent checkbox, **on by default**. It shows the matched name and meso reference above the game's visible tooltip, including items in inventory and equipment. Shop-row labels take priority while the pointer is on a shop listing; a duplicate inventory label is suppressed there. It reads tooltip pixels and the OS pointer position, with no mouse hook or input injection. Tooltip OCR stops when the checkbox or the master price-label toggle is off. Equipment is assumed unscrolled.
-
-Troubleshooting tools live in **Settings**. **Try KDE screenshot capture** is a slower fallback using ordinary Spectacle screenshots, one at a time, with uncompressed temporary BMPs instead of PNG compression. **Limit the reading area…** selects pixels in the capture preview. **Open a saved screenshot…** reads a static local image and draws no labels over the live game; market-price lookups still use the internet when needed.
-
-Labels contain the matched item name in small type, the reference price, percentage versus that reference, and cache age. Equipment is assumed **unscrolled** and receives the same comparisons as other items. Actual stats, upgrades and remaining slots are not read. The assumption is stated once in the panel instead of repeated on each label. For items with fewer than five reference samples, labels say `few reports` and receive no comparison rating.
-
-Each panel card puts **Store price** beside **Market reference**, with an explicit per-item or per-set unit. **Price checked** is the local lookup age; **latest market report** is the source observation age. **Details** expands to show the source, report count, fee calculation and next check, and remains open while prices update. A recognised item with no source coverage says **No market reports**; an unclear name asks for a clearer item name. Older references are muted and receive no comparison rating. Technical HTTP errors stay in connection details.
-
-## Boundary: pixels only
-
-The only game observation is an ordinary OS screen capture. This project:
-
-- Does not open, inspect, attach to, or enumerate the MapleStory process.
-- Does not read game memory or files, intercept packets, inject a DLL, hook a renderer, or use a game API.
-- Does not send input, window messages, or commands to the game.
-- Does not parent or attach an overlay window to the game window.
-- Creates and controls only its **own** windows and helper processes.
-- Sends item names/IDs to the public price source; screenshots and OCR frames stay local. No telemetry.
-
-On KDE Wayland, labels use a separate **XWayland** window because ordinary Wayland windows cannot freely position themselves at desktop coordinates. Qt's input-transparent/no-focus flags apply to that independent window. No game handle or game process is used. The X11 bypass-window-manager flag prevents KDE from shifting the annotation canvas below the top panel. The control panel is a normal movable window; drag it wherever convenient.
-
-## Data and caching
-
-- Catalog: [OSMS Data Explorer](https://osmsdataexplorer.com/), its Classic World `data/current/items.json` **and `cash_shop.json`**, cached separately for one day. The cash catalog adds NX coupons, pet skills, cosmetics and other cash items, including named items currently off sale. This is a reference catalog, not evidence that every item is currently obtainable.
-- Default prices: [NiaMeowDB Classic World](https://meowdb.com/msclassic/free-market), fetched **on demand for visible, uniquely identified items**. The provider ID is matched using both the exact name and game item ID (`iconKey`); its database row IDs differ from game IDs.
-- Uses the site's **24-hour median** with at least five samples; otherwise its explicitly labeled longer-window `usual` reference. These are reported prices (asking and sold), not guaranteed completed trades. A daily median with fewer than five samples can be displayed when no longer-window reference exists, clearly marked as thin data. The request asks for clean condition.
-- Cache lifetime defaults to **15 minutes**, adjustable to 5/30/60. Up to three background requests handle new items, with duplicates coalesced. Fresh quotes and item-name lookups stay in memory during scanning; disk caching survives restarts; failed requests use a cooldown and never reset the age of an existing quote. Successful empty, unsupported-item and old-data responses respect the full cache TTL instead of triggering repeated requests. Cache expiry immediately removes the deal rating. Latest reports older than 24 hours, or missing report times, also prevent a rating.
-- Prices show **cache age and report age separately**. Rechecking an old report does not make the market observation new. At most 6,000 cached records are retained; records older than seven days are removed on startup. Empty, old-report and source-unsupported responses retain their HTTP cache TTL; they do not get fetched again on every screen read.
-- `Below reference` starts at 20% under, `Above reference` over 20% above, otherwise `Near reference`. These are comparison bands, not profitable-flip guarantees. Potential resale margin uses a **3% sale fee**. Listing quantities are normalized for ordinary items; stars/bullets are priced per set, never per projectile.
-- Duplicate item names are resolved against the provider's current Classic catalog. A reference is selected only when one matching candidate ID remains; multiple current matches stay explicitly ambiguous. The source's database ID is still validated against the game ID.
-- NX retail costs are shown separately in the panel when supplied by the cash catalog. **Overlay FM values are mesos, not NX.** Retail cost is never substituted for a market reference.
-
-Resource controls: frames use local uncompressed RGBA instead of PNG encode/decode, local frame buffers provide backpressure, unchanged shop pixels skip OCR, known shops are read from a small capture region, and a moved shop triggers a full search immediately. The UI rebuilds item cards only when their content changes or ages tick. Rust/OCR uses at most two worker threads; network requests are deduplicated and time-limited. SQLite connections close after each operation. No full-market polling at the screen-reading rate.
-
-The cache and bounded capture log use Qt's standard per-user cache directory. On Linux, the default is typically `~/.cache/LocalTools/Classic Price Lens/`. `--cache /path/prices.sqlite` selects another price-cache location. Installed files remain separate from settings, logs and prices; normal use does not require administrator access.
-
-## Build / other systems
-
-Source builds require Python 3.11+, Rust 1.90+, Git, and PySide6/Qt Multimedia. No AI account or API key is needed. From a repository checkout on Linux:
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements.txt
-./setup.sh
-./run.sh
-```
-
-The reader uses Minerva's MIT headless core, pinned at `7e1aa7d418fb255bd66eb4dce848fc9eb305cd81`. `setup.sh` clones this revision if missing and builds the OCR helper and headless core. Rust build concurrency is limited to two jobs. The OCR model is bundled by upstream; see [THIRD_PARTY.md](THIRD_PARTY.md).
-
-For a Windows source build, run `setup-windows.ps1` followed by `run-windows.bat`. To build the native installer/package formats, see [packaging/README.md](packaging/README.md).
-
-macOS remains untested. The intended capture path uses Qt's OS screen capture through the same local helper (`python -m price_lens --capture`), with screen-recording permission on macOS. KDE/Spectacle and XWayland are Linux-specific adapters.
-
-## Checks
-
-```bash
-python -m unittest discover -s tests -v
-cargo check --locked --manifest-path reader/Cargo.toml -j 2
-```
-
-Tests cover item-ID matching, ambiguous names, narrow y/v glyph correction, scroll tiers, bundle versus set pricing, fee calculations, cache expiry, request counting for parked items, unsupported-item 400 responses, failed refreshes, original import age, wrong-world rejection, and upstream OCR fixtures. Capture diagnostics and calibration images are excluded from source control and release packages.
-
-## Limits
-
-Only visible shop rows and enabled tooltips are read; no automated browsing or purchases. Sold rows are omitted, not counted as a source price. Ambiguous names/tiers stay unknown. Tooltip OCR can fail on particular glyphs/fonts; unmatched names stay unknown. The current price source can lag or contain outliers; equipment comparisons assume unscrolled items and do not distinguish individual stat rolls. Labels cover some adjacent game UI/chat; they are mouse-transparent. With screen capture, covering the listing hides it from OCR, as expected. Multiple simultaneous shops, mixed DPI displays, fullscreen-exclusive games, and other operating systems require further testing.
+[Windows help](README-WINDOWS.md) · [Technical details and source builds](docs/TECHNICAL.md) · [Building installers](packaging/README.md) · [Validation](VERIFICATION.md) · [Credits and licenses](THIRD_PARTY.md)

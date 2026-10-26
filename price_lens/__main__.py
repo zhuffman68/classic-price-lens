@@ -12,6 +12,7 @@ def main():
     control_options = parser.add_mutually_exclusive_group()
     control_options.add_argument("--quit", action="store_true", help="Close the running Classic Price Lens instance")
     control_options.add_argument("--toggle", action="store_true", help="Toggle reading/overlay in the running instance")
+    control_options.add_argument("--minimize", action="store_true", help="Minimize the running panel using its tray preference")
     parser.add_argument("--self-test", action="store_true", help="Check bundled OCR and overlay IPC without screen capture")
     parser.add_argument("--snapshot", type=Path, help="Read a saved shop screenshot")
     parser.add_argument("--capture", action="store_true", help="Open OS screen-sharing picker on startup")
@@ -23,13 +24,14 @@ def main():
         return self_test()
     from PySide6.QtCore import QCoreApplication
     from .control import AppControl, request
-    if args.quit or args.toggle:
+    if args.quit or args.toggle or args.minimize:
         app = QCoreApplication(sys.argv[:1])
         app.setApplicationName("Classic Price Lens")
         app.setOrganizationName("LocalTools")
-        answer = request("quit" if args.quit else "toggle", timeout=30000 if args.quit else 3000)
+        command = "quit" if args.quit else "toggle" if args.toggle else "minimize"
+        answer = request(command, timeout=30000 if args.quit else 3000)
         if answer is None:
-            if args.toggle:
+            if args.toggle or args.minimize:
                 return 0
             probe = AppControl()
             if not probe.start():
@@ -38,10 +40,11 @@ def main():
             return 0
         return 0 if answer else 1
     from PySide6.QtWidgets import QApplication
-    from PySide6.QtGui import QIcon
+    from .icons import app_icon
     from .platform_paths import cache_directory
     from .ui import LensWindow
     app = QApplication(["classic-price-lens"])
+    app.setQuitOnLastWindowClosed(False)
     app.setApplicationName("Classic Price Lens")
     app.setOrganizationName("LocalTools")
     app.setApplicationVersion(__version__)
@@ -50,16 +53,18 @@ def main():
     if not control.start():
         return 0 if request("activate") else 1
     root = Path(__file__).resolve().parent.parent
-    app.setWindowIcon(QIcon(str(root / "price_lens/resources/icon.png")))
+    app.setWindowIcon(app_icon(root))
     cache = args.cache or cache_directory() / "prices.sqlite"
     window = LensWindow(root, cache, args.snapshot, args.capture, args.kde)
+    window.closed.connect(app.quit)
     def activate():
-        window.showNormal()
-        window.raise_()
-        window.activateWindow()
+        if window.closing:
+            return
+        window.tray.restore()
     control.activate.connect(activate)
     control.quit.connect(window.close)
     control.toggle.connect(window.toggle_capture)
+    control.minimize.connect(window.showMinimized)
     # Place our own window on the middle display, without touching other windows.
     screens = app.screens()
     if len(screens) > 1:
