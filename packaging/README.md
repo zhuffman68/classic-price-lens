@@ -56,3 +56,20 @@ For cross-building on Linux, pass the compiler's filesystem path and an explicit
 The installed entry point is `runtime/pythonw.exe -B -m price_lens`. It waits for the user's **Start reading** action. `selftest-windows.bat` runs an offline check. `scripts/make_windows_zip.py` can also create a portable ZIP; archives remain unencrypted.
 
 On Linux, `scripts/test_windows_installer.py --wine-prefix /path/to/isolated-prefix` validates install/upgrade/removal and the installed suite. Never point it at a game or default Wine prefix. Native Windows capture/physical hotkey testing remains separate from Wine verification.
+
+## Updating itch.io
+
+Install the official [Butler CLI](https://itch.io/docs/butler/installing.html) and authorize it once with `butler login`. From a checkout containing the current four builds, portable staging folder and `dist/SHA256SUMS.txt`:
+
+```sh
+python scripts/publish_itch.py --dry-run
+python scripts/publish_itch.py
+```
+
+The default target is `zhuffman68/classic-price-lens`; `--project username/slug` selects another project. Dry-run validates checksums and prepares the local upload folders without network access. A real upload also checks the anonymous page's password form before and after publishing. It never changes project visibility or the shared password. Butler keeps authorization outside the repository; no credential belongs in source control.
+
+The five stable channels are `windows-portable`, `windows-installer`, `linux-arch`, `linux-debian` and `checksums`. Subsequent uploads update the same channels, use the app's version number, and skip identical content. Source-only publisher checks run with `python -m unittest discover -s scripts/tests -q`.
+
+Butler serves browser downloads as ZIPs. The portable channel contains the application; the other platform channels contain the native installer/package with an `INSTALL.txt` explaining extraction and installation. Original native package hashes apply after extraction. The portable download is reconstructed by itch.io, so use its included `build-manifest.json` for per-file hashes rather than comparing the generated ZIP to the standalone Windows ZIP hash.
+
+Existing files uploaded manually through the browser are separate from Butler channels. The publisher leaves them in place; remove superseded manual entries from Edit project once the new channels are verified. Page descriptions, screenshots and password settings remain managed through the itch.io dashboard.

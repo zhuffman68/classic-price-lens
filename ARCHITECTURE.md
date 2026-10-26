@@ -111,6 +111,8 @@ Installed application directories stay read-only during normal use. Settings, ca
 
 Build commands and prerequisites are in [packaging/README.md](packaging/README.md). Native Windows capture, mixed-DPI alignment and physical shortcut acceptance remain separate from Wine binary/installer tests; macOS is not a validated distribution target.
 
+`scripts/publish_itch.py` validates the released artifact checksums and every portable build file before uploading through the official Butler CLI. It uses stable platform channels and the application version, checks the anonymous project's password gate before and after publishing, and never changes the shared password or visibility. Butler owns local authorization outside the repository. Native installer/package channels include extraction instructions because Butler's browser downloads are ZIPs. Publisher-only tests live under `scripts/tests` and are separate from the application's packaged test suite.
+
 ## Verification and extension points
 
 The tests combine real upstream OCR fixtures and local IPC with isolated UI, clock and network fixtures. Scheduling tests block controlled workers to prove priority, queue bounds, visibility cancellation, thread ownership, stale-reference delivery, retry behavior and request counts across repeated observations. They never drive a game or start OS sharing.
