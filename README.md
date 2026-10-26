@@ -15,8 +15,8 @@ Get the latest files from **[GitHub Releases](https://github.com/zhuffman68/clas
 | System | Choose | Install |
 | --- | --- | --- |
 | Windows 10/11 x64 | `Windows-x64-Setup.exe` | Run it, then open Classic Price Lens from Start. |
-| Arch / Manjaro | `.pkg.tar.zst` | `sudo pacman -U ./classic-price-lens-0.4.0-1-x86_64.pkg.tar.zst` |
-| Debian 12+ / Ubuntu 22.04+ | `.deb` | `sudo apt install ./classic-price-lens_0.4.0-1_amd64.deb` |
+| Arch / Manjaro | `.pkg.tar.zst` | `sudo pacman -U ./classic-price-lens-0.4.1-1-x86_64.pkg.tar.zst` |
+| Debian 12+ / Ubuntu 22.04+ | `.deb` | `sudo apt install ./classic-price-lens_0.4.1-1_amd64.deb` |
 
 You'll need a supported 64-bit desktop, about **1 GB free space**, and internet for price updates. Python, Qt and the reader are included. Linux screen sharing needs PipeWire and a working desktop sharing portal; KDE and GNOME normally provide them.
 
@@ -33,6 +33,7 @@ A portable Windows ZIP is also available: extract it fully and open `run-windows
 
 ## Everyday controls
 
+- Inventory price cards follow the cursor smoothly. Shop labels move with the store; labels fade subtly and step aside while its item-details popup is open.
 - **Pause / Resume:** hides or restores labels. Resume reuses the sharing session.
 - **Minimize:** puts the panel in the system tray by default and sends a notification. Click the tray icon to restore it. Right-click for reading controls, labels, Settings and Quit. If no tray is available, the panel minimizes to the taskbar.
 - **Close or Quit:** ends reading and screen sharing.

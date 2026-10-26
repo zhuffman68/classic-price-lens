@@ -8,6 +8,8 @@ import sys
 
 def main():
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from .qt_runtime import configure_qt
+    configure_qt()
     from PySide6.QtCore import qVersion, QTimer, QLibrary, QLibraryInfo
     from PySide6.QtGui import QImage
     from PySide6.QtMultimedia import QScreenCapture  # noqa: F401
@@ -50,6 +52,16 @@ def main():
     print("PASS: reader recognizes real item names, quantities and prices", flush=True)
     print("PASS: Qt screen-capture, local IPC and image decoder modules load", flush=True)
     app = QApplication.instance() or QApplication([])
+    from PySide6.QtMultimedia import QMediaCaptureSession, QVideoFrame, QVideoSink
+    media = QMediaCaptureSession()
+    sink = QVideoSink()
+    media.setVideoSink(sink)
+    probe_image = QImage(2, 2, QImage.Format.Format_RGBA8888)
+    probe_image.fill(0xff123456)
+    sink.setVideoFrame(QVideoFrame(probe_image))
+    assert sink.videoFrame().isValid(), "The Qt media backend could not initialize"
+    media.setVideoSink(None)
+    print("PASS: actual Qt media backend accepts a local frame without screen capture", flush=True)
     probe = Overlay(root)
     points = []
 

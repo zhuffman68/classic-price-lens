@@ -16,7 +16,8 @@ def number(value):
 
 
 def key(name):
-    return " ".join(str(name).casefold().replace("’", "'").split())
+    name = " ".join(str(name).casefold().replace("’", "'").split())
+    return re.sub(r"\s*:\s*", ":", name)
 
 
 def glyph_key(name):

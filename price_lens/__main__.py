@@ -19,6 +19,8 @@ def main():
     parser.add_argument("--kde", action="store_true", help="Use the KDE/Spectacle screenshot fallback")
     parser.add_argument("--cache", type=Path, help="Alternate local SQLite cache")
     args = parser.parse_args()
+    from .qt_runtime import configure_qt
+    configure_qt()
     if args.self_test:
         from .selftest import main as self_test
         return self_test()

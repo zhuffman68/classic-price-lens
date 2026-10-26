@@ -236,7 +236,8 @@ class PixelReader(QObject):
         if self.shop_rect and self.shop_fingerprint is not None:
             patch = image.copy(self.shop_rect)
             fingerprint = hashlib.blake2b(patch.constBits(), digest_size=8).digest()
-            if (fingerprint == self.shop_fingerprint and (not hover_check or tooltip_same)
+            shop_hover_due = in_shop and (self.pointer != self.last_pointer or time.monotonic() - self.last_geometry_check >= 0.2)
+            if (fingerprint == self.shop_fingerprint and not shop_hover_due and (not hover_check or tooltip_same)
                     and (not self.auto_active or time.monotonic()-self.last_geometry_check<0.4)):
                 self.submitted_sequence = self.image_sequence
                 return
@@ -246,7 +247,7 @@ class PixelReader(QObject):
         if self.shop_rect is None and time.monotonic() - self.pending_since < 0.2:
             return
         origin = {"x": 0, "y": 0}
-        self.using_roi = bool(self.shop_rect and not hover_check)
+        self.using_roi = bool(self.shop_rect and not hover_check and not in_shop)
         if self.using_roi:
             region = self.shop_rect.adjusted(-8, -8, 8, 8).intersected(image.rect())
             if not self.auto_active:
@@ -263,7 +264,7 @@ class PixelReader(QObject):
         self.submitted_image = self.image
         self.last_pointer = self.pointer
         request = {"path": str(path), "at_ms": int(self.last_frame * 1000),
-                   "pointer": {"x": pointer[0], "y": pointer[1]} if pointer and self.tooltip_enabled else None,
+                   "pointer": {"x": pointer[0], "y": pointer[1]} if pointer is not None else None,
                    "tooltip": bool(hover_check),
                    "origin": origin,
                    "auto_game": self.auto_active,
@@ -335,6 +336,7 @@ class PixelReader(QObject):
                     self.timings.append({"capture_to_read_ms": round(self.latest_latency_ms, 1),
                                          "ocr_ms": round(result.get("ocrMs", 0), 1),
                                          "rows": len((result.get("shop") or {}).get("rows", []))})
+                    result["pointerAtRead"] = list(self.last_pointer) if self.last_pointer is not None else None
                     self.reading.emit(result)
                     metrics = os.environ.get("CLASSIC_LENS_METRICS")
                     if metrics and time.monotonic() - self.last_metrics > 1:

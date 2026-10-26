@@ -20,6 +20,14 @@ class FakeCapture:
         self.active = False
         self.starts = 0
         self.frame_rate = 10
+        self.failure = ""
+
+    def error(self):
+        from PySide6.QtMultimedia import QScreenCapture
+        return QScreenCapture.Error.CapturingNotSupported if self.failure else QScreenCapture.Error.NoError
+
+    def errorString(self):
+        return self.failure
 
     def setMaximumFrameRate(self, value):
         self.frame_rate = value
@@ -126,3 +134,65 @@ class LocalFrameTransportTests(unittest.TestCase):
         self.until(lambda: len(self.received) == 1)
         self.assertEqual(self.fake_capture.frame_rate, 10)
         self.assertEqual(self.fake_capture.starts, 1)
+
+    def test_constructor_failure_is_reported_without_waiting_for_a_missing_signal(self):
+        self.fake_capture.active = False
+        self.fake_capture.failure = "Capturing is not supported on this platform"
+        statuses = []
+        self.client.status.connect(statuses.append)
+        self.client.send_subscription()
+        self.until(lambda: any(message.startswith("OS capture:") for message in statuses))
+        self.assertIn(self.fake_capture.failure, statuses[-1])
+        self.assertEqual(self.fake_capture.starts, 1)
+
+
+class CaptureStartupTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        cls.app = QApplication.instance() or QApplication([])
+
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.folder = Path(self.directory.name)
+        self.name = "ClassicPriceLens-startup-test-" + uuid.uuid4().hex
+        self.paths = patch("price_lens.stream.socket_name", return_value=self.name)
+        self.cache = patch("price_lens.stream.cache_directory", return_value=self.folder)
+        self.paths.start()
+        self.cache.start()
+        self.client = StreamClient(Path(__file__).resolve().parents[1])
+        self.statuses = []
+        self.client.status.connect(self.statuses.append)
+
+    def tearDown(self):
+        self.client.stop(keep_session=True)
+        self.client.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        self.app.processEvents()
+        self.paths.stop()
+        self.cache.stop()
+        self.directory.cleanup()
+
+    def until_stopped(self):
+        end = time.monotonic() + 2
+        while self.client.active and time.monotonic() < end:
+            self.app.processEvents()
+            time.sleep(0.001)
+        self.assertFalse(self.client.active)
+        self.assertFalse(self.client.retry_timer.isActive())
+        self.assertFalse(self.client.connect_timer.isActive())
+
+    def test_failed_launch_reports_an_error_and_stops_retrying(self):
+        with patch.object(self.client.launcher, "startDetached", return_value=False) as launch:
+            self.client.start(QRect(0, 0, 10, 10), QRect(0, 0, 10, 10))
+            self.until_stopped()
+            launch.assert_called_once()
+        self.assertTrue(any("helper could not start" in message for message in self.statuses))
+
+    def test_missing_helper_has_a_deadline_before_any_os_chooser(self):
+        self.client.connect_timer.setInterval(25)
+        with patch.object(self.client.launcher, "startDetached", return_value=True) as launch:
+            self.client.start(QRect(0, 0, 10, 10), QRect(0, 0, 10, 10))
+            self.until_stopped()
+            launch.assert_called_once()
+        self.assertTrue(any("helper did not connect" in message for message in self.statuses))

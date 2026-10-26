@@ -139,4 +139,3 @@ class GameAreaTests(unittest.TestCase):
         self.assertIsNone(outside["shop"])
         full=self.read(image,auto_game=False,locate_only=False)
         self.assertIsNotNone(full["shop"],"Control: fixture must be a readable shop without automatic cropping")
-

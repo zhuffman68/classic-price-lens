@@ -57,6 +57,10 @@ class StreamClient(QObject):
         self.retry_timer = QTimer(self)
         self.retry_timer.setInterval(100)
         self.retry_timer.timeout.connect(self.connect)
+        self.connect_timer = QTimer(self)
+        self.connect_timer.setSingleShot(True)
+        self.connect_timer.setInterval(10000)
+        self.connect_timer.timeout.connect(self.connection_timed_out)
         self.launcher = QProcess(self)
 
     def start(self, screen, desktop):
@@ -67,8 +71,9 @@ class StreamClient(QObject):
             self.send_subscription()
             return
         self.launched = False
-        self.connect()
         self.retry_timer.start()
+        self.connect_timer.start()
+        self.connect()
 
     def connect(self):
         if not self.active:
@@ -97,10 +102,20 @@ class StreamClient(QObject):
                 log_path.replace(log_dir / "stream.previous.log")
             self.launcher.setStandardOutputFile(str(log_path))
             self.launcher.setStandardErrorFile(str(log_path))
-            self.launcher.startDetached()
+            result = self.launcher.startDetached()
+            started = result[0] if isinstance(result, tuple) else result
+            if not started:
+                self.stop()
+                self.status.emit("OS capture: The screen-sharing helper could not start. Open Connection details for diagnostics.")
+
+    def connection_timed_out(self):
+        if self.active and self.socket.state() != QLocalSocket.LocalSocketState.ConnectedState:
+            self.stop()
+            self.status.emit("OS capture: The screen-sharing helper did not connect. Open Connection details for diagnostics.")
 
     def connected(self):
         self.retry_timer.stop()
+        self.connect_timer.stop()
         self.header_size = None
         self.metadata = None
         self.next_delivery = 0.0
@@ -162,6 +177,7 @@ class StreamClient(QObject):
     def stop(self, keep_session=False):
         self.active = False
         self.retry_timer.stop()
+        self.connect_timer.stop()
         self.delivery_timer.stop()
         self.launched = False
         if self.socket.state() == QLocalSocket.LocalSocketState.ConnectedState:
@@ -237,6 +253,11 @@ class CaptureServer(QObject):
             if "screen" in data and "desktop" in data:
                 self.clients[socket] = (QRect(*data["screen"]), QRect(*data["desktop"]))
                 if not self.capture.isActive():
+                    from PySide6.QtMultimedia import QScreenCapture
+                    # Constructor errors happen before errorOccurred is wired.
+                    if self.capture.error() != QScreenCapture.Error.NoError:
+                        self.send(socket, {"error": "OS capture: " + self.capture.errorString()})
+                        return
                     # Set a valid OS screen before starting. The sharing portal
                     # still chooses the actual source and can return a workspace.
                     target = self.clients[socket][0]
@@ -325,6 +346,8 @@ class CaptureServer(QObject):
 
 
 def main():
+    from .qt_runtime import configure_qt
+    configure_qt()
     from PySide6.QtGui import QGuiApplication
     app = QGuiApplication(sys.argv[:1])
     app.setApplicationName("Classic Price Lens")

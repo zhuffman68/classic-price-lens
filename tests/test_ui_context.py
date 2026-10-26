@@ -190,6 +190,78 @@ class ContextUiTests(unittest.TestCase):
         self.assertFalse(self.window.reader.tooltip_enabled)
         self.assertFalse(self.window.settings.values["tooltip-prices"])
 
+    def test_empty_or_unknown_tooltip_candidates_never_draw_floating_prices(self):
+        self.window.reader.pointer = (100, 100)
+        for name in (None, "", "Random scenery OCR"):
+            with self.subTest(name=name):
+                reading = self.reading(shop_hover=False)
+                reading["tooltip"]["found"]["name"] = name
+                self.window.on_reading(reading)
+                self.assertIsNone(self.window.tooltip_result)
+                self.assertEqual(len(self.window.overlay.rows), 1)
+
+    def test_tooltip_without_pointer_or_far_from_it_is_ignored(self):
+        self.window.reader.pointer = None
+        self.window.on_reading(self.reading(shop_hover=False))
+        self.assertIsNone(self.window.tooltip_result)
+        self.window.reader.pointer = (1500, 1500)
+        self.window.on_reading(self.reading(shop_hover=False))
+        self.assertIsNone(self.window.tooltip_result)
+
+    def test_tall_tooltip_name_above_pointer_is_valid(self):
+        self.window.reader.pointer = (100, 600)
+        self.window.on_reading(self.reading(shop_hover=False))
+        self.assertEqual(self.window.tooltip_result["name"], "Example Hat")
+        self.assertEqual(len(self.window.overlay.rows), 2)
+
+    def test_named_bandana_and_greater_scroll_use_the_actual_item_name(self):
+        self.window.on_catalog(Catalog({"items": [{"id": 1002013, "name": "Blue Bandana", "category": "Equipment"}],
+                                       "scrolls": [{"id": 2040002, "name": "Hat Accuracy Scroll: Greater", "tier": "Greater"}]}))
+        self.window.reader.pointer = (100, 650)
+        for name, expected in [("Blue Bandana", "Blue Bandana"),
+                               ("Hat Accuracy Scroll:Greater", "Hat Accuracy Scroll: Greater")]:
+            with self.subTest(name=name):
+                reading = self.reading(shop_hover=False)
+                reading["tooltip"]["found"]["name"] = name
+                self.window.on_reading(reading)
+                self.assertEqual(self.window.overlay.rows[-1]["name"], expected)
+
+    def test_native_shop_stats_popup_temporarily_hides_market_labels(self):
+        reading = self.reading(shop_hover=True)
+        reading["hover"]["tooltip"] = {"found": reading["tooltip"]["found"]}
+        self.window.on_reading(reading)
+        self.assertTrue(self.window.shop_tooltip_active)
+        self.assertEqual(self.window.overlay.rows, [])
+        self.window.on_reading(self.reading(shop_hover=True))
+        self.assertFalse(self.window.shop_tooltip_active)
+        self.assertEqual(len(self.window.overlay.rows), 1)
+
+    def test_covered_shop_rows_do_not_draw_unreadable_price_badges(self):
+        reading = self.reading(shop_hover=True)
+        reading["shop"]["rows"][0].update(name=None, price=None, covered=True)
+        self.window.on_reading(reading)
+        self.assertEqual(self.window.overlay.rows, [])
+
+    def test_small_cursor_moves_keep_the_identified_price_and_card(self):
+        self.window.reader.pointer = (100, 100)
+        self.window.on_reading(self.reading(shop_hover=False))
+        card = self.window.cards_layout.itemAt(0).widget()
+        key = self.window.card_key
+        self.window.on_pointer(108, 105)
+        self.assertIsNotNone(self.window.tooltip_result)
+        self.window.render()
+        self.assertIs(self.window.cards_layout.itemAt(0).widget(), card)
+        self.assertEqual(self.window.card_key, key)
+        hover = self.window.overlay.rows[-1]
+        self.assertEqual(hover["follow_pointer"], [100, 100])
+
+    def test_reading_for_a_pointer_that_has_moved_away_is_rejected(self):
+        self.window.reader.pointer = (700, 700)
+        reading = self.reading(shop_hover=False)
+        reading["pointerAtRead"] = [100, 100]
+        self.window.on_reading(reading)
+        self.assertIsNone(self.window.tooltip_result)
+
     def test_error_for_a_previous_store_is_not_left_on_the_status_line(self):
         self.window.status_label.setText("Price lookup: old item: HTTP Error 400")
         self.window.errors[999] = "HTTP Error 400"

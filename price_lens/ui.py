@@ -129,6 +129,7 @@ class LensWindow(QMainWindow):
         self.hotkeys.status.connect(self.on_hotkey_status)
         self.hover_enabled = self.settings.value("tooltip-prices", True, type=bool)
         self.tooltip_result = None
+        self.shop_tooltip_active = False
         self.service = PriceService(cache_path, self)
         self.reader = PixelReader(root, self)
         self.reader.auto_enabled = self.auto_game_area
@@ -807,7 +808,7 @@ class LensWindow(QMainWindow):
             return
         geometry = self.screens[self.screen_index].geometry()
         image = self.reader.image
-        if not self.labels_enabled or not self.hover_enabled or self.mode != "live" or image.isNull() or not geometry.contains(QPoint(x, y)):
+        if not self.labels_enabled or self.mode != "live" or image.isNull() or not geometry.contains(QPoint(x, y)):
             self.reader.pointer = None
             if self.tooltip_result:
                 self.tooltip_result = None
@@ -816,9 +817,16 @@ class LensWindow(QMainWindow):
         point = (round((x - geometry.x()) * image.width() / geometry.width()),
                  round((y - geometry.y()) * image.height() / geometry.height()))
         if point != self.reader.pointer:
+            previous = self.reader.pointer
+            context_point = (point[0] - self.reader.crop.x(), point[1] - self.reader.crop.y()) if self.reader.crop else point
+            outside = (self.reader.auto_active and
+                       (self.reader.game_area is None or not self.reader.game_area.contains(QPoint(*point))))
+            jumped = previous is not None and max(abs(point[0] - previous[0]), abs(point[1] - previous[1])) > 64
+            clear = outside or jumped or pointer_in_shop(context_point, self.reader.shop_context)
+            had_tooltip = bool(self.tooltip_result and clear)
+            if clear:
+                self.tooltip_result = None
             self.reader.pointer = point
-            had_tooltip = self.tooltip_result is not None
-            self.tooltip_result = None
             self.reader.image_sequence += 1
             if had_tooltip:
                 self.render()
@@ -842,11 +850,34 @@ class LensWindow(QMainWindow):
         rows = (result.get("shop") or {}).get("rows", [])
         tooltip = result.get("tooltip")
         found = tooltip.get("found") if isinstance(tooltip, dict) else None
+        shop_tooltip = (result.get("hover") or {}).get("tooltip")
+        shop_tooltip_active = bool(isinstance(shop_tooltip, dict) and shop_tooltip.get("found"))
+        read_pointer = result.get("pointerAtRead", self.reader.pointer)
         pointer = self.reader.pointer
         if pointer and self.reader.crop:
             pointer = (pointer[0] - self.reader.crop.x(), pointer[1] - self.reader.crop.y())
-        found = found if self.hover_enabled and not result.get("hover") and not pointer_in_shop(pointer, self.reader.shop_context) else None
-        changed = rows != self.rows or found != self.tooltip_result
+        found = found if self.hover_enabled and pointer is not None and not result.get("hover") and not pointer_in_shop(pointer, self.reader.shop_context) else None
+        if found:
+            name = found.get("name")
+            area = found.get("area") or {}
+            read_point = read_pointer
+            if read_point is not None and self.reader.crop:
+                read_point = (read_point[0] - self.reader.crop.x(), read_point[1] - self.reader.crop.y())
+            try:
+                box = QRect(int(area["x"]), int(area["y"]), int(area["width"]), int(area["height"]))
+                # This is the name line, not the whole tooltip. Tall tooltips
+                # can place it well above the pointer near the screen's edge.
+                near = read_point is not None and box.adjusted(-640, -640, 640, 640).contains(QPoint(*read_point))
+                moved = read_point is None or max(abs(pointer[0] - read_point[0]), abs(pointer[1] - read_point[1])) > 64
+                known = bool(name and (self.catalog is None or self.catalog.candidates(name, found.get("tier"))))
+                if not (known and box.width() >= 40 and box.height() >= 8 and near and not moved):
+                    found = None
+                else:
+                    found = {**found, "_pointer": list(read_pointer)}
+            except (KeyError, TypeError, ValueError):
+                found = None
+        changed = rows != self.rows or found != self.tooltip_result or shop_tooltip_active != self.shop_tooltip_active
+        self.shop_tooltip_active = shop_tooltip_active
         self.tooltip_result = found
         self.rows = rows
         self.request_prices()
@@ -983,7 +1014,8 @@ class LensWindow(QMainWindow):
             self.summary.setText("")
         # Keep the UI small at rest. Rebuild only when content/state changes or
         # the five-second age bucket changes; screen frames never rebuild cards.
-        card_key = (repr(self.rows), repr(self.tooltip_result), repr(self.quotes), repr(self.errors),
+        tooltip_content = {key: value for key, value in self.tooltip_result.items() if key not in ("area", "_pointer")} if self.tooltip_result else None
+        card_key = (repr(self.rows), repr(tooltip_content), repr(self.quotes), repr(self.errors),
                     self.mode, screen_old, self.capture_starting, self.catalog_loading,
                     self.catalog_error, id(self.catalog), self.ttl, int(now // 5), tuple(sorted(map(str, self.expanded_details))),
                     tuple((key, quote.cache_valid(now, self.ttl), quote.fresh(now, self.ttl)) for key, quote in self.quotes.items()))
@@ -1026,11 +1058,13 @@ class LensWindow(QMainWindow):
         screen_matches = (not image.isNull() and abs(image.width() - geometry.width() * dpr) <= 2
                           and abs(image.height() - geometry.height() * dpr) <= 2)
         game_visible = not self.reader.auto_active or self.reader.game_area is not None
-        if self.labels_enabled and self.mode == "live" and not screen_old and screen_matches and self.catalog and game_visible:
+        if self.labels_enabled and self.mode == "live" and not screen_old and screen_matches and self.catalog and game_visible and not self.shop_tooltip_active:
             sx, sy = geometry.width() / image.width(), geometry.height() / image.height()
             crop = self.reader.crop
             offset_x, offset_y = (crop.x(), crop.y()) if crop else (0, 0)
-            for row in self.rows:
+            for index, row in enumerate(self.rows):
+                if row.get("covered"):
+                    continue
                 area = row["area"]
                 item = self.catalog.resolve(row.get("name"), row.get("tier"))
                 quote = self.quote_for(item)
@@ -1053,7 +1087,9 @@ class LensWindow(QMainWindow):
                 annotations.append({"x": round((area["x"] + area["width"] + offset_x) * sx) + 9,
                                     "y": round((area["y"] + offset_y + area["height"] / 2) * sy) - 12,
                                     "name": item.name if item else row.get("name") or "Unresolved item",
-                                    "text": text, "color": COLORS[verdict.tone]})
+                                    "text": text, "color": COLORS[verdict.tone],
+                                    "key": f"shop:{index}:{item.game_id if item else row.get('name')}",
+                                    "animate_move": True})
         if self.labels_enabled and self.hover_enabled and self.tooltip_result and self.mode == "live" and not screen_old and screen_matches and self.catalog and game_visible:
             found = self.tooltip_result
             area = found["area"]
@@ -1072,11 +1108,19 @@ class LensWindow(QMainWindow):
             else:
                 text = "FM • source has no market data" if quote else "FM no price data" if item and item.game_id in self.errors else "FM checking reference…"
                 fresh = False
-            annotations.append({"name": item.name if item else name or "Unreadable tooltip name",
-                                "text": text, "color": COLORS["blue" if fresh else "muted"],
-                                "x": round((area["x"] + ox) * sx),
-                                "y": max(7, round((area["y"] + oy) * sy) - 40)})
-        self.overlay.update(list(geometry.getRect()), annotations, hover_enabled=self.labels_enabled and self.hover_enabled and self.mode == "live")
+            # Unreadable/unknown candidates are common on ordinary scenery.
+            # Draw a hover reference only after identifying a catalog item.
+            point = found.get("_pointer")
+            if item and point is not None:
+                region = self.reader.game_area if self.reader.auto_active else self.reader.crop or image.rect()
+                annotations.append({"name": item.name, "key": item.game_id,
+                                    "text": text, "color": COLORS["blue" if fresh else "muted"],
+                                    "x": round((area["x"] + ox) * sx),
+                                    "y": max(7, round((area["y"] + oy) * sy) - 40),
+                                    "follow_pointer": [geometry.x() + round(point[0] * sx), geometry.y() + round(point[1] * sy)],
+                                    "pointer_region": [geometry.x() + round(region.x() * sx), geometry.y() + round(region.y() * sy),
+                                                       round(region.width() * sx), round(region.height() * sy)]})
+        self.overlay.update(list(geometry.getRect()), annotations, hover_enabled=self.labels_enabled and self.mode == "live" and game_visible and screen_matches and not screen_old)
         if (annotations and ready_price and not self.first_price_seen):
             self.first_price_seen = True
             self.settings.setValue("first-price-seen", True)
