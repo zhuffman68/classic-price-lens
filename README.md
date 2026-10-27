@@ -1,4 +1,4 @@
-<p align="center"><img src="price_lens/resources/lupin.webp" width="67" height="55" alt="Animated Lupin"> <img src="price_lens/resources/wordmark.svg" width="159" height="84" alt="Lupin"></p>
+<p align="center"><img src="price_lens/resources/lupin.gif" width="73" height="64" alt="Animated Lupin"> <img src="price_lens/resources/wordmark.svg" width="122" height="45" alt="Lupin"></p>
 
 # Lupin
 
@@ -19,8 +19,8 @@ Get the latest files from **[itch.io](https://zhuffman68.itch.io/lupin)**. Repos
 | System | Choose | Install |
 | --- | --- | --- |
 | Windows 10/11 x64 | `Windows-x64-Setup.exe` | Run it, then open Lupin from Start. |
-| Arch / Manjaro | `.pkg.tar.zst` | `sudo pacman -U ./lupin-0.7.0-1-x86_64.pkg.tar.zst` |
-| Debian 12+ / Ubuntu 22.04+ | `.deb` | `sudo apt install ./lupin_0.7.0-1_amd64.deb` |
+| Arch / Manjaro | `.pkg.tar.zst` | `sudo pacman -U ./lupin-0.8.0-1-x86_64.pkg.tar.zst` |
+| Debian 12+ / Ubuntu 22.04+ | `.deb` | `sudo apt install ./lupin_0.8.0-1_amd64.deb` |
 
 You'll need a supported 64-bit desktop, about **1 GB free space**, and internet for price updates. Python, Qt and the reader are included. **Chrome, Edge or Chromium** enables the full-market cache; otherwise prices use individual lookups. Linux screen sharing needs PipeWire and a working desktop sharing portal; KDE and GNOME normally provide them.
 
@@ -34,6 +34,8 @@ A portable Windows ZIP is also available: extract it fully and open `run-windows
 4. Open a shop or hover an item. Minimize the panel when you're ready.
 
 Use **Search** to look up an item by name, including NX items. Select a result to check its meso price. Search works without screen sharing and shares the overlay's saved price cache.
+
+For **Korean speech bubbles**, enable local translation in Settings and choose its shortcut (default **Ctrl+Alt+Y**). Press it near a message to show English with the Korean original. Everything runs locally. Bubbles are read on demand; translations disappear when the original changes. Unknown shorthand may remain untranslated. [Translation details](docs/KOREAN_CHAT.md).
 
 **EXP watching starts automatically** once the character and EXP bar are readable. The page shows elapsed tracking time, gain, rates per minute/hour and time to next level. Rates settle after 30 seconds and use a recent smoothed average. **Pause watching** excludes a break; **Reset session** saves the current run and starts fresh. Map changes save history segments and watching continues. Optional labels and notes are in **Session options**.
 

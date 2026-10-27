@@ -13,6 +13,7 @@ def main():
     control_options.add_argument("--quit", action="store_true", help="Close the running Lupin instance")
     control_options.add_argument("--toggle", action="store_true", help="Toggle reading/overlay in the running instance")
     control_options.add_argument("--minimize", action="store_true", help="Minimize the running panel using its tray preference")
+    control_options.add_argument("--translate", action="store_true", help="Translate Korean speech bubbles using the running instance's shared screen")
     parser.add_argument("--self-test", action="store_true", help="Check bundled OCR and overlay IPC without screen capture")
     parser.add_argument("--snapshot", type=Path, help="Read a saved shop screenshot")
     parser.add_argument("--capture", action="store_true", help="Open OS screen-sharing picker on startup")
@@ -26,14 +27,14 @@ def main():
         return self_test()
     from PySide6.QtCore import QCoreApplication
     from .control import AppControl, request
-    if args.quit or args.toggle or args.minimize:
+    if args.quit or args.toggle or args.minimize or args.translate:
         app = QCoreApplication(sys.argv[:1])
         app.setApplicationName(LEGACY_APP_NAME)
         app.setOrganizationName("LocalTools")
-        command = "quit" if args.quit else "toggle" if args.toggle else "minimize"
+        command = "quit" if args.quit else "toggle" if args.toggle else "translate" if args.translate else "minimize"
         answer = request(command, timeout=30000 if args.quit else 3000)
         if answer is None:
-            if args.toggle or args.minimize:
+            if args.toggle or args.minimize or args.translate:
                 return 0
             probe = AppControl()
             if not probe.start():
@@ -68,6 +69,7 @@ def main():
     control.quit.connect(window.close)
     control.toggle.connect(window.toggle_capture)
     control.minimize.connect(window.showMinimized)
+    control.translate.connect(window.translate_chat)
     # Place our own window on the middle display, without touching other windows.
     screens = app.screens()
     if len(screens) > 1:

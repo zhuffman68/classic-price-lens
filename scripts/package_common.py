@@ -12,6 +12,13 @@ IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc", "*.sqlite*")
 
 
 def stage_application(out):
+    from prepare_chat_models import verify
+    chat_manifest=json.loads((ROOT/"packaging/chat-models.json").read_text())
+    verify(ROOT/"models/korean-chat",chat_manifest["outputs"])
+    for name in (*chat_manifest["outputs"],"manifest.json"):
+        destination=out/"models/korean-chat"/name
+        destination.parent.mkdir(parents=True,exist_ok=True)
+        shutil.copy2(ROOT/"models/korean-chat"/name,destination)
     shutil.copytree(ROOT / "price_lens", out / "price_lens", dirs_exist_ok=True, ignore=IGNORE)
     shutil.copytree(ROOT / "tests", out / "tests", dirs_exist_ok=True, ignore=IGNORE)
     for name in ("README.md", "README-WINDOWS.md", "THIRD_PARTY.md", "VERIFICATION.md", "ARCHITECTURE.md"):
@@ -21,6 +28,7 @@ def stage_application(out):
     shutil.copy2(ROOT / "docs/TECHNICAL.md", documentation / "TECHNICAL.md")
     shutil.copy2(ROOT / "docs/ARTWORK.md", documentation / "ARTWORK.md")
     shutil.copy2(ROOT / "docs/PRICE_LOOKUP_LATENCY.md", documentation / "PRICE_LOOKUP_LATENCY.md")
+    shutil.copy2(ROOT / "docs/KOREAN_CHAT.md", documentation / "KOREAN_CHAT.md")
     fixtures = ROOT / "vendor/minerva/samples"
     categories = {"player-shop": ["gems-and-ores", "live-greater-chaos-and-intermediate-scrolls", "equips-two-sold-out"],
                   "item-tooltip": ["screw@60,20"],

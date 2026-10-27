@@ -1,5 +1,14 @@
 # Verification — 2026-10-27
 
+## Lupin v0.8.0
+
+- The 219-test suite covers exact Korean/English numeric units, refusing invented currency or scale, contextual game phrases, source-pixel/timeout retirement, wrapped cards within game bounds, independent shortcut actions, complete animation delays, attack completion and hidden/reduced-motion idling. A real isolated worker reads a synthetic Korean speech bubble and unloads cleanly. No test starts sharing or sends game input.
+- All six supplied screenshots were processed locally. The five containing Korean speech bubbles produced first cards in 72–225 ms after preload; complete scans took 221–831 ms, including local IPC/OCR/translation. Repeated full scans took 19–29 ms after fixing padding-dependent crop-cache keys. The sixth image correctly returned no Korean speech-bubble card. Cold readiness took 778 ms. Worker PSS was about 229 MiB, with zero CPU ticks in a two-second idle sample. These are fixture timings under existing machine load, not live capture/compositor guarantees.
+- Rendered cards were inspected against a supplied screenshot, including Korean font fallback. They retain the original and label partial or approximate translations. Unknown shorthand is preserved. Numeric validation cannot repair an OCR digit error. The first version reads visible neutral speech bubbles on demand, not expanded chat history or megaphone banners, and retires rather than follows moving bubbles.
+- The source and bundled Linux suites pass. Windows-binary tests under isolated Wine exercise local model inference, UTF-8 worker IPC and both shortcut identities. A legacy Windows pipe code-page failure was reproduced and corrected by explicitly writing UTF-8 bytes.
+- The complete original-game Lupin exports retain all four walk and eleven attack frames, with their 670/2250 ms cycle durations. This fixes shortened community previews; exact current Classic World timing has not been measured live. The pixel wordmark changes; the approved application icon does not.
+- Model input/output hashes and inference wheels are pinned. Staging includes only the verified model allowlist and dependencies; private screenshots, transcripts, benchmarks and caches stay excluded. Package transactions and native capture limits are recorded below and in packaging/README.md.
+
 ## Lupin v0.7.0
 
 - The 212-test application suite covers automatic EXP watching, percent/raw/both units, history continuity, persistent cards, stable display/tab geometry, interrupted motion, hidden-sprite idling, shop priority, guarded occlusion, moved-shop crop recovery, request cancellation and validated ID-index reuse. Tests use offscreen Qt and local fixtures/servers; no test starts desktop sharing or sends game input.

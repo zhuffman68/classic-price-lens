@@ -44,6 +44,16 @@ class WindowsShortcutTests(unittest.TestCase):
             message.wParam += 10
             self.assertFalse(hotkey.nativeEventFilter(b"windows_dispatcher_MSG", ctypes.addressof(message))[0])
             self.assertEqual(hotkey.register("Ctrl+Alt+Shift+P"), "Ctrl+Alt+Shift+P")
+            other_fired=[]
+            other=WindowsHotkey(lambda:other_fired.append(True))
+            try:
+                other.register("Ctrl+Alt+Shift+F8")
+                self.assertNotEqual(other.id,hotkey.id)
+                message.wParam=other.id
+                self.assertFalse(hotkey.nativeEventFilter(b"windows_dispatcher_MSG",ctypes.addressof(message))[0])
+                self.assertTrue(other.nativeEventFilter(b"windows_dispatcher_MSG",ctypes.addressof(message))[0])
+                self.assertEqual(other_fired,[True])
+            finally:other.close()
         finally:
             hotkey.close()
         second = WindowsHotkey(lambda: None)
@@ -158,3 +168,13 @@ class PortalShortcutTests(unittest.IsolatedAsyncioTestCase):
                                       interface="org.freedesktop.portal.GlobalShortcuts", member="Activated",
                                       signature="osta{sv}", body=[session, action, 1, {}]))
         self.assertEqual(instance.events, [True])
+
+    async def test_translation_and_pause_actions_are_independent(self):
+        from dbus_next import Message,MessageType
+        pause=self.portal();pause.session="/test/pause"
+        translation=self.portal();translation.session="/test/translation";translation.action="translate-chat"
+        message=Message(message_type=MessageType.SIGNAL,path="/org/freedesktop/portal/desktop",
+                        interface="org.freedesktop.portal.GlobalShortcuts",member="Activated",
+                        signature="osta{sv}",body=[translation.session,"translate-chat",1,{}])
+        pause._message(message);translation._message(message)
+        self.assertEqual(pause.events,[]);self.assertEqual(translation.events,[True])

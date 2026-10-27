@@ -4,7 +4,7 @@ import sys
 import time
 
 from PySide6.QtCore import QEvent, QPoint, QRect, Qt, QTimer, QSettings, Signal
-from PySide6.QtGui import QColor, QImage, QKeySequence, QPainter, QPen, QPixmap
+from PySide6.QtGui import QColor, QImage, QKeySequence, QPainter, QPen, QPixmap, QCursor
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
     QFrame, QHBoxLayout, QKeySequenceEdit, QLabel, QMainWindow, QMessageBox, QPushButton,
@@ -25,6 +25,7 @@ from .search import PriceSearch
 from .motion import AnimatedTabs, MotionLabel, reveal
 from .branding import Brand
 from .shop_rows import ShopRows
+from .chat import ChatTranslation
 from . import APP_NAME, LEGACY_APP_NAME
 
 COLORS = {"green": "#86ceac", "red": "#ed9394", "amber": "#e4bd7b", "blue": "#9ebde3", "muted": "#98a3b1"}
@@ -143,6 +144,16 @@ class LensWindow(QMainWindow):
         self.hotkeys.activated.connect(self.on_hotkey)
         self.hotkeys.changed.connect(self.on_hotkey_changed)
         self.hotkeys.status.connect(self.on_hotkey_status)
+        self.chat_enabled=self.settings.value("korean-chat",False,type=bool)
+        self.chat=ChatTranslation(self.root,self)
+        self.chat.changed.connect(lambda:self.draw_labels(time.time(),time.time()-self.last_screen>3))
+        self.chat.status.connect(self.on_chat_status)
+        self.chat_hotkeys=HotkeyManager(self)
+        self.chat_hotkeys.action="translate-chat"
+        self.chat_hotkeys.activated.connect(self.translate_chat)
+        self.chat_sequence=self.settings.value("chat-hotkey","Ctrl+Alt+Y")
+        self.chat_hotkeys.changed.connect(lambda value:self.chat_shortcut.setToolTip(value))
+        self.chat_hotkeys.status.connect(self.on_chat_status)
         self.hover_enabled = self.settings.value("tooltip-prices", True, type=bool)
         self.bulk_enabled = self.settings.value("full-market-cache", True, type=bool)
         self.tooltip_result = None
@@ -337,6 +348,8 @@ class LensWindow(QMainWindow):
         QApplication.instance().screenRemoved.connect(self.refresh_monitors)
         if QApplication.platformName() != "offscreen":
             QTimer.singleShot(700, self.initialize_hotkey)
+        if self.chat_enabled:
+            QTimer.singleShot(800,lambda:self.set_chat_enabled(True))
 
     def build_settings(self):
         self.settings_dialog = QDialog(self)
@@ -395,6 +408,20 @@ class LensWindow(QMainWindow):
         self.hotkey_button = QPushButton("Keyboard shortcut…")
         self.hotkey_button.clicked.connect(self.configure_hotkey)
         layout.addWidget(self.hotkey_button)
+        layout.addWidget(label("Korean chat", "font-size: 15px; font-weight: 650"))
+        self.chat_check=QCheckBox("Enable local Korean speech-bubble translation")
+        self.chat_check.setChecked(self.chat_enabled)
+        self.chat_check.toggled.connect(self.set_chat_enabled)
+        layout.addWidget(self.chat_check)
+        layout.addWidget(label("Press Ctrl+Alt+Y near a message, or choose a shortcut below. Reads a snapshot of the shared game area. Originals remain visible; translations are approximate. Cards disappear when their bubble changes. No continuous chat scanning or uploads.","color: #a6b1bf; font-size: 11px",True))
+        self.chat_shortcut=QPushButton("Translation shortcut…")
+        self.chat_shortcut.clicked.connect(self.configure_chat_hotkey)
+        layout.addWidget(self.chat_shortcut)
+        chat_scan=QPushButton("Translate visible Korean now")
+        chat_scan.clicked.connect(self.translate_chat)
+        layout.addWidget(chat_scan)
+        self.chat_status_label=label("Disabled · local models load only when enabled",wrap=True)
+        layout.addWidget(self.chat_status_label)
         self.bulk_check = QCheckBox("Cache the full market on launch and hourly")
         self.bulk_check.setChecked(self.bulk_enabled)
         self.bulk_check.toggled.connect(self.set_bulk_enabled)
@@ -433,6 +460,65 @@ class LensWindow(QMainWindow):
     def open_settings(self):
         self.update_capture_controls()
         self.settings_dialog.exec()
+
+    def on_chat_status(self,message):
+        if hasattr(self,"chat_status_label"):self.chat_status_label.setText(message)
+
+    def set_chat_enabled(self,enabled):
+        self.chat_enabled=enabled;self.settings.setValue("korean-chat",enabled)
+        self.chat.enable(enabled)
+        if not enabled:
+            self.chat_hotkeys.close();self.on_chat_status("Disabled · local worker unloaded")
+        elif not self.chat_hotkeys.portal or self.settings.value("chat-hotkey-enabled",False,type=bool):
+            self.chat_hotkeys.start(self.chat_sequence)
+
+    def configure_chat_hotkey(self):
+        if self.chat_hotkeys.portal:
+            self.chat_check.setChecked(True)
+            self.settings.setValue("chat-hotkey-enabled",True)
+            self.chat_hotkeys.start(self.chat_sequence);self.chat_hotkeys.configure()
+            return
+        dialog=QDialog(self);dialog.setWindowTitle("Translation shortcut")
+        layout=QVBoxLayout(dialog)
+        layout.addWidget(label("Translate Korean speech bubbles from the shared game area.",wrap=True))
+        editor=QKeySequenceEdit(QKeySequence(self.chat_sequence));layout.addWidget(editor)
+        details=label("Default: Ctrl+Alt+Y",wrap=True);layout.addWidget(details)
+        apply=QPushButton("Set translation shortcut");layout.addWidget(apply)
+        self.chat_hotkeys.close()
+        def save():
+            try:
+                sequence=parse_shortcut(editor.keySequence().toString(QKeySequence.SequenceFormat.PortableText)).text
+                if self.hotkey_enabled and sequence==self.hotkey_sequence:
+                    raise ValueError("Choose a different combination from Pause / resume.")
+                if self.chat_hotkeys.start(sequence):
+                    self.chat_sequence=sequence;self.settings.setValue("chat-hotkey",sequence)
+                    self.chat_check.setChecked(True);dialog.accept()
+            except ValueError as error:details.setText(str(error))
+        apply.clicked.connect(save)
+        self.chat_hotkeys.status.connect(details.setText)
+        try:dialog.exec()
+        finally:
+            self.chat_hotkeys.status.disconnect(details.setText)
+            if self.chat_enabled:self.chat_hotkeys.start(self.chat_sequence)
+            else:self.chat_hotkeys.close()
+
+    def translate_chat(self):
+        if not self.chat_enabled:
+            self.on_chat_status("Enable local Korean translation in Settings first.");return
+        image=self.reader.image
+        if self.mode!="live" or image.isNull() or time.monotonic()-self.reader.last_frame>1:
+            self.on_chat_status("Start reading and share a display first. Translation needs a fresh game image.");return
+        region=self.reader.game_area if self.reader.auto_active else self.reader.crop
+        if region is None:
+            self.on_chat_status("Keep the Classic World status bar visible, or limit the reading area in Settings.");return
+        if self.screen_index is None:return
+        geometry=self.screens[self.screen_index].geometry()
+        dpr=self.screens[self.screen_index].devicePixelRatio()
+        if abs(image.width()-geometry.width()*dpr)>2 or abs(image.height()-geometry.height()*dpr)>2:
+            self.on_chat_status("Share the selected full display so translation cards can be positioned correctly.");return
+        point=QCursor.pos()
+        cursor=((point.x()-geometry.x())*image.width()/geometry.width(),(point.y()-geometry.y())*image.height()/geometry.height())
+        self.chat.request(image,region,cursor)
 
     def set_exp_enabled(self, enabled):
         self.exp_enabled = enabled
@@ -1000,6 +1086,7 @@ class LensWindow(QMainWindow):
         self.session_available = self.mode == "live"
         self.capture_error = ""
         self.last_screen = time.time() - max(0, time.monotonic() - self.reader.last_frame)
+        if self.chat.cards:self.draw_labels(time.time(),False)
         self.update_capture_controls()
         if was_starting:
             self.render()
@@ -1374,6 +1461,13 @@ class LensWindow(QMainWindow):
                                       round(area.y()*geometry.height()/image.height()),
                                       round(area.width()*geometry.width()/image.width()),round(area.height()*geometry.height()/image.height())])
                     annotations.insert(0,row)
+        if self.chat_enabled and self.mode=="live" and game_visible and screen_matches and not screen_old:
+            area=self.reader.game_area if self.reader.auto_active else self.reader.crop
+            if area:
+                sx,sy=geometry.width()/image.width(),geometry.height()/image.height()
+                bounds=[round(area.x()*sx),round(area.y()*sy),round(area.width()*sx),round(area.height()*sy)]
+                # Shop and EXP references paint above a manually requested chat card.
+                annotations=self.chat.annotations(image,sx,sy,bounds)+annotations
         self.overlay.update(list(geometry.getRect()), annotations, hover_enabled=self.labels_enabled and self.mode == "live" and game_visible and screen_matches and not screen_old)
         if (annotations and ready_price and not self.first_price_seen):
             self.first_price_seen = True
@@ -1438,6 +1532,8 @@ class LensWindow(QMainWindow):
         self.timer.stop()
         self.exp_panel.close_session()
         self.hotkeys.close()
+        self.chat_hotkeys.close()
+        self.chat.close()
         self.reader.close(keep_stream=self.keep_capture)
         self.service.close()
         self.overlay.close()

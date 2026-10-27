@@ -30,8 +30,9 @@ def main():
     (OUT / "python").rename(OUT / "runtime")
     site = OUT / "runtime/lib/python3.14/site-packages"
     site.mkdir(parents=True, exist_ok=True)
-    for prefix in ("shiboken6-", "pyside6_essentials-", "pyside6_addons-", "pyside6-", "dbus_next-"):
-        wheel = next(DOWNLOADS.glob(prefix + "*.whl"))
+    for entry in manifest:
+        if not entry["name"].endswith(".whl"):continue
+        wheel = DOWNLOADS/entry["name"]
         with zipfile.ZipFile(wheel) as archive:
             archive.extractall(site)
     # Developer tools, headers, bytecode and QML are unused by this QWidget app.

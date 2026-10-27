@@ -51,7 +51,10 @@ def portal_trigger(text):
 
 
 class PortalHotkey:
-    def __init__(self, activated, changed, status):
+    action = "toggle-reading"
+
+    def __init__(self, activated, changed, status, action="toggle-reading"):
+        self.action = action
         self.application_id = application_identity()
         self.activated, self.changed, self.status = activated, changed, status
         self.loop = asyncio.new_event_loop()
@@ -98,7 +101,7 @@ class PortalHotkey:
             if pending and not pending.done():
                 pending.set_result(message.body)
         elif message.interface == INTERFACE and message.member == "Activated":
-            if message.body[:2] == [self.session, "toggle-reading"]:
+            if message.body[:2] == [self.session, self.action]:
                 self.activated()
         elif message.interface == INTERFACE and message.member == "ShortcutsChanged":
             if message.body[0] == self.session:
@@ -106,7 +109,7 @@ class PortalHotkey:
 
     def _description(self, shortcuts):
         for identity, options in shortcuts:
-            if identity == "toggle-reading":
+            if identity == self.action:
                 value = options.get("trigger_description")
                 self.changed(value.value if value else "Desktop shortcut")
                 return True
@@ -165,11 +168,11 @@ class PortalHotkey:
                 # Bind the existing action to this session, reusing stored consent.
                 preferred = None
             token = "lens_" + uuid.uuid4().hex
-            options = {"description": Variant("s", "Pause or resume Classic Price Lens")}
+            options = {"description": Variant("s", "Translate visible Korean speech bubbles" if self.action == "translate-chat" else "Pause or resume Lupin")}
             if preferred:
                 options["preferred_trigger"] = Variant("s", preferred)
             result = await self._request("BindShortcuts", "oa(sa{sv})sa{sv}",
-                                         [self.session, [["toggle-reading", options]], "", {"handle_token": Variant("s", token)}], token)
+                                         [self.session, [[self.action, options]], "", {"handle_token": Variant("s", token)}], token)
             if not self._description(result.get("shortcuts", Variant("a(sa{sv})", [])).value):
                 self.status("No shortcut is assigned. Use Hotkey… to choose one.")
         finally:
@@ -179,7 +182,7 @@ class PortalHotkey:
         if self.session:
             self._submit(self._call(INTERFACE, "ConfigureShortcuts", "osa{sv}", [self.session, "", {}]))
         else:
-            self.register("Ctrl+Alt+P")
+            self.register("Ctrl+Alt+Y" if self.action == "translate-chat" else "Ctrl+Alt+P")
 
     def close(self):
         self.closed = True

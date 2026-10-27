@@ -3,6 +3,7 @@ import ctypes
 from dataclasses import dataclass
 import os
 import sys
+import itertools
 
 from PySide6.QtCore import QAbstractNativeEventFilter, QObject, QSocketNotifier, Qt, Signal
 from PySide6.QtGui import QGuiApplication, QKeySequence
@@ -36,6 +37,7 @@ def parse_shortcut(text):
 
 class WindowsHotkey(QAbstractNativeEventFilter):
     """RegisterHotKey posts WM_HOTKEY to this app's own message queue."""
+    ids = itertools.count(0x45AA, 2)
     def __init__(self, callback):
         super().__init__()
         from ctypes import wintypes
@@ -47,6 +49,7 @@ class WindowsHotkey(QAbstractNativeEventFilter):
         self.api.UnregisterHotKey.restype = wintypes.BOOL
         self.callback = callback
         self.id = None
+        self.id_base = next(self.ids)
         QGuiApplication.instance().installNativeEventFilter(self)
 
     def register(self, text):
@@ -78,7 +81,7 @@ class WindowsHotkey(QAbstractNativeEventFilter):
                     modifiers |= modifier
         else:
             raise ValueError("Choose a letter, number, navigation key or F1–F24.")
-        new_id = 0x45AB if self.id == 0x45AA else 0x45AA
+        new_id = self.id_base+1 if self.id == self.id_base else self.id_base
         if not self.api.RegisterHotKey(None, new_id, modifiers, virtual):
             raise ValueError("That shortcut is reserved or already used. Choose another combination.")
         if self.id is not None:
@@ -219,6 +222,7 @@ class HotkeyManager(QObject):
         self.portal = sys.platform == "linux" and bool(os.environ.get("WAYLAND_DISPLAY") or os.environ.get("XDG_SESSION_TYPE") == "wayland")
         self.backend = None
         self.text = None
+        self.action = "toggle-reading"
 
     def start(self, text=DEFAULT_HOTKEY):
         try:
@@ -229,7 +233,7 @@ class HotkeyManager(QObject):
                     self.backend = WindowsHotkey(self.activated.emit)
                 elif self.portal:
                     from .portal_hotkey import PortalHotkey
-                    self.backend = PortalHotkey(self.activated.emit, self.changed.emit, self.status.emit)
+                    self.backend = PortalHotkey(self.activated.emit, self.changed.emit, self.status.emit, action=self.action)
                 elif sys.platform == "linux":
                     self.backend = X11Hotkey(self.activated.emit)
                 else:

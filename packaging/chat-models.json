@@ -1,0 +1,66 @@
+{
+  "inputs": [
+    {
+      "name": "opus-ko-en.zip",
+      "url": "https://object.pouta.csc.fi/Tatoeba-MT-models/kor-eng/opus-2020-06-17.zip",
+      "sha256": "dc9ebcec5e46f443a34812ed5a13f84ffa1b77100cfee0687935f6b4a5026434"
+    },
+    {
+      "name": "rec.onnx",
+      "url": "https://huggingface.co/monkt/paddleocr-onnx/resolve/main/languages/korean/rec.onnx",
+      "sha256": "322f140154c820fcb83c3d24cfe42c9ec70dd1a1834163306a7338136e4f1eaa"
+    },
+    {
+      "name": "dict.txt",
+      "url": "https://huggingface.co/monkt/paddleocr-onnx/resolve/main/languages/korean/dict.txt",
+      "sha256": "a88071c68c01707489baa79ebe0405b7beb5cca229f4fc94cc3ef992328802d7"
+    },
+    {
+      "name": "LICENSE-PADDLEOCR.txt",
+      "url": "https://raw.githubusercontent.com/PaddlePaddle/PaddleOCR/main/LICENSE",
+      "sha256": "3840c5c0c61c294264d2dd77b8777be6ddd90121ef4e0e64abcd22edea581d6e"
+    }
+  ],
+  "outputs": {
+    "target.spm": {
+      "size": 813126,
+      "sha256": "f1531ac8576fe64267dfca0dc33950a6e9a2d3fd9e05346558ad7ea5ee0e65bf"
+    },
+    "OPUS-SOURCE.md": {
+      "size": 736,
+      "sha256": "448f07c272209be67880babcd77b4fe120a07dba6e004106dc368f093c387788"
+    },
+    "LICENSE-OPUS.txt": {
+      "size": 18652,
+      "sha256": "945fbcb37deca05bccd7c3ca0e261679f1f5373515504fdbad68f6f3cf6f49b9"
+    },
+    "rec.onnx": {
+      "size": 13401252,
+      "sha256": "322f140154c820fcb83c3d24cfe42c9ec70dd1a1834163306a7338136e4f1eaa"
+    },
+    "dict.txt": {
+      "size": 47451,
+      "sha256": "a88071c68c01707489baa79ebe0405b7beb5cca229f4fc94cc3ef992328802d7"
+    },
+    "source.spm": {
+      "size": 841805,
+      "sha256": "c9496f7c2be9aecb84c751ae9f35a875915dde8e3892f652a5c76811ab2a0f49"
+    },
+    "translation/model.bin": {
+      "size": 82713357,
+      "sha256": "b7b2f4f5cf67473fad4aa1758b6bca843150a4874fe97c73faaf5fa3437ecadd"
+    },
+    "translation/config.json": {
+      "size": 221,
+      "sha256": "152eb448f1020eb55f90971d7b95f61896abee8415d555ca51ae7897ac0a0e68"
+    },
+    "translation/shared_vocabulary.json": {
+      "size": 1405962,
+      "sha256": "598510ee69f4cbdaeed42f5a583f0a1260b175199a277ef79b2504ffac1565de"
+    },
+    "LICENSE-PADDLEOCR.txt": {
+      "size": 11376,
+      "sha256": "3840c5c0c61c294264d2dd77b8777be6ddd90121ef4e0e64abcd22edea581d6e"
+    }
+  }
+}

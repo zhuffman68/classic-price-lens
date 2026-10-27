@@ -28,8 +28,9 @@ def main():
         archive.extractall(runtime)
     site = runtime / "Lib/site-packages"
     site.mkdir(parents=True, exist_ok=True)
-    for prefix in ("shiboken6-", "pyside6_essentials-", "pyside6_addons-", "pyside6-"):
-        path = next(DOWNLOADS.glob(prefix + "*.whl"))
+    for entry in manifest:
+        if not entry["name"].endswith(".whl"):continue
+        path = DOWNLOADS/entry["name"]
         with zipfile.ZipFile(path) as archive:
             archive.extractall(site)
     pth = next(runtime.glob("python*._pth"))

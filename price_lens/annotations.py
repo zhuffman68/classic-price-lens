@@ -2,9 +2,10 @@
 import json
 import sys
 import threading
+from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal, Qt, QRect, QPoint, QPointF, QTimer, QVariantAnimation, QEasingCurve
-from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPen, QCursor, QRegion
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPen, QCursor, QRegion,QFontDatabase
 from PySide6.QtWidgets import QApplication, QWidget
 
 
@@ -19,6 +20,8 @@ class CommandPipe(QObject):
 
 
 class AnnotationWindow(QWidget):
+    korean_family=None
+
     def __init__(self, start_listener=True):
         flags = (Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint
                  | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.WindowTransparentForInput
@@ -41,6 +44,13 @@ class AnnotationWindow(QWidget):
         self.price_font.setPixelSize(12)
         self.name_font = QFont("Noto Sans")
         self.name_font.setPixelSize(10)
+        if self.korean_family is None:
+            identity=QFontDatabase.addApplicationFont(str(Path(__file__).parent/"resources/fonts/Maplestory-Bold.ttf"))
+            families=QFontDatabase.applicationFontFamilies(identity)
+            type(self).korean_family=families[0] if families else ""
+        if self.korean_family:
+            self.name_font.setFamilies(["Noto Sans",self.korean_family])
+            self.price_font.setFamilies(["Noto Sans",self.korean_family])
         self.pointer_timer = QTimer(self)
         self.pointer_timer.setInterval(100)
         self.pointer_timer.timeout.connect(self.report_pointer)
@@ -89,6 +99,13 @@ class AnnotationWindow(QWidget):
                 row["_width"] = min(350, max(230,metrics.horizontalAdvance(row["text"])+20,
                                              metrics.horizontalAdvance(row.get("extra",""))+20,
                                              metrics.horizontalAdvance(row.get("name",""))+20))
+                if row.get("kind")=="translation":
+                    row["_width"]=min(330,max(180,row.get("bounds",[0,0,330,0])[2]-8))
+                    wrap=Qt.TextFlag.TextWordWrap|Qt.AlignmentFlag.AlignLeft
+                    inner=QRect(0,0,row["_width"]-20,2000)
+                    row["_english_height"]=min(120,metrics.boundingRect(inner,int(wrap),row["text"]).height())
+                    row["_original_height"]=min(84,QFontMetrics(self.name_font).boundingRect(inner,int(wrap),row.get("original","")).height())
+                    row["_height"]=row["_english_height"]+row["_original_height"]+38
                 if self.reduce_motion:
                     self.dispose_row(row)
                     row["_alpha"] = row["_text_alpha"] = 1.0
@@ -273,6 +290,12 @@ class AnnotationWindow(QWidget):
             x, y = round(position.x()), round(position.y())
         width = row["_width"]
         height = 53 if row.get("extra") else 36
+        if row.get("kind")=="translation":
+            height=row["_height"]
+            bounds=QRect(*row.get("bounds",[0,0,self.width(),self.height()])).intersected(self.rect())
+            width=min(width,max(1,bounds.width()-4));height=min(height,max(1,bounds.height()-4))
+            return QRect(max(bounds.x()+2,min(x,bounds.right()-width-2)),
+                         max(bounds.y()+2,min(y,bounds.bottom()-height-2)),width,height)
         if row.get("anchor")=="bottom_left" and row.get("bounds"):
             bounds=QRect(*row["bounds"])
             width=min(width,max(1,bounds.width()-8))
@@ -298,6 +321,16 @@ class AnnotationWindow(QWidget):
             painter.setPen(QPen(QColor(92, 103, 119, 160), 1))
             painter.setBrush(QColor(22, 28, 38, 247))
             painter.drawRoundedRect(box, 5, 5)
+            if row.get("kind")=="translation":
+                painter.save();painter.setClipRect(box.adjusted(6,4,-6,-4))
+                painter.setFont(self.name_font);painter.setPen(QColor("#b5c9e4"))
+                name=painter.fontMetrics().elidedText(row.get("name","Korean chat"),Qt.TextElideMode.ElideRight,width-20)
+                painter.drawText(QRect(x+10,box.y()+5,width-20,15),Qt.AlignmentFlag.AlignVCenter,name)
+                painter.setFont(self.price_font);painter.setPen(QColor("#edf1f7"))
+                painter.drawText(QRect(x+10,box.y()+24,width-20,row["_english_height"]),int(Qt.TextFlag.TextWordWrap),row["text"])
+                painter.setFont(self.name_font);painter.setPen(QColor("#b2bccb"))
+                painter.drawText(QRect(x+10,box.y()+29+row["_english_height"],width-20,row["_original_height"]),int(Qt.TextFlag.TextWordWrap),row.get("original",""))
+                painter.restore();continue
             if row.get("kind")=="shop":
                 color=QColor(row.get("color","#98a3b1"))
                 painter.fillRect(QRect(x+2,box.y()+5,3,box.height()-10),color)

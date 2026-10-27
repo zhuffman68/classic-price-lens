@@ -22,3 +22,11 @@ Preserve the orange leaf, gold magnifying glass, and compact 32x32 pixel-art fee
 ## Lupin header (v0.7.0)
 
 The application icon remains the approved skill-style artwork. The header adds an unchanged, three-frame classic Lupin animation from OSMS Data Explorer and an SVG wordmark outlined from Nexon's official MapleStory Bold font. Source links and notices are in THIRD_PARTY.md and resources/fonts/LICENSE-Maplestory.txt. Runtime artwork is entirely local; the movie pauses when hidden, minimised, or Reduce motion is enabled. The README uses the same local WebP and SVG assets.
+
+## Lupin header (v0.8.0)
+
+The wordmark now uses Pixelify Sans SemiBold (SIL OFL 1.1), outlined to local SVG paths. The unmodified font and license are bundled. The approved orange application icon is unchanged.
+
+The complete classic GMS v83 Lupin exports are used instead of OSMS's shortened WebP previews. Public source: https://maplestory.io/api/GMS/83/mob/3210800/render/move and https://maplestory.io/api/GMS/83/mob/3210800/render/attack1 . No installed game files were read. Nexon owns the underlying character artwork.
+
+Walk delays: 120, 150, 150, 250 ms (670 ms). Attack delays: 200, 150, 300, 100, 100, 250, 300, 100, 100, 150, 500 ms (2250 ms). Qt plays the original files at 100% speed. After 18 complete walk cycles, the header plays one attack sequence. All frames are drawn at native pixel size without interpolation; the fixed canvas accommodates both animations. Both pause while hidden/minimized or with Reduce motion. The schedule is decorative, not an assertion about Classic World's combat AI cooldowns. Classic World timing has not been measured live; the reference is the complete original-game export.

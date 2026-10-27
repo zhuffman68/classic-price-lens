@@ -75,3 +75,7 @@ Butler serves browser downloads as ZIPs. The portable channel contains the appli
 Existing files uploaded manually through the browser are separate from Butler channels. The publisher leaves them in place; remove superseded manual entries from Edit project once the new channels are verified. Page descriptions, screenshots and password settings remain managed through the itch.io dashboard.
 
 The app is now named Lupin. Internal package and installation identities stay unchanged for seamless upgrades; public archives use Lupin/lupin names.
+
+## Local Korean model bundle
+
+Before staging either platform, install `requirements.txt` and run `python scripts/prepare_chat_models.py`. The script verifies pinned public model inputs, prepares int8 weights with CTranslate2 4.8.4, and verifies output hashes. `package_common.py` rejects missing/changed models and includes only that verified bundle. Both runtime manifests now pin the OCR/translation wheels and their dependencies; staging extracts the listed wheels, including license directories. Private screenshot benchmarks remain under ignored `evidence/`. The model bundle adds about 95 MiB before compression, plus inference runtimes.
