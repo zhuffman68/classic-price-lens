@@ -87,7 +87,7 @@ class TrayTests(unittest.TestCase):
         with patch("price_lens.tray.QSystemTrayIcon.isSystemTrayAvailable", return_value=True), \
                 patch.object(self.window.tray.icon, "showMessage") as notification:
             self.window.showMinimized()
-            next(action for action in self.window.tray.menu.actions() if action.text() == "Quit Classic Price Lens").trigger()
+            next(action for action in self.window.tray.menu.actions() if action.text() == "Quit Lupin").trigger()
             self.app.processEvents()
             self.assertTrue(self.window.closing)
             self.assertEqual(closed, [True])

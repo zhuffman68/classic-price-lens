@@ -9,7 +9,7 @@ from package_common import stage_application, stage_notices, assert_public_tree
 
 ROOT = Path(__file__).resolve().parents[1]
 DOWNLOADS = ROOT / ".build-tools/windows-downloads"
-OUT = ROOT / "dist/ClassicPriceLens-Windows-x64"
+OUT = ROOT / "dist/Lupin-Windows-x64"
 READER = ROOT / "reader/target/x86_64-pc-windows-gnullvm/release/classic-screen-reader.exe"
 
 

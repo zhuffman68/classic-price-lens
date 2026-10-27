@@ -11,9 +11,9 @@ class TrayController(QObject):
         self.window = window
         self.minimize_pending = False
         self.icon = QSystemTrayIcon(app_icon(window.root), window)
-        self.icon.setToolTip("Classic Price Lens")
+        self.icon.setToolTip("Lupin")
         self.menu = QMenu(window)
-        self.status = self.menu.addAction("Classic Price Lens")
+        self.status = self.menu.addAction("Lupin")
         self.status.setEnabled(False)
         self.menu.addSeparator()
         self.show = self.menu.addAction("Show panel", self.restore)
@@ -23,7 +23,7 @@ class TrayController(QObject):
         self.labels.toggled.connect(window.labels_check.setChecked)
         self.menu.addAction("Settings…", self.settings)
         self.menu.addSeparator()
-        self.menu.addAction("Quit Classic Price Lens", window.close)
+        self.menu.addAction("Quit Lupin", window.close)
         self.icon.setContextMenu(self.menu)
         self.icon.activated.connect(self.activated)
         self.icon.messageClicked.connect(self.restore)
@@ -35,7 +35,7 @@ class TrayController(QObject):
     def update(self):
         title = self.window.connection_state()[0]
         self.status.setText(title)
-        self.icon.setToolTip("Classic Price Lens · " + title)
+        self.icon.setToolTip("Lupin · " + title)
         self.toggle.setText(self.window.share.text())
         self.toggle.setEnabled(self.window.share.isEnabled())
         self.labels.blockSignals(True)
@@ -52,7 +52,7 @@ class TrayController(QObject):
             return False
         self.window.hide()
         state = "Waiting for screen sharing." if self.window.capture_starting else "Reading continues." if self.window.mode == "live" else "Reading is paused." if self.window.mode == "paused" else "Reading has not started."
-        self.icon.showMessage("Classic Price Lens is in the tray",
+        self.icon.showMessage("Lupin is in the tray",
                               state + " Right-click the tray icon for controls, or click it to show the panel.",
                               QSystemTrayIcon.MessageIcon.Information, 6000)
         return True

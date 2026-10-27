@@ -20,14 +20,14 @@ class PublishTests(unittest.TestCase):
         self.dist = Path(self.temp.name)
         self.version = "0.4.2"
         names = publish.artifact_names(self.version)
-        portable = self.dist / "ClassicPriceLens-Windows-x64"
+        portable = self.dist / "Lupin-Windows-x64"
         portable.mkdir()
         (portable / "run-windows.bat").write_text("example launcher")
         manifest = {"version": self.version, "files": {"run-windows.bat": publish.digest(portable / "run-windows.bat")}}
         (portable / "build-manifest.json").write_text(json.dumps(manifest))
         with zipfile.ZipFile(self.dist / names["windows-portable"], "w") as archive:
             for path in portable.iterdir():
-                archive.write(path, "ClassicPriceLens-Windows-x64/" + path.name)
+                archive.write(path, "Lupin-Windows-x64/" + path.name)
         for channel, name in names.items():
             if channel != "windows-portable":
                 (self.dist / name).write_bytes(channel.encode())
@@ -44,7 +44,7 @@ class PublishTests(unittest.TestCase):
         uploads = publish.prepare_uploads(self.dist, self.version)
         self.assertEqual([upload.channel for upload in uploads],
                          ["windows-portable", "windows-installer", "linux-arch", "linux-debian", "checksums"])
-        self.assertEqual(uploads[0].source, self.dist / "ClassicPriceLens-Windows-x64")
+        self.assertEqual(uploads[0].source, self.dist / "Lupin-Windows-x64")
         names = publish.artifact_names(self.version)
         for upload in uploads[1:]:
             expected = {"INSTALL.txt", "SHA256SUMS.txt"}
@@ -62,7 +62,7 @@ class PublishTests(unittest.TestCase):
         self.assertFalse((self.dist / "itch-staging").exists())
 
     def test_untracked_portable_file_or_modified_payload_is_rejected(self):
-        portable = self.dist / "ClassicPriceLens-Windows-x64"
+        portable = self.dist / "Lupin-Windows-x64"
         extra = portable / "private.sqlite"
         extra.write_bytes(b"private")
         with self.assertRaisesRegex(ValueError, "Unexpected or missing"):

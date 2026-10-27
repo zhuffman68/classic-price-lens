@@ -21,6 +21,8 @@ from .ui_components import DisplayMap, display_labels, price_card
 from .tray import TrayController
 from .experience_ui import ExperiencePanel
 from .platform_paths import data_directory
+from .search import PriceSearch
+from . import APP_NAME, LEGACY_APP_NAME
 
 COLORS = {"green": "#86ceac", "red": "#ed9394", "amber": "#e4bd7b", "blue": "#9ebde3", "muted": "#98a3b1"}
 
@@ -83,7 +85,7 @@ class LensWindow(QMainWindow):
     def __init__(self, root, cache_path, snapshot=None, auto_capture=False, kde_capture=False):
         super().__init__()
         self.root = Path(root)
-        self.setWindowTitle("Classic Price Lens")
+        self.setWindowTitle(APP_NAME)
         self.resize(480, 650)
         self.setMinimumSize(430, 440)
         self.catalog = None
@@ -110,7 +112,7 @@ class LensWindow(QMainWindow):
         self.capture_kind = "kde" if kde_capture else "portal"
         self.keep_capture = False
         self.closing = False
-        self.settings = QSettings("LocalTools", "Classic Price Lens")
+        self.settings = QSettings("LocalTools", LEGACY_APP_NAME)
         self.first_price_seen = self.settings.value("first-price-seen", False, type=bool)
         self.setup_dismissed = self.settings.value("setup-help-dismissed", False, type=bool)
         self.labels_enabled = self.settings.value("show-prices", True, type=bool)
@@ -150,6 +152,7 @@ class LensWindow(QMainWindow):
         self.service.quote_ready.connect(self.on_quote)
         self.service.error.connect(self.on_error)
         self.service.identity_ready.connect(self.on_identity)
+        self.service.identity_error.connect(self.on_search_identity_error)
         self.service.state_changed.connect(self.on_price_state, Qt.ConnectionType.QueuedConnection)
 
         body = QWidget()
@@ -160,7 +163,7 @@ class LensWindow(QMainWindow):
         mark = QLabel()
         mark.setPixmap(QPixmap(str(self.root / "price_lens/resources/icon.png")).scaled(32, 32, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.FastTransformation))
         heading.addWidget(mark)
-        heading.addWidget(label("Classic Price Lens", "font-size: 21px; font-weight: 650; color: #f1e6d5"))
+        heading.addWidget(label(APP_NAME, "font-size: 21px; font-weight: 650; color: #f1e6d5"))
         heading.addStretch()
         self.settings_button = QPushButton("Settings")
         self.settings_button.clicked.connect(self.open_settings)
@@ -174,7 +177,9 @@ class LensWindow(QMainWindow):
         setup.setContentsMargins(12, 12, 12, 12)
         setup.setSpacing(8)
         self.status_badge = label("Choose a display", "color: #e4bd7b; font-weight: 650; font-size: 13px")
-        setup.addWidget(self.status_badge)
+        capture_header = QHBoxLayout()
+        capture_header.addWidget(self.status_badge,1)
+        setup.addLayout(capture_header)
         self.step_label = label("1 Choose a display   ›   2 Share it   ›   3 Open a shop", "color: #a6b1bf; font-size: 10px", True)
         setup.addWidget(self.step_label)
         self.display_map = DisplayMap()
@@ -194,14 +199,14 @@ class LensWindow(QMainWindow):
         setup.addWidget(self.monitor)
         actions = QHBoxLayout()
         self.share = QPushButton("Start reading")
-        self.share.setObjectName("primary")
+        self.share.setObjectName("captureToggle")
         self.share.clicked.connect(self.toggle_capture)
         actions.addWidget(self.share, 1)
         self.cancel_setup = QPushButton("Cancel setup")
         self.cancel_setup.clicked.connect(self.cancel_capture_setup)
         self.cancel_setup.setVisible(False)
         actions.addWidget(self.cancel_setup)
-        setup.addLayout(actions)
+        capture_header.addLayout(actions)
         self.capture_info = label("Choose a display to enable Start reading.", "color: #bbc4cf; font-size: 11px", True)
         setup.addWidget(self.capture_info)
         self.recovery_button = QPushButton()
@@ -248,11 +253,18 @@ class LensWindow(QMainWindow):
         self.exp_panel.changed.connect(self.on_experience_changed)
         self.tabs = QTabWidget()
         self.tabs.addTab(self.scroll, "Prices")
+        self.search_panel = PriceSearch(self)
+        self.search_panel.ttl = self.ttl
+        self.search_panel.item_selected.connect(self.on_search_item)
+        self.search_panel.identity_selected.connect(self.on_search_identity)
+        self.search_panel.source_requested.connect(self.open_source)
+        self.search_panel.catalog_retry.connect(self.retry_catalog)
+        self.search_tab_index = self.tabs.addTab(self.search_panel, "Search")
         self.exp_scroll = QScrollArea()
         self.exp_scroll.setWidgetResizable(True)
         self.exp_scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.exp_scroll.setWidget(self.exp_panel)
-        self.tabs.addTab(self.exp_scroll, "EXP & sessions")
+        self.exp_tab_index = self.tabs.addTab(self.exp_scroll, "EXP")
         self.tabs.currentChanged.connect(self.on_tab_changed)
         layout.addWidget(self.tabs, 1)
         footer = QHBoxLayout()
@@ -281,6 +293,7 @@ class LensWindow(QMainWindow):
             QPushButton#primary { background: #d9ad66; color: #231e16; border-color: #d9ad66; font-weight: 650; }
             QPushButton#primary:hover { background: #ebc483; }
             QPushButton#primary:disabled { background: #2b303a; color: #828b97; border-color: #39414e; }
+            QPushButton#captureToggle { background: #293548; border-color: #42516a; color: #d2dceb; }
             QPushButton#quiet { background: transparent; border: 0; color: #b1bac7; padding: 5px 2px; text-align: left; }
             QPushButton#quiet:hover { color: #ebc483; }
             QCheckBox { color: #b5bfcc; padding: 3px 0; }
@@ -289,6 +302,10 @@ class LensWindow(QMainWindow):
             QFrame#card QLabel, QFrame#setup QLabel, QWidget#cardDetails, QWidget#displayMap { background: transparent; border: none; }
             QScrollBar:vertical { background: #171c25; width: 6px; }
             QScrollBar::handle:vertical { background: #455064; border-radius: 3px; min-height: 20px; }
+            QTabWidget::pane { border: 0; padding-top: 6px; }
+            QTabBar::tab { background: transparent; color: #96a4b8; border: 0; border-radius: 6px; padding: 8px 18px; margin: 0 4px 3px 0; }
+            QTabBar::tab:selected { background: #303d51; color: #f1e1c6; }
+            QTabBar::tab:hover:!selected { background: #222d3d; color: #dce4ef; }
         """)
         self.build_settings()
         self.tray = TrayController(self)
@@ -385,11 +402,32 @@ class LensWindow(QMainWindow):
 
     def on_tab_changed(self, index):
         self.summary.setVisible(index == 0)
+        self.demo_button.setVisible(index == 0)
+        self.notice.setVisible(index == 0)
+        if hasattr(self,"search_panel"):
+            panel = self.search_panel
+            self.service.set_manual(panel.selected if index == self.search_tab_index else None,self.ttl,
+                                    identity=panel.pending_identity if index == self.search_tab_index else None,
+                                    candidates=panel.pending_candidates)
         self.update_capture_controls()
-        if index == 1:
-            height = min(820, self.screen().availableGeometry().height()-48)
+        if index == self.exp_tab_index:
+            height = min(720, self.screen().availableGeometry().height()-48)
             if self.height() < height:
                 self.resize(self.width(), height)
+
+    def on_search_item(self, item):
+        if self.tabs.currentIndex() == self.search_tab_index:
+            self.service.set_manual(item,self.ttl)
+        if item and item.game_id in self.quotes:
+            self.search_panel.accept_quote(item.game_id,self.quotes[item.game_id])
+
+    def on_search_identity(self, identity, candidates):
+        if self.tabs.currentIndex() == self.search_tab_index:
+            self.service.set_manual(None,self.ttl,identity=identity,candidates=candidates)
+
+    def on_search_identity_error(self, identity, message):
+        self.last_diagnostic = message
+        self.search_panel.identity_error(identity,message)
 
     def set_exp_overlay(self, enabled):
         self.exp_overlay = enabled
@@ -671,7 +709,9 @@ class LensWindow(QMainWindow):
             self.render()
 
     def update_capture_controls(self):
-        exp_live = hasattr(self, "tabs") and self.tabs.currentIndex() == 1 and self.mode == "live"
+        search_view = hasattr(self,"tabs") and self.tabs.currentIndex() == self.search_tab_index
+        exp_live = hasattr(self, "tabs") and self.tabs.currentIndex() in (self.exp_tab_index,self.search_tab_index) and self.mode == "live"
+        self.setup_frame.setVisible(not search_view or self.mode == "live" or self.capture_starting or bool(self.capture_error))
         valid = self.screen_index is not None and 0 <= self.screen_index < len(self.screens)
         self.share.setEnabled(valid and not self.capture_starting)
         self.share.setText("Waiting for sharing…" if self.capture_starting else "Pause reading" if self.mode == "live" else "Resume reading" if self.mode == "paused" and self.session_available else "Start reading")
@@ -732,6 +772,9 @@ class LensWindow(QMainWindow):
             return
         self.catalog_loading = True
         self.catalog_error = ""
+        self.search_panel.catalog_error = ""
+        self.search_panel.hint.setText("Getting item names…")
+        self.search_panel.retry_button.hide()
         self.service.start()
         self.render()
 
@@ -946,6 +989,7 @@ class LensWindow(QMainWindow):
             self.render()
 
     def on_identity(self, identity, item):
+        self.search_panel.accept_identity(identity,item)
         if self.catalog:
             self.catalog.bind_current(identity[0], identity[1], item)
             self.request_prices()
@@ -955,6 +999,7 @@ class LensWindow(QMainWindow):
         self.catalog = catalog
         self.catalog_loading = False
         self.catalog_error = ""
+        self.search_panel.set_catalog(catalog)
         if catalog.warning:
             self.last_diagnostic = catalog.warning
         self.request_prices()
@@ -998,21 +1043,26 @@ class LensWindow(QMainWindow):
 
     def on_price_state(self):
         if not self.closing:
+            item = self.search_panel.selected
+            self.search_panel.set_state(self.service.state_for(item.game_id) if item else "")
             self.update_price_status()
             self.render()
 
     def on_quote(self, item_id, quote):
         self.quotes[item_id] = quote
         self.errors.pop(item_id, None)
+        self.search_panel.accept_quote(item_id,quote)
         self.update_price_status()
         self.render()
 
     def on_error(self, item_id, message):
         self.errors[item_id] = message
         self.last_diagnostic = message
+        self.search_panel.accept_error(item_id,message)
         if not item_id:
             self.catalog_loading = False
             self.catalog_error = "Item names could not be loaded. Check your internet connection, then retry."
+            self.search_panel.show_catalog_error(message)
         self.update_price_status()
         self.render()
 
@@ -1028,12 +1078,18 @@ class LensWindow(QMainWindow):
         self.exp_panel.set_connected(self.mode == "live" and time.time()-self.last_screen < 3
                                      and (not self.reader.auto_active or self.reader.game_area is not None))
         self.render()
-        if self.mode in ("live", "screenshot"):
+        if self.tabs.currentIndex() == self.search_tab_index:
+            self.search_panel.render()
+        if self.mode in ("live", "screenshot") or self.tabs.currentIndex() == self.search_tab_index:
             self.request_prices()
 
     def set_ttl(self, value):
         self.ttl = value
         self.settings.setValue("cache-ttl", value)
+        self.search_panel.ttl = value
+        if self.tabs.currentIndex() == self.search_tab_index:
+            panel = self.search_panel
+            self.service.set_manual(panel.selected,value,identity=panel.pending_identity,candidates=panel.pending_candidates)
         self.request_prices()
         self.render()
 
@@ -1285,7 +1341,7 @@ class LensWindow(QMainWindow):
             self.render()
 
     def about(self):
-        QMessageBox.information(self, "Classic Price Lens", "Reads OS-shared pixels and draws this independent window.\n\nNo game hooks, memory, files, messages, input or packet access. Screenshots remain local. Only item names/IDs go to public price sources.\n\nOCR: Minerva (MIT), pinned at 7e1aa7d. OCR model: ocrs, CC BY-SA 4.0. Catalog: OSMS Data Explorer. Prices: NiaMeowDB Classic World.\n\n24h median with at least 5 samples, otherwise the site's longer window. These are reported prices, not guaranteed trades. Equipment is assumed unscrolled, as requested. Its actual stats are not assessed.\n\nCache defaults to 15 minutes. Expired data has no deal rating; latest reports over 24h old also have no rating.\n\nPrices and requests are cached locally. No telemetry or screenshot uploads.")
+        QMessageBox.information(self, APP_NAME, "Reads OS-shared pixels and draws this independent window.\n\nNo game hooks, memory, files, messages, input or packet access. Screenshots remain local. Only item names/IDs go to public price sources.\n\nOCR: Minerva (MIT), pinned at 7e1aa7d. OCR model: ocrs, CC BY-SA 4.0. Catalog: OSMS Data Explorer. Prices: NiaMeowDB Classic World.\n\n24h median with at least 5 samples, otherwise the site's longer window. These are reported prices, not guaranteed trades. Equipment is assumed unscrolled, as requested. Its actual stats are not assessed.\n\nCache defaults to 15 minutes. Expired data has no deal rating; latest reports over 24h old also have no rating.\n\nPrices and requests are cached locally. No telemetry or screenshot uploads.")
 
     def closeEvent(self, event):
         if self.closing:

@@ -1,4 +1,4 @@
-# Classic Price Lens
+# Lupin (formerly Classic Price Lens)
 
 This is a screen-only companion for **MapleStory Classic World**.
 
@@ -14,3 +14,5 @@ This is a screen-only companion for **MapleStory Classic World**.
 - Installer/package builds: see `packaging/README.md`. Keep install roots read-only during normal use; write logs, settings and price caches only to per-user paths. Windows upgrade/removal may close only our app via its local control socket. Never use a generic process killer or global Wine prefix. Validate package transactions in isolated roots, preserving active host sharing.
 
 Keep vendor Minerva at its pinned revision; read its own AGENTS.md before changing it. Do not include private `evidence/`, live screenshots, caches or database files in a package.
+
+Lupin keeps legacy internal application/package/settings/socket IDs for upgrade compatibility. Price Search is explicit manual demand, works without capture, and must share the existing scheduler, cache and limits. Typing or browsing suggestions must not issue price requests.

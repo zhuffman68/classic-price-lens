@@ -24,6 +24,7 @@ class PriceService(QObject):
     quote_ready = Signal(int, object)
     error = Signal(int, str)
     identity_ready = Signal(object, object)
+    identity_error = Signal(object, str)
     state_changed = Signal()
     _completed = Signal(object, object)
 
@@ -48,6 +49,11 @@ class PriceService(QObject):
         self._sequence = 0
         self._batching = 0
         self._dirty = False
+        self.manual_item = None
+        self.manual_identity = None
+        self.manual_candidates = ()
+        self.manual_ttl = 900
+        self._screen_demand = ([], 900, {})
         # Workers never change scheduler/UI state. Even instant completions are
         # delivered on this object's Qt thread, after the current batch ends.
         self._completed.connect(self._finish, Qt.ConnectionType.QueuedConnection)
@@ -68,10 +74,17 @@ class PriceService(QObject):
         """Replace the visible demand; abandon only queued, unseen requests."""
         if self.closed:
             return
+        items = list(items)
+        identities = list(identities)
+        self._screen_demand = (items, ttl, {"hovered_id":hovered_id,"identities":identities,"hovered_identity":hovered_identity})
         items = {item.game_id: item for item in items}
         identities = {identity: candidates for identity, candidates in identities}
         visible = {("quote", item_id) for item_id in items}
         visible.update(("identity", identity) for identity in identities)
+        if self.manual_item:
+            visible.add(("quote",self.manual_item.game_id))
+        if self.manual_identity:
+            visible.add(("identity",self.manual_identity))
         self._batching += 1
         try:
             for key in list(self._queued):
@@ -81,6 +94,10 @@ class PriceService(QObject):
             # item can take the next free slot even in a newly opened shop.
             for item in items.values():
                 self.request(item, ttl, priority=0 if item.game_id == hovered_id else 10, early=True)
+            if self.manual_item:
+                self.request(self.manual_item,self.manual_ttl,priority=-1,early=True)
+            if self.manual_identity:
+                self.resolve_identity(self.manual_identity,self.manual_candidates,self.manual_ttl,priority=-1)
             for identity, candidates in identities.items():
                 self.resolve_identity(identity, candidates, ttl,
                                       priority=0 if identity == hovered_identity else 10)
@@ -90,6 +107,13 @@ class PriceService(QObject):
 
     def clear_visible(self):
         self.observe([], 900)
+
+    def set_manual(self, item, ttl=900, *, identity=None, candidates=()):
+        """One explicitly selected search result; independent of screen sharing."""
+        self.manual_item, self.manual_ttl = item, ttl
+        self.manual_identity, self.manual_candidates = identity, candidates
+        items, screen_ttl, options = self._screen_demand
+        self.observe(items,screen_ttl,**options)
 
     def request(self, item, ttl, *, priority=10, early=False):
         if self.closed:
@@ -230,6 +254,8 @@ class PriceService(QObject):
                 self.error.emit(identity, str(error))
             elif kind == "catalog":
                 self.error.emit(0, f"Item catalog unavailable: {error}")
+            elif kind == "identity":
+                self.identity_error.emit(identity,str(error))
             # Ambiguous identities stay unresolved; never guess a market item.
         self._pump()
 

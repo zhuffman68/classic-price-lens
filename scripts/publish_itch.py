@@ -35,10 +35,10 @@ def digest(path):
 
 def artifact_names(version):
     return {
-        "windows-installer": f"ClassicPriceLens-{version}-Windows-x64-Setup.exe",
-        "windows-portable": "ClassicPriceLens-Windows-x64.zip",
-        "linux-arch": f"classic-price-lens-{version}-1-x86_64.pkg.tar.zst",
-        "linux-debian": f"classic-price-lens_{version}-1_amd64.deb",
+        "windows-installer": f"Lupin-{version}-Windows-x64-Setup.exe",
+        "windows-portable": "Lupin-Windows-x64.zip",
+        "linux-arch": f"lupin-{version}-1-x86_64.pkg.tar.zst",
+        "linux-debian": f"lupin_{version}-1_amd64.deb",
     }
 
 
@@ -56,9 +56,9 @@ def validate_release(dist, version):
     for name, expected in checksums.items():
         if digest(dist / name) != expected:
             raise ValueError("Release checksum mismatch: " + name)
-    portable = dist / "ClassicPriceLens-Windows-x64"
+    portable = dist / "Lupin-Windows-x64"
     with zipfile.ZipFile(dist / names["windows-portable"]) as archive:
-        manifest = archive.read("ClassicPriceLens-Windows-x64/build-manifest.json")
+        manifest = archive.read("Lupin-Windows-x64/build-manifest.json")
     if (portable / "build-manifest.json").read_bytes() != manifest:
         raise ValueError("Portable folder differs from the verified release ZIP")
     build = json.loads(manifest)
@@ -81,11 +81,11 @@ def validate_release(dist, version):
 
 def installation_text(channel, name, version):
     instructions = {
-        "windows-installer": f"Extract this download ZIP, then run {name}.\nOpen Classic Price Lens from the Start menu. Administrator access is not required.",
+        "windows-installer": f"Extract this download ZIP, then run {name}.\nOpen Lupin from the Start menu. Administrator access is not required.",
         "linux-arch": f"Extract this download ZIP. Open a terminal in the extracted folder and run:\n\n  sudo pacman -U ./{name}",
         "linux-debian": f"Extract this download ZIP. Open a terminal in the extracted folder and run:\n\n  sudo apt install ./{name}",
     }
-    return (f"Classic Price Lens {version}\n\n{instructions[channel]}\n\n"
+    return (f"Lupin {version}\n\n{instructions[channel]}\n\n"
             "Python, Qt and OCR are included. Internet is needed for price updates.\n"
             "Linux screen sharing also needs PipeWire and a desktop sharing portal.\n\n"
             "Open the app, choose the game's display, click Start reading, and approve OS sharing if prompted.\n"
@@ -96,7 +96,7 @@ def installation_text(channel, name, version):
 def prepare_uploads(dist, version):
     names, checksums = validate_release(dist, version)
     stage = dist / "itch-staging" / version
-    uploads = [Upload("windows-portable", dist / "ClassicPriceLens-Windows-x64")]
+    uploads = [Upload("windows-portable", dist / "Lupin-Windows-x64")]
     for channel in ("windows-installer", "linux-arch", "linux-debian", "checksums"):
         folder = stage / channel
         if folder.is_symlink():
@@ -113,7 +113,7 @@ def prepare_uploads(dist, version):
                 raise ValueError("Staged installer checksum mismatch: " + name)
             text = installation_text(channel, name, version)
         else:
-            text = (f"Classic Price Lens {version} checksums\n\n"
+            text = (f"Lupin {version} checksums\n\n"
                     "SHA256SUMS.txt verifies the original release build files.\n"
                     "Extract the itch.io download ZIP before checking a native installer/package.\n"
                     "For the portable Windows build, itch.io reconstructs its ZIP; use the included build-manifest.json for per-file hashes.\n"
@@ -152,7 +152,7 @@ class PasswordGate(HTMLParser):
 
 
 def verify_password_gate(url):
-    request = urllib.request.Request(url, headers={"User-Agent": "ClassicPriceLens-publisher", "Cache-Control": "no-cache"})
+    request = urllib.request.Request(url, headers={"User-Agent": "Lupin-publisher", "Cache-Control": "no-cache"})
     with urllib.request.urlopen(request, timeout=20) as response:
         html = response.read(2_000_001)
     if len(html) > 2_000_000:

@@ -346,12 +346,14 @@ class CaptureServer(QObject):
 
 
 def main():
+    from . import APP_NAME, LEGACY_APP_NAME
     from .qt_runtime import configure_qt
     configure_qt()
     from PySide6.QtGui import QGuiApplication
     app = QGuiApplication(sys.argv[:1])
-    app.setApplicationName("Classic Price Lens")
+    app.setApplicationName(LEGACY_APP_NAME)
     app.setOrganizationName("LocalTools")
+    app.setApplicationDisplayName(APP_NAME)
     app.setDesktopFileName("io.github.zhuffman68.ClassicPriceLens")
     lock = QLockFile(capture_lock_path())
     if not lock.tryLock(0):

@@ -3,14 +3,14 @@ import signal
 from pathlib import Path
 import sys
 
-from . import __version__
+from . import APP_NAME, LEGACY_APP_NAME, __version__
 
 
 def main():
     parser = argparse.ArgumentParser(description="Classic World screen-only market companion")
-    parser.add_argument("--version", action="version", version="Classic Price Lens " + __version__)
+    parser.add_argument("--version", action="version", version=APP_NAME + " " + __version__)
     control_options = parser.add_mutually_exclusive_group()
-    control_options.add_argument("--quit", action="store_true", help="Close the running Classic Price Lens instance")
+    control_options.add_argument("--quit", action="store_true", help="Close the running Lupin instance")
     control_options.add_argument("--toggle", action="store_true", help="Toggle reading/overlay in the running instance")
     control_options.add_argument("--minimize", action="store_true", help="Minimize the running panel using its tray preference")
     parser.add_argument("--self-test", action="store_true", help="Check bundled OCR and overlay IPC without screen capture")
@@ -28,7 +28,7 @@ def main():
     from .control import AppControl, request
     if args.quit or args.toggle or args.minimize:
         app = QCoreApplication(sys.argv[:1])
-        app.setApplicationName("Classic Price Lens")
+        app.setApplicationName(LEGACY_APP_NAME)
         app.setOrganizationName("LocalTools")
         command = "quit" if args.quit else "toggle" if args.toggle else "minimize"
         answer = request(command, timeout=30000 if args.quit else 3000)
@@ -47,8 +47,9 @@ def main():
     from .ui import LensWindow
     app = QApplication(["classic-price-lens"])
     app.setQuitOnLastWindowClosed(False)
-    app.setApplicationName("Classic Price Lens")
+    app.setApplicationName(LEGACY_APP_NAME)
     app.setOrganizationName("LocalTools")
+    app.setApplicationDisplayName(APP_NAME)
     app.setApplicationVersion(__version__)
     app.setDesktopFileName("io.github.zhuffman68.ClassicPriceLens")
     control = AppControl(app)

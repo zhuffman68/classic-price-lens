@@ -1,9 +1,9 @@
 [Desktop Entry]
 Type=Application
-Name=Classic Price Lens
-GenericName=Classic World market overlay
+Name=Lupin
+GenericName=Classic World market and EXP companion
 Comment=Show Classic World market prices beside visible items
-Exec=classic-price-lens
+Exec=lupin
 Icon=io.github.zhuffman68.ClassicPriceLens
 Terminal=false
 Categories=Game;

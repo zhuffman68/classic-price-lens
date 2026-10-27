@@ -20,6 +20,7 @@ def stage_application(out):
     documentation.mkdir(exist_ok=True)
     shutil.copy2(ROOT / "docs/TECHNICAL.md", documentation / "TECHNICAL.md")
     shutil.copy2(ROOT / "docs/ARTWORK.md", documentation / "ARTWORK.md")
+    shutil.copy2(ROOT / "docs/PRICE_LOOKUP_LATENCY.md", documentation / "PRICE_LOOKUP_LATENCY.md")
     fixtures = ROOT / "vendor/minerva/samples"
     categories = {"player-shop": ["gems-and-ores", "live-greater-chaos-and-intermediate-scrolls", "equips-two-sold-out"],
                   "item-tooltip": ["screw@60,20"],

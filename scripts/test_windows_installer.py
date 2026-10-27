@@ -13,6 +13,7 @@ APP_ID = "{1E77CC5D-AE19-4808-AD70-E009B578BA74}_is1"
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--wine-prefix", type=Path, required=True)
+    parser.add_argument("--upgrade-from", type=Path, help="Exercise migration from an earlier installer")
     args = parser.parse_args()
     prefix = args.wine_prefix.resolve()
     if prefix == Path.home() / ".wine":
@@ -20,7 +21,7 @@ def main():
     # Windows tests must not export test shortcuts/icons onto the Linux desktop.
     env = {**os.environ, "WINEPREFIX": str(prefix), "WINEDEBUG": "-all", "WINEDLLOVERRIDES": "mscoree,mshtml=;winemenubuilder.exe=d",
            "QT_QPA_PLATFORM": "offscreen"}
-    installer = max((ROOT / "dist").glob("ClassicPriceLens-*-Windows-x64-Setup.exe"), key=lambda p: p.stat().st_mtime)
+    installer = max((ROOT / "dist").glob("Lupin-*-Windows-x64-Setup.exe"), key=lambda p: p.stat().st_mtime)
     evidence = ROOT / "evidence"
     evidence.mkdir(exist_ok=True)
     log_path = evidence / "windows-installer-wine.log"
@@ -42,18 +43,36 @@ def main():
             subprocess.run(["wine", *map(str, command)], cwd=cwd or ROOT, env=env,
                            stdout=log, stderr=subprocess.STDOUT, timeout=timeout, check=True)
 
-        run([installer, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-"])
-        assert (app / "unins000.exe").is_file(), "Uninstall entry point missing"
-        run(["reg", "query", key, "/v", "DisplayVersion"])
-        run([runtime, "-B", "-m", "price_lens", "--version"], app)
-        run([runtime, "-B", "-m", "price_lens", "--self-test"], app)
-        run([runtime, "-B", "-m", "unittest", "discover", "-s", "tests", "-q"], app)
         cache_code = ("from PySide6.QtCore import QCoreApplication; "
                       "from price_lens.platform_paths import cache_directory; app=QCoreApplication([]); "
                       "app.setApplicationName('Classic Price Lens'); app.setOrganizationName('LocalTools'); "
                       "print(cache_directory())")
-        cache = subprocess.check_output(["wine", str(runtime), "-B", "-c", cache_code], cwd=app, env=env, text=True).strip()
-        marker = unix_path(cache) / "installer-preservation-check.txt"
+
+        def cache_marker():
+            cache = subprocess.check_output(["wine", str(runtime), "-B", "-c", cache_code], cwd=app, env=env, text=True).strip()
+            return unix_path(cache) / "installer-preservation-check.txt"
+
+        if args.upgrade_from:
+            run([args.upgrade_from.resolve(), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", "/TASKS=desktopicon"])
+            legacy_marker = cache_marker()
+            legacy_marker.write_text("Keep user data during upgrade/removal.\n")
+        else:
+            legacy_marker = None
+        run([installer, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-"])
+        assert (app / "unins000.exe").is_file(), "Uninstall entry point missing"
+        run(["reg", "query", key, "/v", "DisplayVersion"])
+        display_name = subprocess.check_output(["wine", "reg", "query", key, "/v", "DisplayName"], env=env, text=True)
+        assert "REG_SZ    Lupin" in display_name, "Installed application name is stale"
+        roaming = subprocess.check_output(["wine", "cmd", "/c", "echo %APPDATA%"], env=env, text=True).strip()
+        programs = unix_path(roaming) / "Microsoft/Windows/Start Menu/Programs"
+        assert (programs / "Lupin/Lupin.lnk").exists(), "Lupin Start menu shortcut missing"
+        assert not (programs / "Classic Price Lens/Classic Price Lens.lnk").exists(), "Legacy shortcut left behind"
+        run([runtime, "-B", "-m", "price_lens", "--version"], app)
+        run([runtime, "-B", "-m", "price_lens", "--self-test"], app)
+        run([runtime, "-B", "-m", "unittest", "discover", "-s", "tests", "-q"], app)
+        marker = cache_marker()
+        if legacy_marker:
+            assert marker == legacy_marker and marker.is_file(), "Rename changed or removed the user cache"
         marker.write_text("Keep user data during upgrade/removal.\n")
 
         def start_ui():

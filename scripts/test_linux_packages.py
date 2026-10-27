@@ -92,7 +92,7 @@ def main():
     print("Verified official test root:", folder, flush=True)
     if args.prepare_only:
         return
-    package = max((ROOT / "dist").glob("classic-price-lens_*_amd64.deb"), key=lambda path: path.stat().st_mtime)
+    package = max((ROOT / "dist").glob("lupin_*_amd64.deb"), key=lambda path: path.stat().st_mtime)
     evidence = ROOT / "evidence"
     evidence.mkdir(exist_ok=True)
     log_path = evidence / f"package-{args.image}-{args.tag}.log"
@@ -104,6 +104,8 @@ def main():
         run(folder, ["apt-get", "install", "-y", "--no-install-recommends", "/mnt/packages/" + package.name,
                      "xvfb", "xauth", "fonts-dejavu-core", "libxtst6"], log)
         run(folder, ["classic-price-lens", "--version"], log)
+        run(folder, ["lupin", "--version"], log)
+        run(folder, ["test", "-L", "/usr/bin/lupin"], log)
         run(folder, ["test", "-f", "/usr/share/pipewire/client.conf"], log)
         run(folder, ["classic-price-lens", "--self-test"], log)
         run(folder, ["env", "QT_QPA_PLATFORM=xcb", "xvfb-run", "-a", "classic-price-lens", "--self-test"], log)
@@ -113,6 +115,7 @@ def main():
         run(folder, ["md5sum", "--check", "--quiet", "/var/lib/dpkg/info/classic-price-lens.md5sums"], log)
         run(folder, ["apt-get", "remove", "-y", "classic-price-lens"], log)
         run(folder, ["test", "!", "-e", "/usr/bin/classic-price-lens"], log)
+        run(folder, ["test", "!", "-L", "/usr/bin/lupin"], log)
     print("PASS: install, offline OCR/overlay, X11 plugin, tests, package checksums and removal:", args.image, args.tag, flush=True)
     print("Log:", log_path, flush=True)
 

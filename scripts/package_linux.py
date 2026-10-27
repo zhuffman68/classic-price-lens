@@ -65,6 +65,8 @@ def main():
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(ROOT / source, target)
     (STAGE / "usr/bin/classic-price-lens").chmod(0o755)
+    alias = STAGE / "usr/bin/lupin"
+    alias.symlink_to("classic-price-lens")
     # ZIP wheel extraction does not preserve executable permissions for Qt helpers.
     for path in (site / "PySide6/Qt/libexec").glob("*"):
         if path.is_file():

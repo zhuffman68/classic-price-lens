@@ -97,7 +97,7 @@ class DisplayMap(QWidget):
 
 def price_card(*, item, row, quote, now, ttl, paused=False, old_capture=False,
                lookup_error=False, lookup_state="", expanded=False, details_changed=None, open_source=None,
-               hovered=False, example=False):
+               hovered=False, example=False, context_name=None):
     """Keep identity, availability and age separate; retain conservative domain rules."""
     frame = QFrame()
     frame.setObjectName("card")
@@ -109,7 +109,7 @@ def price_card(*, item, row, quote, now, ttl, paused=False, old_capture=False,
     if example:
         layout.addWidget(text_label("EXAMPLE PRICES", "font-size: 10px; color: #e4bd7b"))
     elif hovered:
-        layout.addWidget(text_label("Inventory / equipment item", "font-size: 10px; color: #98a3b1"))
+        layout.addWidget(text_label(context_name or "Inventory / equipment item", "font-size: 10px; color: #98a3b1"))
     price = row.get("price") or {}
     verdict = compare(item, price.get("quantity"), price.get("mesos"), quote, now, ttl)
     compatible = bool(item and quote and quote.game_id == item.game_id and quote.world == WORLD
@@ -133,7 +133,7 @@ def price_card(*, item, row, quote, now, ttl, paused=False, old_capture=False,
     elif quote.sample_count < 5 or quote.uncertain:
         message, tone = "Few price reports · reference only", "muted"
     elif hovered:
-        message, tone = "Market reference", "blue"
+        message, tone = (f"{quote.period} · {quote.sample_count:,} reports" if context_name else "Market reference"), "blue"
     elif verdict.delta is not None:
         direction = "below" if verdict.delta < 0 else "above"
         message = f"{abs(verdict.delta):.0f}% {direction} reference" if verdict.delta else "Near reference"

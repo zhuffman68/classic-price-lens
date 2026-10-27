@@ -14,6 +14,32 @@ from test_experience import payload
 
 
 class ExperienceUiTests(unittest.TestCase):
+    def test_main_view_keeps_optional_fields_and_history_out_of_the_way(self):
+        self.assertTrue(self.panel.details.isHidden())
+        self.assertEqual(self.panel.table.window(),self.panel.history_dialog)
+        self.assertEqual(self.panel.notes.window(),self.panel.options_dialog)
+        self.assertTrue(self.panel.pause_button.isHidden())
+        self.assertTrue(self.panel.save_button.isHidden())
+
+    def test_session_actions_change_with_recording_state(self):
+        self.panel.set_connected(True)
+        self.feed(2000)
+        self.panel.start_button.click()
+        self.assertTrue(self.panel.start_button.isHidden())
+        self.assertFalse(self.panel.pause_button.isHidden())
+        self.panel.pause_button.click()
+        self.assertEqual(self.panel.pause_button.text(),"Resume session")
+        self.panel.save_button.click()
+        self.assertFalse(self.panel.start_button.isHidden())
+
+    def test_preset_and_custom_pace_windows_remain_available(self):
+        self.panel.window_picker.setCurrentIndex(self.panel.window_picker.findData(15))
+        self.assertEqual(self.panel.window_minutes.value(),15)
+        self.panel.window_picker.setCurrentIndex(self.panel.window_picker.count()-1)
+        self.panel.window_minutes.setValue(7)
+        self.assertEqual(self.panel.window_minutes.value(),7)
+        self.assertFalse(self.panel.window_minutes.isHidden())
+
     @classmethod
     def setUpClass(cls):
         os.environ.setdefault("QT_QPA_PLATFORM","offscreen")

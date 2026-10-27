@@ -29,7 +29,7 @@ def main():
         command[-1] = subprocess.check_output(["winepath", "-w", command[-1]], env=env, text=True).strip()
         command.insert(0, "wine")
     subprocess.run(command, cwd=ROOT, env=env, check=True)
-    output = ROOT / f"dist/ClassicPriceLens-{__version__}-Windows-x64-Setup.exe"
+    output = ROOT / f"dist/Lupin-{__version__}-Windows-x64-Setup.exe"
     if not output.is_file():
         raise FileNotFoundError(output)
     print("Built:", output, f"({output.stat().st_size:,} bytes)", flush=True)

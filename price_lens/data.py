@@ -11,12 +11,11 @@ import urllib.request
 import urllib.error
 
 from .domain import Catalog, Quote, WORLD, key, number
+from .http_json import get_json, USER_AGENT as UA, MAX_RESPONSE
 
 API = "https://meowdb.com/msclassic/api/"
 CATALOG_URL = "https://osmsdataexplorer.com/data/current/items.json"
 CASH_CATALOG_URL = "https://osmsdataexplorer.com/data/current/cash_shop.json"
-UA = "ClassicPriceLens/0.1 (personal, screen-only Classic World price viewer)"
-MAX_RESPONSE = 8 * 1024 * 1024
 
 
 def timestamp(value):
@@ -27,15 +26,6 @@ def timestamp(value):
         return parsed.timestamp() if parsed.tzinfo else None
     except ValueError:
         return None
-
-
-def get_json(url):
-    req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "application/json"})
-    with urllib.request.urlopen(req, timeout=12) as response:
-        body = response.read(MAX_RESPONSE + 1)
-        if len(body) > MAX_RESPONSE:
-            raise ValueError("Data response exceeds size limit")
-    return json.loads(body)
 
 
 class Cache:

@@ -28,7 +28,7 @@ class AnnotationWindow(QWidget):
             # KDE's top panel. This flag applies only to our own XWayland window.
             flags |= Qt.WindowType.X11BypassWindowManagerHint
         super().__init__(None, flags)
-        self.setWindowTitle("Classic Price Lens — screen labels")
+        self.setWindowTitle("Lupin — screen labels")
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
@@ -278,7 +278,7 @@ def main():
     from .qt_runtime import configure_qt
     configure_qt()
     app = QApplication(sys.argv[:1])
-    app.setApplicationName("Classic Price Lens labels")
+    app.setApplicationName("Lupin labels")
     window = AnnotationWindow()
     app._annotation_window = window
     return app.exec()

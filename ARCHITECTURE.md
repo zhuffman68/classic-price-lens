@@ -1,6 +1,6 @@
-# Classic Price Lens architecture
+# Lupin architecture
 
-Classic Price Lens is a desktop companion for MapleStory Classic World. It recognizes visible items and EXP from OS-shared pixels, looks up meso market references, and draws independent, click-through labels. This document describes the v0.5.0 architecture.
+Lupin is a desktop companion for MapleStory Classic World. It recognizes visible items and EXP from OS-shared pixels, looks up meso market references, and draws independent, click-through labels. This document describes the v0.6.0 architecture.
 
 ## Boundaries
 
@@ -62,6 +62,12 @@ Provider discovery uses `items?search=...`; prices use `item-market-summary?item
 `price_lens/experience.py` validates level, raw EXP and printed percentage against the interval of totals allowed by rounding. Level changes, large jumps and decreases require another consistent reading. Character changes end the prior run. Rates use observed, unpaused time; standing still counts. Intervals over five seconds without accepted evidence and explicit context/pause boundaries rebaseline without crediting unseen EXP. Percentage-point progress carries 100 points for each level-up; raw EXP spanning a level-up uses the inferred level total and is marked approximate where that total is not unique. No potentially obsolete EXP table is fetched or bundled.
 
 The user chooses a 1–60-minute rolling window. The normalized pace and time-to-level estimate need 30 seconds of evidence; the panel separately reports actual observed gain and duration. Rolling samples are bounded to one hour. `experience_ui.py` provides session controls, optional map labels/notes, history and CSV export. Confirmed minimap changes finish a run; detection is sampled and is not an exact portal-crossing timestamp. With the minimap hidden, users should label and save tests themselves. Saved sessions reside in a separate SQLite file in the OS per-user application-data directory, capped at 500. Map comparisons filter to the same character and level, tests at least two minutes long, and no missing stretches. Closing the app saves the active run. EXP annotations use the existing independent label process and can be disabled separately from pricing.
+
+### Manual price search
+
+`price_lens/search.py` searches the cached Classic World catalog locally with a short input debounce. Suggestions never request prices. A selected result adds one manual item or ambiguous name to `PriceService` demand, independent of capture. Manual and screen demand use the same quote/identity keys, worker bounds, TTLs and backoff. Duplicate names are matched to a current provider item before pricing. Leaving Search removes manual demand and cancels queued work; already-running calls finish into the cache. Explicit searches work while automatic screen reading is paused.
+
+`http_json.py` reuses verified HTTPS connections per existing worker thread. It shares a default verifying TLS context, expires connections after 30 idle seconds, bounds hosts per thread, and retries a stale reused connection once after a disconnect. Request timeouts are not automatically repeated. Error bodies retain `HTTPError` behavior so coverage rejections remain cached. Configured proxies keep the urllib route. See [Price lookup timing](docs/PRICE_LOOKUP_LATENCY.md).
 
 ### Stored data
 
@@ -128,3 +134,9 @@ The tests combine real upstream OCR fixtures and local IPC with isolated UI, clo
 When adding a provider, preserve world/item/condition/unit validation and both timestamps. When changing scheduling, retain per-item deduplication, bounded concurrency, the full TTL for no-data results and immediate cancellation of obsolete queued demand. Changes to OCR or capture must preserve the screen-only boundary and the existing sharing workflow.
 
 See [VERIFICATION.md](VERIFICATION.md) for measured coverage and platform limits, and [docs/TECHNICAL.md](docs/TECHNICAL.md) for runtime details.
+
+## Lupin naming compatibility
+
+Lupin is the public app, menu, tray and release name. The Python module, internal package-manager identity, installation directories, Qt application/settings identity, capture/control sockets, desktop-file ID and Windows AppId retain their existing Classic Price Lens identifiers. This preserves upgrades, hotkeys, sharing, price caches and EXP history. Linux also supplies a `lupin` launcher; download filenames use Lupin/lupin. Windows upgrades remove only the old app-owned shortcut names and create Lupin shortcuts. Existing GitHub and itch.io project URLs remain valid.
+
+The EXP page uses `experience_widgets.py` for its visual hierarchy and separate history/options dialogs; `experience_ui.py` retains session behavior. Optional details are collapsed, and session buttons change with recording state.

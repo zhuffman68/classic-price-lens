@@ -68,6 +68,7 @@ class FakeService(QObject):
     quote_ready = Signal(int, object)
     error = Signal(int, str)
     identity_ready = Signal(object, object)
+    identity_error = Signal(object, str)
     state_changed = Signal()
 
     def __init__(self, path, parent=None):
@@ -91,6 +92,9 @@ class FakeService(QObject):
 
     def clear_visible(self):
         self.visible = []
+
+    def set_manual(self, item, ttl=900, **kwargs):
+        self.manual_item = item
 
     def state_for(self, item_id):
         return self.states.get(item_id, "")
@@ -125,6 +129,19 @@ class FakeHotkeys(QObject):
 
 
 class ContextUiTests(unittest.TestCase):
+    def test_price_search_works_without_starting_capture(self):
+        self.window.mode = "idle"
+        self.window.tabs.setCurrentIndex(self.window.search_tab_index)
+        panel = self.window.search_panel
+        panel.query.setText("Example Hat")
+        panel.timer.stop()
+        panel.find_items()
+        panel.results.setCurrentRow(0)
+        self.assertEqual(self.window.service.manual_item.game_id,1)
+        self.assertEqual(self.window.reader.starts,0)
+        self.window.tabs.setCurrentIndex(self.window.exp_tab_index)
+        self.assertIsNone(self.window.service.manual_item)
+
     @classmethod
     def setUpClass(cls):
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")

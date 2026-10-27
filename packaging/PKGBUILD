@@ -2,7 +2,7 @@
 pkgname=classic-price-lens
 pkgver=0.4.2
 pkgrel=1
-pkgdesc='Screen-only MapleStory Classic World market overlay'
+pkgdesc='Lupin - screen-only Classic World market and EXP companion'
 arch=('x86_64')
 url='https://github.com/zhuffman68/classic-price-lens'
 license=('custom')

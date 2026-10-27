@@ -7,7 +7,7 @@ import sys
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-FOLDER = ROOT / "dist/ClassicPriceLens-Windows-x64"
+FOLDER = ROOT / "dist/Lupin-Windows-x64"
 sys.path.insert(0, str(ROOT))
 from price_lens import __version__
 
@@ -19,7 +19,7 @@ def main():
             raise FileNotFoundError(name)
     files = [path for path in FOLDER.rglob("*") if path.is_file() and "__pycache__" not in path.parts
              and path.suffix != ".pyc" and path.name != "build-manifest.json"]
-    manifest = {"application": "Classic Price Lens", "version": __version__,
+    manifest = {"application": "Lupin", "version": __version__,
                 "date": datetime.now(timezone.utc).date().isoformat(), "target": "Windows 10/11 x64",
                 "python": "3.14.9", "qt": "6.12.0", "reader_target": "x86_64-pc-windows-gnullvm",
                 "minerva_revision": "7e1aa7d418fb255bd66eb4dce848fc9eb305cd81",
@@ -31,7 +31,7 @@ def main():
     manifest_path = FOLDER / "build-manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
     files.append(manifest_path)
-    output = ROOT / "dist/ClassicPriceLens-Windows-x64.zip"
+    output = ROOT / "dist/Lupin-Windows-x64.zip"
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6, strict_timestamps=False) as archive:
         for path in sorted(files):
             name = FOLDER.name + "/" + path.relative_to(FOLDER).as_posix()

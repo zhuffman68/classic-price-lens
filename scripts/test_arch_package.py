@@ -22,7 +22,7 @@ def main():
     config.write_text("[options]\nArchitecture = auto\nSigLevel = Never\n")
     marker = folder / "user-cache/preserve.txt"
     marker.write_text("Keep user data.\n")
-    package = max((ROOT / "dist").glob("classic-price-lens-*-x86_64.pkg.tar.zst"), key=lambda p: p.stat().st_mtime)
+    package = max((ROOT / "dist").glob("lupin-*-x86_64.pkg.tar.zst"), key=lambda p: p.stat().st_mtime)
     evidence = ROOT / "evidence"
     evidence.mkdir(exist_ok=True)
     log_path = evidence / "package-pacman.log"
@@ -36,8 +36,16 @@ def main():
             subprocess.run(command, cwd=cwd or ROOT, env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
         # Only dependency checks are skipped: dependencies come from the host,
         # while all package/database writes are confined to this disposable root.
+        previous = ROOT / "dist/classic-price-lens-0.5.0-1-x86_64.pkg.tar.zst"
+        if previous.exists():
+            run([*pacman, "-Udd", str(previous)])
         run([*pacman, "-Udd", str(package)])
         launcher = folder / "usr/bin/classic-price-lens"
+        alias = folder / "usr/bin/lupin"
+        assert alias.is_symlink() and alias.resolve() == launcher, "Lupin launcher missing"
+        desktop = folder / "usr/share/applications/io.github.zhuffman68.ClassicPriceLens.desktop"
+        assert "Name=Lupin\n" in desktop.read_text(), "Application menu name is stale"
+        run([str(alias), "--version"])
         run([str(launcher), "--version"])
         run([str(launcher), "--self-test"])
         app = folder / "opt/classic-price-lens"
@@ -45,6 +53,7 @@ def main():
         run([*pacman, "-Qkk", "classic-price-lens"])
         run([*pacman, "-Rdd", "classic-price-lens"])
         assert not launcher.exists(), "Uninstall left launcher behind"
+        assert not alias.is_symlink(), "Uninstall left Lupin alias behind"
         assert not app.exists(), "Uninstall left application files behind"
         assert marker.is_file(), "Uninstall removed user data"
     print("PASS: pacman install, launch, offline OCR/overlay, tests, file checks and removal", flush=True)

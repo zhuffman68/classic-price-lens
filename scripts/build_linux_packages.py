@@ -44,7 +44,7 @@ def main():
         f"Installed-Size: {size}\nDepends: {DEB_DEPENDS}\n"
         "Recommends: xdg-desktop-portal-gtk | xdg-desktop-portal-kde | xdg-desktop-portal-gnome, fonts-dejavu-core\n"
         "Suggests: spectacle\nHomepage: https://github.com/zhuffman68/classic-price-lens\n"
-        "Description: Classic World screen-only market overlay\n"
+        "Description: Lupin - Classic World market and EXP companion\n"
         " Shows item names and cached meso market references beside visible shop\n"
         " items and inventory tooltips. Uses ordinary OS screen sharing and\n"
         " independent click-through windows. Includes Python, Qt and offline OCR.\n")
@@ -55,7 +55,7 @@ def main():
                 digest = hashlib.file_digest(stream, "md5").hexdigest()
             checksums.append(digest + "  " + path.relative_to(deb).as_posix())
     (control / "md5sums").write_text("\n".join(checksums) + "\n")
-    output = ROOT / f"dist/classic-price-lens_{__version__}-1_amd64.deb"
+    output = ROOT / f"dist/lupin_{__version__}-1_amd64.deb"
     subprocess.run(["dpkg-deb", "--root-owner-group", "--threads-max=2", "-Zxz", "-z6", "--build", str(deb), str(output)], check=True)
     arch = build / "arch"
     arch.mkdir(exist_ok=True)
@@ -72,7 +72,10 @@ def main():
     config.write_text("source /etc/makepkg.conf\nCOMPRESSZST=(zstd -c -T2 -10 -)\n"
                       "PACKAGER='zhuffman68 <99307526+zhuffman68@users.noreply.github.com>'\n")
     subprocess.run(["makepkg", "--force", "--nodeps", "--cleanbuild", "--config", str(config)], cwd=arch, env=env, check=True)
-    print("Built:", output.name, f"classic-price-lens-{__version__}-1-x86_64.pkg.tar.zst", flush=True)
+    native = ROOT / f"dist/classic-price-lens-{__version__}-1-x86_64.pkg.tar.zst"
+    renamed = ROOT / f"dist/lupin-{__version__}-1-x86_64.pkg.tar.zst"
+    native.replace(renamed)
+    print("Built:", output.name, renamed.name, flush=True)
 
 
 if __name__ == "__main__":

@@ -21,7 +21,7 @@ python scripts/build_linux_packages.py
 
 The notice collector expects the official Rust 1.98.1 source-distribution notice files at `.build-tools/rustc-1.98.1-x86_64-unknown-linux-gnu/rustc/share/doc/rust/`. When using another build layout, stage those notices at that path before packaging. `license-sources.json` pins upstream notices omitted from some crates.io archives. Application/package version comes from `price_lens/__init__.py`; the package builder updates the staged PKGBUILD accordingly. The unchanged OCR reader can retain its own component version across Python/UI releases.
 
-Output: `dist/classic-price-lens_VERSION-1_amd64.deb` and `dist/classic-price-lens-VERSION-1-x86_64.pkg.tar.zst`. Both install to `/opt/classic-price-lens`, with a launcher in `/usr/bin` and normal application-menu/icon entries. User caches and preferences are kept outside those paths. Neither package adds a daemon, service, autostart entry or custom system Qt libraries.
+Output: `dist/lupin_VERSION-1_amd64.deb` and `dist/lupin-VERSION-1-x86_64.pkg.tar.zst`. Both install to `/opt/classic-price-lens`, with a launcher in `/usr/bin` and normal application-menu/icon entries. User caches and preferences are kept outside those paths. Neither package adds a daemon, service, autostart entry or custom system Qt libraries.
 
 The bundled Qt manylinux runtime requires glibc 2.34+, targeting Debian 12+, Ubuntu 22.04+ and current Arch/Manjaro on x86_64. Desktop sharing also needs the installed desktop's portal backend. The package-manager dependency lists supply OS libraries rather than a second system Qt installation.
 
@@ -73,3 +73,5 @@ The five stable channels are `windows-portable`, `windows-installer`, `linux-arc
 Butler serves browser downloads as ZIPs. The portable channel contains the application; the other platform channels contain the native installer/package with an `INSTALL.txt` explaining extraction and installation. Original native package hashes apply after extraction. The portable download is reconstructed by itch.io, so use its included `build-manifest.json` for per-file hashes rather than comparing the generated ZIP to the standalone Windows ZIP hash.
 
 Existing files uploaded manually through the browser are separate from Butler channels. The publisher leaves them in place; remove superseded manual entries from Edit project once the new channels are verified. Page descriptions, screenshots and password settings remain managed through the itch.io dashboard.
+
+The app is now named Lupin. Internal package and installation identities stay unchanged for seamless upgrades; public archives use Lupin/lupin names.
