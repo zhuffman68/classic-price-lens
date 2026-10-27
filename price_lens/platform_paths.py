@@ -32,5 +32,11 @@ def cache_directory():
     return cache
 
 
+def data_directory():
+    path = Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppLocalDataLocation))
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 def control_socket_name():
     return capture_socket_name().replace("stream-v1", "control-v1")

@@ -6,6 +6,7 @@ use minerva_core::{
 use serde::Deserialize;
 use std::io::{self, BufRead, Write};
 use std::time::Instant;
+mod experience;
 mod game_area;
 use game_area::{Locator, Rect};
 
@@ -25,12 +26,17 @@ struct Request {
     #[serde(default)]
     locate_only: bool,
     roi: Option<Rect>,
+    #[serde(default)]
+    experience_only: bool,
+    #[serde(default)]
+    read_map: bool,
 }
 
 fn main() {
     let mut reader = None;
     let mut tooltip_reader = None;
     let mut locator = Locator::new();
+    let mut experience = None;
     let stdin = io::stdin();
     let mut stdout = io::BufWriter::new(io::stdout());
     for line in stdin.lock().lines() {
@@ -112,6 +118,13 @@ fn main() {
             } else {
                 frame
             };
+            if request.experience_only {
+                let result = experience
+                    .get_or_insert_with(experience::ExperienceReader::new)
+                    .read(frame, origin, request.read_map);
+                return Ok(serde_json::json!({"atMs":request.at_ms,"experience":result,
+                    "experienceOnly":true,"ocrMs":started.elapsed().as_secs_f64()*1000.0}));
+            }
             let capture = ShopCapture {
                 frame,
                 origin,

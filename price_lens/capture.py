@@ -19,6 +19,7 @@ class PixelReader(QObject):
     status = Signal(str)
     image_ready = Signal(QImage)
     area_changed = Signal()
+    experience = Signal(dict)
 
     def __init__(self, root, parent=None):
         super().__init__(parent)
@@ -29,6 +30,10 @@ class PixelReader(QObject):
         self.image_sequence = 0
         self.submitted_sequence = -1
         self.latest_latency_ms = None
+        self.experience_enabled = False
+        self.last_experience = 0.0
+        self.last_map_read = 0.0
+        self.pending_experience = False
         self.timings = deque(maxlen=240)
         self.last_metrics = 0
         self.shop_rect = None
@@ -177,6 +182,7 @@ class PixelReader(QObject):
         self.next_area_search = 0
         self.shop_rect = self.shop_fingerprint = self.shop_context = None
         self.tooltip_rect = self.tooltip_fingerprint = None
+        self.last_experience = self.last_map_read = 0
         self.area_changed.emit()
 
     def set_auto_area(self, enabled):
@@ -218,6 +224,12 @@ class PixelReader(QObject):
             return
         if self.image.isNull() or self.process.state() != QProcess.ProcessState.Running:
             return
+        now = time.monotonic()
+        if (self.experience_enabled and self.live_source and now-self.last_frame < 3
+                and now-self.last_experience >= 1
+                and (self.game_area is not None if self.auto_active else self.crop is not None)):
+            self.scan_experience(now)
+            return
         if self.image_sequence == self.submitted_sequence:
             return
         if self.auto_active and self.game_area is None and time.monotonic() < self.next_area_search:
@@ -257,6 +269,7 @@ class PixelReader(QObject):
         path = Path(self.temp.name) / "frame.rgba"
         path.write_bytes(image.constBits())
         self.pending = True
+        self.pending_experience = False
         self.pending_generation = self.generation
         self.pending_since = time.monotonic()
         self.last_geometry_check = self.pending_since
@@ -272,6 +285,31 @@ class PixelReader(QObject):
                    "width": image.width(), "height": image.height()}
         self.process.write((json.dumps(request) + "\n").encode())
 
+    def scan_experience(self, now):
+        # Reuse this capture and this OCR process. Map search is infrequent;
+        # ordinary EXP samples transport only the bottom 256 pixels.
+        area = self.game_area if self.auto_active else self.crop
+        if area is None:
+            return
+        area = area.intersected(self.image.rect())
+        read_map = now-self.last_map_read >= 5
+        if not read_map:
+            area = QRect(area.x(), max(area.y(), area.bottom()+1-256), area.width(), min(256, area.height()))
+        image = self.image.copy(area).convertToFormat(QImage.Format.Format_RGBA8888)
+        if image.isNull():
+            return
+        path = Path(self.temp.name)/"experience.rgba"
+        path.write_bytes(image.constBits())
+        self.pending = self.pending_experience = True
+        self.pending_generation = self.generation
+        self.pending_since = self.last_experience = now
+        if read_map:
+            self.last_map_read = now
+        request = {"path":str(path),"width":image.width(),"height":image.height(),
+                   "at_ms":int(self.last_frame*1000),"experience_only":True,"read_map":read_map,
+                   "origin":{"x":area.x(),"y":area.y()}}
+        self.process.write((json.dumps(request)+"\n").encode())
+
     def on_output(self):
         self.buffer += bytes(self.process.readAllStandardOutput())
         while b"\n" in self.buffer:
@@ -284,6 +322,10 @@ class PixelReader(QObject):
                 if result.get("error"):
                     self.status.emit("Reader: " + result["error"])
                 else:
+                    if self.pending_experience:
+                        if self.experience_enabled and time.monotonic()*1000-result.get("atMs",0) < 3000:
+                            self.experience.emit(result)
+                        continue
                     if self.auto_active:
                         area = result.get("gameArea")
                         guards = [QRect(r["x"], r["y"], r["width"], r["height"]) for r in result.get("gameGuards") or []]

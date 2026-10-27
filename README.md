@@ -6,6 +6,8 @@ Market prices beside your **MapleStory Classic World** items.
 
 Open a player shop or hover over an inventory/equipment item to see its name and a market-price reference. Prices include cash/NX items and are shown in **mesos**. Equipment is treated as unscrolled.
 
+Track EXP gained, your pace over 1–60 minutes, and estimated time to level. Save training sessions to compare maps, with optional notes about gear or your party. History stays on your device and can be exported to CSV.
+
 The app reads shared screen pixels and draws separate, click-through labels. It never hooks into the game. Screenshots stay on your device.
 
 ## Download and install
@@ -15,8 +17,8 @@ Get the latest files from **[GitHub Releases](https://github.com/zhuffman68/clas
 | System | Choose | Install |
 | --- | --- | --- |
 | Windows 10/11 x64 | `Windows-x64-Setup.exe` | Run it, then open Classic Price Lens from Start. |
-| Arch / Manjaro | `.pkg.tar.zst` | `sudo pacman -U ./classic-price-lens-0.4.2-1-x86_64.pkg.tar.zst` |
-| Debian 12+ / Ubuntu 22.04+ | `.deb` | `sudo apt install ./classic-price-lens_0.4.2-1_amd64.deb` |
+| Arch / Manjaro | `.pkg.tar.zst` | `sudo pacman -U ./classic-price-lens-0.5.0-1-x86_64.pkg.tar.zst` |
+| Debian 12+ / Ubuntu 22.04+ | `.deb` | `sudo apt install ./classic-price-lens_0.5.0-1_amd64.deb` |
 
 You'll need a supported 64-bit desktop, about **1 GB free space**, and internet for price updates. Python, Qt and the reader are included. Linux screen sharing needs PipeWire and a working desktop sharing portal; KDE and GNOME normally provide them.
 
@@ -31,9 +33,13 @@ A portable Windows ZIP is also available: extract it fully and open `run-windows
 
 **Preview with examples** explains the prices without sharing a screen.
 
+For EXP, open **EXP & sessions → Start session**, train, then **Save session**. Keep the bottom status bar visible; an open minimap title supplies the map name, or you can enter a label. A confirmed map or character change saves the current test. **Pause session** pauses the test while item pricing continues. The EXP card appears above the game's status bar; turn it off in Settings if preferred.
+
+The pace is a projection from the observed portion of the selected window; the measured gain and duration are shown underneath. Rates need 30 seconds to settle. Paused or missing stretches are excluded; standing still counts. Percentage progress carries across level-ups, and inferred cross-level EXP totals are marked approximate.
+
 ## Everyday controls
 
-- Inventory price cards follow the cursor smoothly. Shop labels move with the store; labels fade subtly and step aside while its item-details popup is open.
+- Shop and inventory labels show item names, market references, price ages and availability.
 - **Pause / Resume:** hides or restores labels. Resume reuses the sharing session.
 - **Minimize:** puts the panel in the system tray by default and sends a notification. Click the tray icon to restore it. Right-click for reading controls, labels, Settings and Quit. If no tray is available, the panel minimizes to the taskbar.
 - **Close or Quit:** ends reading and screen sharing.

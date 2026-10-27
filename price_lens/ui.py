@@ -8,7 +8,7 @@ from PySide6.QtGui import QColor, QImage, QKeySequence, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
     QFrame, QHBoxLayout, QKeySequenceEdit, QLabel, QMainWindow, QMessageBox, QPushButton,
-    QScrollArea, QVBoxLayout, QWidget,
+    QScrollArea, QVBoxLayout, QWidget, QTabWidget,
 )
 
 from .capture import PixelReader, pointer_in_shop
@@ -19,6 +19,8 @@ from .overlay import Overlay
 from .hotkeys import HotkeyManager, DEFAULT_HOTKEY, parse_shortcut
 from .ui_components import DisplayMap, display_labels, price_card
 from .tray import TrayController
+from .experience_ui import ExperiencePanel
+from .platform_paths import data_directory
 
 COLORS = {"green": "#86ceac", "red": "#ed9394", "amber": "#e4bd7b", "blue": "#9ebde3", "muted": "#98a3b1"}
 
@@ -115,6 +117,8 @@ class LensWindow(QMainWindow):
         self.pinned = self.settings.value("keep-on-top", False, type=bool)
         self.minimize_to_tray = self.settings.value("minimize-to-tray", True, type=bool)
         self.auto_game_area = self.settings.value("auto-game-area", True, type=bool)
+        self.exp_enabled = self.settings.value("exp-enabled", True, type=bool)
+        self.exp_overlay = self.settings.value("exp-overlay", True, type=bool)
         self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, self.pinned)
         self.ttl = self.settings.value("cache-ttl", DEFAULT_TTL, type=int)
         if self.ttl not in (300, 900, 1800, 3600):
@@ -135,11 +139,13 @@ class LensWindow(QMainWindow):
         self.reader = PixelReader(root, self)
         self.reader.auto_enabled = self.auto_game_area
         self.reader.tooltip_enabled = self.hover_enabled and self.labels_enabled
+        self.reader.experience_enabled = self.exp_enabled
         self.overlay.pointer.connect(self.on_pointer)
         self.reader.reading.connect(self.on_reading)
         self.reader.status.connect(self.show_status)
         self.reader.image_ready.connect(self.on_image)
         self.reader.area_changed.connect(self.on_area_changed)
+        self.reader.experience.connect(self.on_experience)
         self.service.catalog_ready.connect(self.on_catalog)
         self.service.quote_ready.connect(self.on_quote)
         self.service.error.connect(self.on_error)
@@ -160,7 +166,7 @@ class LensWindow(QMainWindow):
         self.settings_button.clicked.connect(self.open_settings)
         heading.addWidget(self.settings_button)
         layout.addLayout(heading)
-        layout.addWidget(label("Market prices beside your Classic World items", "color: #a6b1bf; font-size: 11px", True))
+        layout.addWidget(label("Market prices and EXP tracking for Classic World", "color: #a6b1bf; font-size: 11px", True))
 
         self.setup_frame = QFrame()
         self.setup_frame.setObjectName("setup")
@@ -236,7 +242,19 @@ class LensWindow(QMainWindow):
         self.cards_layout.setContentsMargins(0, 0, 0, 0)
         self.cards_layout.setSpacing(10)
         self.scroll.setWidget(self.cards)
-        layout.addWidget(self.scroll, 1)
+        self.exp_panel = ExperiencePanel(data_directory()/"exp-sessions.sqlite", enabled=self.exp_enabled,
+                                        window_minutes=self.settings.value("exp-window", 5, type=int), parent=self)
+        self.exp_panel.enabled_changed.connect(self.set_exp_enabled)
+        self.exp_panel.changed.connect(self.on_experience_changed)
+        self.tabs = QTabWidget()
+        self.tabs.addTab(self.scroll, "Prices")
+        self.exp_scroll = QScrollArea()
+        self.exp_scroll.setWidgetResizable(True)
+        self.exp_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.exp_scroll.setWidget(self.exp_panel)
+        self.tabs.addTab(self.exp_scroll, "EXP & sessions")
+        self.tabs.currentChanged.connect(self.on_tab_changed)
+        layout.addWidget(self.tabs, 1)
         footer = QHBoxLayout()
         help_button = QPushButton("Setup help")
         help_button.setObjectName("quiet")
@@ -310,6 +328,10 @@ class LensWindow(QMainWindow):
         self.hover_check.setEnabled(self.labels_enabled)
         self.hover_check.toggled.connect(self.set_hover)
         layout.addWidget(self.hover_check)
+        self.exp_overlay_check = QCheckBox("Show the EXP session beside the game's status bar")
+        self.exp_overlay_check.setChecked(self.exp_overlay)
+        self.exp_overlay_check.toggled.connect(self.set_exp_overlay)
+        layout.addWidget(self.exp_overlay_check)
         self.pin_check = QCheckBox("Keep the control panel on top")
         self.pin_check.setChecked(self.pinned)
         self.pin_check.toggled.connect(self.pin)
@@ -354,6 +376,34 @@ class LensWindow(QMainWindow):
         self.update_capture_controls()
         self.settings_dialog.exec()
 
+    def set_exp_enabled(self, enabled):
+        self.exp_enabled = enabled
+        self.reader.experience_enabled = enabled
+        self.settings.setValue("exp-enabled", enabled)
+        self.reader.last_experience = 0
+        self.render()
+
+    def on_tab_changed(self, index):
+        self.summary.setVisible(index == 0)
+        self.update_capture_controls()
+        if index == 1:
+            height = min(820, self.screen().availableGeometry().height()-48)
+            if self.height() < height:
+                self.resize(self.width(), height)
+
+    def set_exp_overlay(self, enabled):
+        self.exp_overlay = enabled
+        self.settings.setValue("exp-overlay", enabled)
+        self.render()
+
+    def on_experience(self, result):
+        if self.mode == "live" and self.exp_enabled:
+            self.exp_panel.feed(result)
+
+    def on_experience_changed(self):
+        self.settings.setValue("exp-window", self.exp_panel.window_minutes.value())
+        self.draw_labels(time.time(), time.time()-self.last_screen > 3)
+
     def set_minimize_to_tray(self, enabled):
         self.minimize_to_tray = enabled
         self.settings.setValue("minimize-to-tray", enabled)
@@ -367,6 +417,9 @@ class LensWindow(QMainWindow):
         self.render()
 
     def on_area_changed(self):
+        if hasattr(self, "exp_panel"):
+            self.exp_panel.tracker.interrupt()
+            self.exp_panel.set_connected(False)
         if self.reader.auto_active and self.reader.game_area is None:
             self.rows = []
             self.tooltip_result = None
@@ -618,15 +671,17 @@ class LensWindow(QMainWindow):
             self.render()
 
     def update_capture_controls(self):
+        exp_live = hasattr(self, "tabs") and self.tabs.currentIndex() == 1 and self.mode == "live"
         valid = self.screen_index is not None and 0 <= self.screen_index < len(self.screens)
         self.share.setEnabled(valid and not self.capture_starting)
         self.share.setText("Waiting for sharing…" if self.capture_starting else "Pause reading" if self.mode == "live" else "Resume reading" if self.mode == "paused" and self.session_available else "Start reading")
         self.share.setToolTip("Choose a display first" if not valid else "Toggle reading and price labels")
         self.monitor.setEnabled(not self.capture_starting)
+        self.monitor.setVisible(not exp_live)
         self.display_map.setEnabled(not self.capture_starting)
         self.display_map.configure(self.screens, self.screen_index)
         self.display_map.setVisible(len(self.screens) > 1 and self.mode == "idle")
-        self.step_label.setVisible(not self.first_price_seen and self.mode != "screenshot")
+        self.step_label.setVisible(not exp_live and not self.first_price_seen and self.mode != "screenshot")
         self.step_label.setText("Step 1 of 3 · Choose where Classic World is running" if not valid else
                                 "Step 2 of 3 · Approve screen sharing" if self.capture_starting else
                                 "Step 3 of 3 · Open a shop or hover an item" if self.mode == "live" else
@@ -636,9 +691,10 @@ class LensWindow(QMainWindow):
         self.status_badge.setText(title)
         self.status_badge.setStyleSheet(f"color: {COLORS[tone]}; font-weight: 650; font-size: 13px")
         self.capture_info.setText(detail)
+        self.capture_info.setVisible(not exp_live or bool(self.capture_error))
         self.recovery_button.setVisible(bool(action))
         self.recovery_button.setText(action)
-        self.success_frame.setVisible(self.first_price_seen and self.labels_enabled and not self.setup_dismissed and self.mode == "live" and not self.capture_starting and not self.capture_error)
+        self.success_frame.setVisible(not exp_live and self.first_price_seen and self.labels_enabled and not self.setup_dismissed and self.mode == "live" and not self.capture_starting and not self.capture_error)
         if hasattr(self, "crop_button"):
             self.crop_button.setEnabled(not self.reader.image.isNull() and self.mode in ("live", "screenshot") and not self.capture_starting)
         if hasattr(self, "kde_button"):
@@ -784,6 +840,7 @@ class LensWindow(QMainWindow):
         self.render()
 
     def pause(self):
+        self.exp_panel.set_connected(False)
         if self.capture_starting:
             self.cancel_capture_setup()
             return
@@ -968,6 +1025,8 @@ class LensWindow(QMainWindow):
         self.status_label.setText("Some market references are unavailable; cached prices are kept." if failed else "Market references cached locally")
 
     def tick(self):
+        self.exp_panel.set_connected(self.mode == "live" and time.time()-self.last_screen < 3
+                                     and (not self.reader.auto_active or self.reader.game_area is not None))
         self.render()
         if self.mode in ("live", "screenshot"):
             self.request_prices()
@@ -1163,6 +1222,15 @@ class LensWindow(QMainWindow):
                                     "follow_pointer": [geometry.x() + round(point[0] * sx), geometry.y() + round(point[1] * sy)],
                                     "pointer_region": [geometry.x() + round(region.x() * sx), geometry.y() + round(region.y() * sy),
                                                        round(region.width() * sx), round(region.height() * sy)]})
+        if (self.exp_enabled and self.exp_overlay and self.mode == "live" and game_visible and screen_matches and not screen_old
+                and self.exp_panel.tracker.fresh(time.monotonic())):
+            row = self.exp_panel.overlay_row()
+            if row:
+                area = self.reader.game_area if self.reader.auto_active else self.reader.crop
+                if area:
+                    row.update(x=max(8, round(area.right()*geometry.width()/image.width())-326),
+                               y=max(12, round(area.bottom()*geometry.height()/image.height())-88))
+                    annotations.insert(0,row)
         self.overlay.update(list(geometry.getRect()), annotations, hover_enabled=self.labels_enabled and self.mode == "live" and game_visible and screen_matches and not screen_old)
         if (annotations and ready_price and not self.first_price_seen):
             self.first_price_seen = True
@@ -1225,6 +1293,7 @@ class LensWindow(QMainWindow):
             return
         self.closing = True
         self.timer.stop()
+        self.exp_panel.close_session()
         self.hotkeys.close()
         self.reader.close(keep_stream=self.keep_capture)
         self.service.close()

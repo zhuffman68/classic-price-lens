@@ -3,6 +3,7 @@ import os
 from dataclasses import replace
 from pathlib import Path
 import time
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -33,6 +34,7 @@ class FakeReader(QObject):
     status = Signal(str)
     image_ready = Signal(QImage)
     area_changed = Signal()
+    experience = Signal(dict)
 
     def __init__(self, root, parent=None):
         super().__init__(parent)
@@ -129,9 +131,12 @@ class ContextUiTests(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def setUp(self):
+        self.exp_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.exp_directory.cleanup)
         self.patchers = [patch("price_lens.ui." + name, replacement) for name, replacement in
                          [("Overlay", FakeOverlay), ("PixelReader", FakeReader),
-                          ("PriceService", FakeService), ("QSettings", FakeSettings), ("HotkeyManager", FakeHotkeys)]]
+                          ("PriceService", FakeService), ("QSettings", FakeSettings), ("HotkeyManager", FakeHotkeys),
+                          ("data_directory", lambda: Path(self.exp_directory.name))]]
         for patcher in self.patchers:
             patcher.start()
         self.tray_show = patch("price_lens.tray.QSystemTrayIcon.show")

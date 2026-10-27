@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import time
 import unittest
+from unittest.mock import patch
 
 from PySide6.QtCore import QCoreApplication, QEvent
 from PySide6.QtGui import QColor, QImage, QPainter
@@ -79,9 +80,11 @@ class AreaCaptureTests(unittest.TestCase):
             self.assertIsNotNone(reader.shop_fingerprint)
             count=len(results)
             submitted=reader.pending_since
-            reader.on_stream_frame(frame,time.monotonic())
-            self.app.processEvents()
-            self.assertEqual(reader.pending_since,submitted,"Unchanged pixels should skip another OCR request")
+            # Isolate the geometry interval from CPU contention during real OCR.
+            with patch("price_lens.capture.time.monotonic", return_value=reader.last_geometry_check+.01):
+                reader.on_stream_frame(frame,time.monotonic())
+                self.app.processEvents()
+                self.assertEqual(reader.pending_since,submitted,"Unchanged pixels should skip another OCR request")
             self.assertEqual(len(results),count)
             reader.last_geometry_check=time.monotonic()-1
             reader.on_stream_frame(frame,time.monotonic())

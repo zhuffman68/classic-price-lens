@@ -1,6 +1,6 @@
 # Classic Price Lens architecture
 
-Classic Price Lens is a desktop companion for MapleStory Classic World. It recognizes visible items from OS-shared pixels, looks up meso market references, and draws independent, click-through labels. This document describes the v0.4.2 architecture.
+Classic Price Lens is a desktop companion for MapleStory Classic World. It recognizes visible items and EXP from OS-shared pixels, looks up meso market references, and draws independent, click-through labels. This document describes the v0.5.0 architecture.
 
 ## Boundaries
 
@@ -54,6 +54,14 @@ Game item IDs differ from NiaMeowDB row IDs. A provider match must agree on both
 Provider discovery uses `items?search=...`; prices use `item-market-summary?itemId=...&condition=clean`. The price reference is the 24-hour median when at least five daily reports exist; otherwise the source's longer-window reference is used. Thin data can be displayed with an explicit qualification. These are reported asking/sold prices, not guaranteed completed sales.
 
 ## Cache and refresh scheduling
+
+### EXP sessions
+
+`reader/src/experience.rs` uses the pinned core's public status-bar, EXP-bar and minimap-title readers. It shares their recognition model with item OCR. `PixelReader` schedules EXP-only work on its existing process at most once a second; the usual request contains only the bottom 256 pixels of the validated game area. Every five seconds it also checks the minimap title, wherever the minimap was moved. Identical status strips reuse the prior recognition result. EXP-only replies use a separate signal and never replace shop rows or create market demand. Disabling EXP stops these requests; no additional sharing helper or network traffic is introduced.
+
+`price_lens/experience.py` validates level, raw EXP and printed percentage against the interval of totals allowed by rounding. Level changes, large jumps and decreases require another consistent reading. Character changes end the prior run. Rates use observed, unpaused time; standing still counts. Intervals over five seconds without accepted evidence and explicit context/pause boundaries rebaseline without crediting unseen EXP. Percentage-point progress carries 100 points for each level-up; raw EXP spanning a level-up uses the inferred level total and is marked approximate where that total is not unique. No potentially obsolete EXP table is fetched or bundled.
+
+The user chooses a 1–60-minute rolling window. The normalized pace and time-to-level estimate need 30 seconds of evidence; the panel separately reports actual observed gain and duration. Rolling samples are bounded to one hour. `experience_ui.py` provides session controls, optional map labels/notes, history and CSV export. Confirmed minimap changes finish a run; detection is sampled and is not an exact portal-crossing timestamp. With the minimap hidden, users should label and save tests themselves. Saved sessions reside in a separate SQLite file in the OS per-user application-data directory, capped at 500. Map comparisons filter to the same character and level, tests at least two minutes long, and no missing stretches. Closing the app saves the active run. EXP annotations use the existing independent label process and can be disabled separately from pricing.
 
 ### Stored data
 
