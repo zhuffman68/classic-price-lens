@@ -22,7 +22,7 @@ def verify(folder,files):
             raise ValueError("Unexpected prepared chat model: "+name)
 
 
-def main():
+def prepare_incoming():
     os.environ["OMP_NUM_THREADS"]="2";os.environ["OPENBLAS_NUM_THREADS"]="1"
     manifest=json.loads((ROOT/"packaging/chat-models.json").read_text())
     output=ROOT/"models/korean-chat"
@@ -48,6 +48,12 @@ def main():
     verify(output,manifest["outputs"])
     (output/"manifest.json").write_text(json.dumps(manifest["outputs"],indent=2)+"\n")
     print("Verified chat models:",output)
+
+
+def main():
+    prepare_incoming()
+    from prepare_compose_model import prepare
+    prepare()
 
 
 if __name__=="__main__":main()

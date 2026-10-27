@@ -13,12 +13,13 @@ IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc", "*.sqlite*")
 
 def stage_application(out):
     from prepare_chat_models import verify
-    chat_manifest=json.loads((ROOT/"packaging/chat-models.json").read_text())
-    verify(ROOT/"models/korean-chat",chat_manifest["outputs"])
-    for name in (*chat_manifest["outputs"],"manifest.json"):
-        destination=out/"models/korean-chat"/name
-        destination.parent.mkdir(parents=True,exist_ok=True)
-        shutil.copy2(ROOT/"models/korean-chat"/name,destination)
+    for manifest_name,folder in [('chat-models.json','korean-chat'),('compose-models.json','english-korean')]:
+        manifest=json.loads((ROOT/'packaging'/manifest_name).read_text())
+        verify(ROOT/'models'/folder,manifest['outputs'])
+        for name in (*manifest['outputs'],'manifest.json'):
+            destination=out/'models'/folder/name
+            destination.parent.mkdir(parents=True,exist_ok=True)
+            shutil.copy2(ROOT/'models'/folder/name,destination)
     shutil.copytree(ROOT / "price_lens", out / "price_lens", dirs_exist_ok=True, ignore=IGNORE)
     shutil.copytree(ROOT / "tests", out / "tests", dirs_exist_ok=True, ignore=IGNORE)
     for name in ("README.md", "README-WINDOWS.md", "THIRD_PARTY.md", "VERIFICATION.md", "ARCHITECTURE.md"):

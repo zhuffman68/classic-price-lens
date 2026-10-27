@@ -7,7 +7,7 @@ from . import APP_NAME, LEGACY_APP_NAME, __version__
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Classic World screen-only market companion")
+    parser = argparse.ArgumentParser(description="Tools for MapleStory Classic World")
     parser.add_argument("--version", action="version", version=APP_NAME + " " + __version__)
     control_options = parser.add_mutually_exclusive_group()
     control_options.add_argument("--quit", action="store_true", help="Close the running Lupin instance")
@@ -16,6 +16,7 @@ def main():
     control_options.add_argument("--translate", action="store_true", help="Translate Korean speech bubbles using the running instance's shared screen")
     control_options.add_argument("--prices",action="store_true",help="Toggle price reading without pausing EXP")
     control_options.add_argument("--exp",action="store_true",help="Start, pause or resume EXP tracking")
+    control_options.add_argument('--compose',action='store_true',help='Open the English to Korean clipboard composer')
     parser.add_argument("--self-test", action="store_true", help="Check bundled OCR and overlay IPC without screen capture")
     parser.add_argument("--snapshot", type=Path, help="Read a saved shop screenshot")
     parser.add_argument("--capture", action="store_true", help="Open OS screen-sharing picker on startup")
@@ -29,14 +30,14 @@ def main():
         return self_test()
     from PySide6.QtCore import QCoreApplication
     from .control import AppControl, request
-    if args.quit or args.toggle or args.minimize or args.translate or args.prices or args.exp:
+    if args.quit or args.toggle or args.minimize or args.translate or args.prices or args.exp or args.compose:
         app = QCoreApplication(sys.argv[:1])
         app.setApplicationName(LEGACY_APP_NAME)
         app.setOrganizationName("LocalTools")
-        command = "quit" if args.quit else "toggle" if args.toggle else "translate" if args.translate else "prices" if args.prices else "exp" if args.exp else "minimize"
+        command = "quit" if args.quit else "toggle" if args.toggle else "translate" if args.translate else "prices" if args.prices else "exp" if args.exp else 'compose' if args.compose else "minimize"
         answer = request(command, timeout=30000 if args.quit else 3000)
         if answer is None:
-            if args.toggle or args.minimize or args.translate or args.prices or args.exp:
+            if args.toggle or args.minimize or args.translate or args.prices or args.exp or args.compose:
                 return 0
             probe = AppControl()
             if not probe.start():
@@ -74,6 +75,7 @@ def main():
     control.translate.connect(window.translate_chat)
     control.prices.connect(window.toggle_prices)
     control.exp.connect(window.on_exp_hotkey)
+    control.compose.connect(window.open_composer)
     # Place our own window on the middle display, without touching other windows.
     screens = app.screens()
     if len(screens) > 1:

@@ -85,7 +85,7 @@ class PortalHotkey:
                 pass
             except Exception as error:
                 if not self.closed:
-                    command={'toggle-prices':'--prices','toggle-exp':'--exp','translate-text':'--translate','translate-chat':'--translate'}.get(self.action,'--toggle')
+                    command={'toggle-prices':'--prices','toggle-exp':'--exp','translate-text':'--translate','translate-chat':'--translate','compose-korean':'--compose'}.get(self.action,'--toggle')
                     self.status("Global shortcut: " + str(error) + ". Desktop fallback: lupin "+command)
         future.add_done_callback(done)
 
@@ -105,7 +105,10 @@ class PortalHotkey:
                 pending.set_result(message.body)
         elif message.interface == INTERFACE and message.member == "Activated":
             if self.actions and message.body[0]==self.session and message.body[1] in self.actions:
-                self.actions[message.body[1]]['activate']()
+                binding=self.actions[message.body[1]]
+                token=message.body[3].get('activation_token') if len(message.body)>3 else None
+                if token is not None and binding.get('token'):binding['token'](token.value)
+                binding['activate']()
             elif message.body[:2] == [self.session, self.action]:
                 self.activated()
         elif message.interface == INTERFACE and message.member == "ShortcutsChanged":

@@ -28,6 +28,9 @@ from .shop_rows import ShopRows
 from .tooltip_geometry import description_bounds, still_present
 from .chat import ChatTranslation
 from .translation_ui import TranslationPanel
+from .compose import KoreanComposer
+from .composer_ui import ComposerDialog
+from .thumbnails import ThumbnailCache
 from . import APP_NAME, LEGACY_APP_NAME
 
 COLORS = {"green": "#86ceac", "red": "#ed9394", "amber": "#e4bd7b", "blue": "#9ebde3", "muted": "#98a3b1"}
@@ -182,11 +185,31 @@ class LensWindow(QMainWindow):
         self.chat_hotkey_description=self.chat_sequence
         self.chat_hotkeys.changed.connect(self.on_chat_hotkey_changed)
         self.chat_hotkeys.status.connect(self.on_chat_status)
+        self.composer=KoreanComposer(self.root,self)
+        self.composer.copied.connect(self.on_translation_copied)
+        self.composer_dialog=None
+        self.write_sequence=self.settings.value('write-hotkey','F8')
+        self.write_hotkey_description=self.settings.value('write-hotkey-description',self.write_sequence)
+        self.write_hotkeys=HotkeyManager(self);self.write_hotkeys.action='compose-korean'
+        self.write_activation_token=''
+        self.write_hotkeys.activation_token.connect(self.on_write_activation_token)
+        self.write_hotkeys.activated.connect(self.open_composer)
+        self.write_hotkeys.changed.connect(self.on_write_hotkey_changed)
+        self.write_hotkeys.status.connect(self.on_hotkey_status)
+        if self.hotkeys.portal:
+            # Portal callbacks run on its D-Bus thread. Emit Qt signals so every
+            # feature action and description update arrives on the GUI thread.
+            for identity,manager in [('toggle-prices',self.hotkeys),('toggle-exp',self.exp_hotkeys),('translate-text',self.chat_hotkeys)]:
+                self.hotkeys.actions[identity]['activate']=manager.activated.emit
+                self.hotkeys.actions[identity]['changed']=manager.changed.emit
+            self.hotkeys.actions['compose-korean']={'key':self.write_sequence,'description':'Write English and copy a Korean translation',
+                'activate':self.write_hotkeys.activated.emit,'changed':self.write_hotkeys.changed.emit,'token':self.write_hotkeys.activation_token.emit}
         self.hover_enabled = self.settings.value("tooltip-prices", True, type=bool)
         self.bulk_enabled = self.settings.value("full-market-cache", True, type=bool)
         self.tooltip_result = None
         self.shop_tooltip_active = False
         self.service = PriceService(cache_path, self)
+        self.thumbnails=ThumbnailCache(Path(cache_path).parent/'item-thumbnails-v1',self)
         self.service.refresh_index = True
         self.service.refresh_snapshot = self.bulk_enabled
         self.reader = PixelReader(root, self)
@@ -323,6 +346,7 @@ class LensWindow(QMainWindow):
         self.search_panel.item_selected.connect(self.on_search_item)
         self.search_panel.identity_selected.connect(self.on_search_identity)
         self.search_panel.source_requested.connect(self.open_source)
+        self.search_panel.set_thumbnails(self.thumbnails)
         self.search_panel.catalog_retry.connect(self.retry_catalog)
         self.prices_layout=prices_layout
         prices_layout.insertWidget(0,self.search_panel)
@@ -336,7 +360,8 @@ class LensWindow(QMainWindow):
         self.exp_scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.exp_scroll.setWidget(self.exp_panel)
         self.exp_tab_index = self.tabs.addTab(self.exp_scroll, "EXP Tracking")
-        self.translation_panel=TranslationPanel(self.chat_enabled,self)
+        self.translation_panel=TranslationPanel(self.chat_enabled,self,composer=self.composer,
+            compose_shortcut=self.write_hotkey_description,configure_compose=self.configure_write_hotkey)
         self.translation_panel.enabled_changed.connect(self.set_chat_enabled)
         self.translation_panel.translate_requested.connect(self.translate_chat)
         self.translation_panel.shortcut_requested.connect(self.configure_chat_hotkey)
@@ -503,7 +528,8 @@ class LensWindow(QMainWindow):
         layout=QVBoxLayout(dialog)
         for title,description,action in (("Prices",self.hotkey_description or self.hotkey_sequence,self.configure_hotkey),
                                           ("EXP tracking",self.exp_hotkey_description,self.configure_exp_hotkey),
-                                          ("Translate Korean text",self.chat_hotkey_description,self.configure_chat_hotkey)):
+                                          ("Read Korean text",self.chat_hotkey_description,self.configure_chat_hotkey),
+                                          ("Write in Korean",self.write_hotkey_description,self.configure_write_hotkey)):
             row=QHBoxLayout();row.addWidget(label(title+" · "+description),1)
             button=QPushButton("Change…");button.clicked.connect(action);row.addWidget(button);layout.addLayout(row)
         close=QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
@@ -560,21 +586,56 @@ class LensWindow(QMainWindow):
 
     def configure_exp_hotkey(self):self.configure_feature_hotkey('exp')
 
+    def configure_write_hotkey(self):self.configure_feature_hotkey('write')
+
+    def on_write_hotkey_changed(self,description):
+        self.write_hotkey_description=description;self.settings.setValue('write-hotkey-description',description)
+        if hasattr(self,'translation_panel') and hasattr(self.translation_panel,'writer'):self.translation_panel.writer.set_shortcut(description)
+        if self.composer_dialog:self.composer_dialog.editor.set_shortcut(description)
+
+    def open_composer(self):
+        if self.hotkey_dialog_open:return
+        import os
+        token=self.write_activation_token;self.write_activation_token=''
+        if token and QApplication.platformName().startswith('wayland'):
+            # Qt's own Wayland activation code consumes this token. It applies
+            # only to our popup; no other window is inspected or activated.
+            os.environ['XDG_ACTIVATION_TOKEN']=token
+        if self.composer_dialog is None:
+            self.composer_dialog=ComposerDialog(self.composer,self.write_hotkey_description,self.configure_write_hotkey)
+            self.composer_dialog.setStyleSheet(self.styleSheet())
+        dialog=self.composer_dialog
+        if not dialog.isVisible():
+            screen=QApplication.screenAt(QCursor.pos()) or QApplication.primaryScreen()
+            area=screen.availableGeometry();dialog.move(area.center()-dialog.rect().center())
+        dialog.show();dialog.raise_();dialog.activateWindow()
+        dialog.editor.input.setFocus(Qt.FocusReason.ShortcutFocusReason)
+        if token:
+            def clear_token():
+                if os.environ.get('XDG_ACTIVATION_TOKEN')==token:os.environ.pop('XDG_ACTIVATION_TOKEN',None)
+            QTimer.singleShot(0,clear_token)
+
+    def on_write_activation_token(self,token):
+        if isinstance(token,str) and 0<len(token)<4096 and '\x00' not in token:self.write_activation_token=token
+
+    def on_translation_copied(self,*_):
+        if hasattr(self,'tray') and not self.closing:self.tray.translation_copied()
+
     def check_shortcut_conflict(self,action,sequence):
-        for name,value in [('prices',self.hotkey_sequence),('exp',self.exp_sequence),('chat',self.chat_sequence)]:
+        for name,value in [('prices',self.hotkey_sequence),('exp',self.exp_sequence),('chat',self.chat_sequence),('write',self.write_sequence)]:
             if name!=action and sequence==value:raise ValueError('That key is assigned to '+name+'. Choose another key.')
 
     def configure_feature_hotkey(self,kind):
         if self.hotkeys.portal:
             self.hotkey_enabled=True;self.settings.setValue('hotkey-enabled',True)
             self.initialize_hotkey();self.hotkeys.configure();return
-        manager=self.exp_hotkeys if kind=='exp' else self.chat_hotkeys
-        sequence=self.exp_sequence if kind=='exp' else self.chat_sequence
-        dialog=QDialog(self);dialog.setWindowTitle('EXP shortcut' if kind=='exp' else 'Translation shortcut')
+        manager={'exp':self.exp_hotkeys,'chat':self.chat_hotkeys,'write':self.write_hotkeys}[kind]
+        sequence={'exp':self.exp_sequence,'chat':self.chat_sequence,'write':self.write_sequence}[kind]
+        dialog=QDialog(self);dialog.setWindowTitle({'exp':'EXP shortcut','chat':'Read Korean shortcut','write':'Write Korean shortcut'}[kind])
         layout=QVBoxLayout(dialog);editor=QKeySequenceEdit(QKeySequence(sequence));layout.addWidget(editor)
         details=label('Choose one key or a key combination.',wrap=True);layout.addWidget(details)
         button=QPushButton('Set shortcut');layout.addWidget(button)
-        for entry in (self.hotkeys,self.exp_hotkeys,self.chat_hotkeys):entry.close()
+        for entry in (self.hotkeys,self.exp_hotkeys,self.chat_hotkeys,self.write_hotkeys):entry.close()
         self.hotkey_dialog_open=True
         def save():
             try:
@@ -582,8 +643,9 @@ class LensWindow(QMainWindow):
                 self.check_shortcut_conflict(kind,text)
                 if manager.start(text):
                     if kind=='exp':self.exp_sequence=text
-                    else:self.chat_sequence=text
-                    self.settings.setValue('exp-hotkey' if kind=='exp' else 'chat-hotkey',text)
+                    elif kind=='chat':self.chat_sequence=text
+                    else:self.write_sequence=text
+                    self.settings.setValue({'exp':'exp-hotkey','chat':'chat-hotkey','write':'write-hotkey'}[kind],text)
                     self.hotkey_enabled=True;self.settings.setValue('hotkey-enabled',True);dialog.accept()
             except ValueError as error:details.setText(str(error))
         button.clicked.connect(save);manager.status.connect(details.setText)
@@ -808,7 +870,7 @@ class LensWindow(QMainWindow):
         if self.hotkey_enabled:
             self.hotkeys.start(self.hotkey_sequence)
             if not self.hotkeys.portal:
-                self.exp_hotkeys.start(self.exp_sequence);self.chat_hotkeys.start(self.chat_sequence)
+                self.exp_hotkeys.start(self.exp_sequence);self.chat_hotkeys.start(self.chat_sequence);self.write_hotkeys.start(self.write_sequence)
 
     def on_hotkey(self):
         if not self.hotkey_dialog_open:
@@ -840,12 +902,12 @@ class LensWindow(QMainWindow):
         self.hotkey_dialog_open = True
         if not self.hotkeys.portal:
             # Let the key editor receive a chord already registered by this app.
-            self.hotkeys.close();self.exp_hotkeys.close();self.chat_hotkeys.close()
+            self.hotkeys.close();self.exp_hotkeys.close();self.chat_hotkeys.close();self.write_hotkeys.close()
         def set_enabled(checked):
             self.hotkey_enabled = checked
             self.settings.setValue("hotkey-enabled", checked)
             if not checked:
-                self.hotkeys.close();self.exp_hotkeys.close();self.chat_hotkeys.close()
+                self.hotkeys.close();self.exp_hotkeys.close();self.chat_hotkeys.close();self.write_hotkeys.close()
                 details.setText("Hotkeys disabled")
             elif self.hotkeys.portal:
                 self.initialize_hotkey()
@@ -1266,6 +1328,7 @@ class LensWindow(QMainWindow):
         self.catalog_loading = False
         self.catalog_error = ""
         self.search_panel.set_catalog(catalog)
+        self.composer.set_names(catalog.items)
         if catalog.warning:
             self.last_diagnostic = catalog.warning
         self.request_prices()
@@ -1658,9 +1721,13 @@ class LensWindow(QMainWindow):
         self.hotkeys.close()
         self.exp_hotkeys.close()
         self.chat_hotkeys.close()
+        self.write_hotkeys.close()
+        if self.composer_dialog:self.composer_dialog.close();self.composer_dialog.deleteLater()
+        self.composer.close()
         self.chat.close()
         self.reader.close(keep_stream=self.keep_capture)
         self.service.close()
+        self.thumbnails.close()
         self.overlay.close()
         if hasattr(self, "tray"):
             self.tray.close()

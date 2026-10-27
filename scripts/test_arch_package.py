@@ -36,9 +36,10 @@ def main():
             subprocess.run(command, cwd=cwd or ROOT, env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
         # Only dependency checks are skipped: dependencies come from the host,
         # while all package/database writes are confined to this disposable root.
-        previous = ROOT / "dist/lupin-0.8.0-1-x86_64.pkg.tar.zst"
-        if previous.exists():
-            run([*pacman, "-Udd", str(previous)])
+        for version in ("0.8.0", "0.9.0"):
+            previous = ROOT / f"dist/lupin-{version}-1-x86_64.pkg.tar.zst"
+            if previous.exists() and previous != package:
+                run([*pacman, "-Udd", str(previous)])
         run([*pacman, "-Udd", str(package)])
         launcher = folder / "usr/bin/classic-price-lens"
         alias = folder / "usr/bin/lupin"

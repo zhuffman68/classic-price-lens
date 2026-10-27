@@ -161,12 +161,12 @@ class PortalShortcutTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(instance.starting)
         self.assertFalse(instance.pending)
 
-    async def test_three_features_bind_in_one_session_and_dispatch_independently(self):
+    async def test_four_features_bind_in_one_session_and_dispatch_independently(self):
         from dbus_next import Message,MessageType,Variant
         instance=self.portal();calls=[];fired=[];session='/test/three'
         instance.actions={identity:dict(key=key,description=identity,
             activate=lambda identity=identity:fired.append(identity),changed=lambda value:None)
-            for identity,key in [('toggle-prices','F10'),('toggle-exp','F11'),('translate-text','F12')]}
+            for identity,key in [('toggle-prices','F10'),('toggle-exp','F11'),('translate-text','F12'),('compose-korean','F8')]}
         class Bus:
             unique_name=':1.99'
             async def connect(self):return self
@@ -187,12 +187,22 @@ class PortalShortcutTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sum(c.member=='CreateSession' for c in calls),1)
         bindings=next(c.body[1] for c in calls if c.member=='BindShortcuts')
         self.assertEqual([(identity,options['preferred_trigger'].value) for identity,options in bindings],
-                         [('toggle-prices','F10'),('toggle-exp','F11'),('translate-text','F12')])
+                         [('toggle-prices','F10'),('toggle-exp','F11'),('translate-text','F12'),('compose-korean','F8')])
         for action in instance.actions:
             for target in ('/other',session):
                 instance._message(Message(message_type=MessageType.SIGNAL,path='/org/freedesktop/portal/desktop',
                     interface='org.freedesktop.portal.GlobalShortcuts',member='Activated',signature='osta{sv}',body=[target,action,1,{}]))
         self.assertEqual(fired,list(instance.actions))
+
+    async def test_composer_receives_only_its_portal_activation_token(self):
+        from dbus_next import Message,MessageType,Variant
+        instance=self.portal();instance.session='/test/token';events=[]
+        instance.actions={'compose-korean':{'token':lambda t:events.append(t),'activate':lambda:events.append('show')}}
+        for session in ('/other','/test/token'):
+            instance._message(Message(message_type=MessageType.SIGNAL,path='/org/freedesktop/portal/desktop',
+                interface='org.freedesktop.portal.GlobalShortcuts',member='Activated',signature='osta{sv}',
+                body=[session,'compose-korean',1,{'activation_token':Variant('s','our-popup-token')}]))
+        self.assertEqual(events,['our-popup-token','show'])
 
     async def test_only_the_registered_session_and_action_can_activate(self):
         from dbus_next import Message, MessageType

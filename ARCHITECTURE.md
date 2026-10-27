@@ -1,6 +1,6 @@
 # Lupin architecture
 
-Lupin provides market prices, EXP tracking and local Korean speech-bubble translation for MapleStory Classic World. This document describes v0.9.0.
+Lupin provides market prices, EXP tracking and local Korean translation in both directions for MapleStory Classic World. This document describes v0.10.0.
 
 ## Boundaries
 
@@ -26,6 +26,9 @@ flowchart LR
     Prices --> UI[Main panel and annotation descriptions]
     EXP --> UI
     Chat --> UI
+    Draft[English draft] --> Composer[Local Korean composer]
+    Composer --> Clipboard[OS Unicode clipboard]
+    Images[Exact Classic World item images] --> Search
     UI --> Overlay[Independent click-through annotation helper]
 ```
 
@@ -36,6 +39,7 @@ flowchart LR
 | Rust reader | Game-area, shop, tooltip and EXP recognition | JSON over its own stdin/stdout; local raw RGBA files |
 | Annotation helper | Independent labels and OS-cursor following | JSON descriptions and pointer reports over stdin/stdout |
 | Translation worker | Bubble detection, Korean OCR, glossary and local translation | Bounded in-memory frame pipe; no network or screenshot files |
+| Composer worker | Demand-driven English-to-Korean inference | UTF-8 JSON over its own pipes; no game input or network |
 | Optional headless browser | Reads the public full-market list, then exits | Dedicated profile and ephemeral loopback browser endpoint |
 
 `control.py` handles this app's second-launch activation, reader pause/resume, feature actions, minimization and installer shutdown. It has no game connection.
@@ -82,6 +86,8 @@ Well-supported visible references can refresh before expiry using a stable stagg
 
 The brand, display/status controls, Pause/Resume and Hotkeys remain above three fixed tabs: Prices, EXP Tracking and Translation. `search.py` searches the local catalog with a short debounce; typing/suggestions never request prices. Selecting an item adds one manual demand to the shared scheduler. Clearing it removes demand and retires results. Search has layout priority over collapsible on-screen results and works without capture. `price_widgets.py` updates cards in place.
 
+`thumbnails.py` supplies exact Classic World images from OSMS Data Explorer by game item ID, independently of price requests. Only visible search rows and the selected card create image demand. Two downloads run at once, at most 16 currently wanted IDs are queued, and obsolete queued work is dropped. PNG responses are bounded by bytes/dimensions before decode. Images have a 30-day disk TTL; misses wait six hours. Disk/memory limits are 512/96 images. A missing or ambiguous image leaves a placeholder without blocking prices. The source is the Classic World item-image route, never a guessed original-GMS image.
+
 `motion.py` implements interruptible horizontal page slides, brief section transitions and rolling EXP digits. Reduce motion removes animations and pauses the header. `branding.py` plays complete local original-game walk/attack GIFs at native delay values and outlines a local Pixelify Sans wordmark. Hidden/minimized headers stop playback. The approved Lupin skill icon is local and exported with nearest-neighbor scaling.
 
 `overlay.py` owns `annotations.py` in an independent click-through window. Cursor-following cards repaint locally without OCR or HTTP work. Shops always suppress generic inventory price cards. `shop_rows.py` stabilizes small geometry noise and retains known identities across verified occlusion. Changed visible listings or unoccluded guards invalidate hidden-page data; old covered listing amounts lose their deal rating.
@@ -105,6 +111,16 @@ History/options are separate dialogs. Map segments save automatically; a session
 One no-result scan can retry a fresh frame after 120 ms with slightly wider bubble-color tolerance. There is no continuous chat OCR. One in-flight request, two passive compute threads, a 1.5-second between-bubble budget and bounded in-memory text/crop caches constrain resources. Disabling unloads the worker/models. Startup and price scheduling are independent. Translation never uploads/stores chat or screenshots.
 
 Cards prioritize English, retain the original/speaker and mark uncertainty only when relevant. They expire after eight seconds or when source pixels move/change. Recent results remain on the Translation page. Moving bubbles, expanded chat history, dark bubbles and arbitrary desktop Korean are not supported. [Model/license/performance details](docs/KOREAN_CHAT.md).
+
+### Clipboard-only Korean composer
+
+`compose.py` owns a shared outgoing draft for `composer_ui.py`'s inline editor and independent popup. F8 or `lupin --compose` opens it; this does not start capture or speech-bubble reading. All four shortcuts share one Wayland portal session, and D-Bus callbacks emit Qt signals before UI work. A portal activation token, when supplied, activates only the app's own Wayland surface. Windows uses its existing RegisterHotKey path.
+
+Typing debounces a preview for 180 ms. Exact phrases use `outgoing_text.py`'s trade/party/social glossary; freeform text uses `compose_worker.py` and a bundled English–Korean OPUS model. Catalog names, map names and mentions are masked and must return exactly once. Explicit numeric values/units/percent roles are validated and restored to source notation. Invalid results cannot copy. Catalog changes invalidate drafts that had not protected their newly known item names.
+
+Only Enter or Translate & Copy records a copy request for the current generation. Edit/cancel/dismissal invalidates it; an old worker response cannot overwrite the clipboard. A successful explicit request writes Qt's OS Unicode clipboard and emits an inline/native notification. Lupin never selects a game field, synthesizes a key, pastes or sends. Drafts/results stay in memory and never enter price requests or logs.
+
+The worker is lazy, CPU-only int8 with two passive compute threads and a 90-second idle unload. Only one inference runs; the latest queued draft supersedes older queued work, and the cache holds at most 64 results. It has its own startup/response timeout and uses UTF-8 bytes on both platforms. It shares the existing CTranslate2/SentencePiece runtime, adding one verified model bundle rather than another inference framework.
 
 ## Distribution and compatibility
 

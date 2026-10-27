@@ -1,7 +1,8 @@
 """Local item search with one explicit cached price lookup at a time."""
 import time
 
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import Qt, QTimer, Signal,QSize
+from PySide6.QtGui import QIcon,QPixmap,QPainter
 from PySide6.QtWidgets import (QFrame,QHBoxLayout,QLabel,QLineEdit,QListWidget,
     QListWidgetItem,QPushButton,QScrollArea,QVBoxLayout,QWidget)
 
@@ -20,6 +21,9 @@ class PriceSearch(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.catalog = None
+        self.thumbnails=None
+        self.thumbnail_timer=QTimer(self);self.thumbnail_timer.setSingleShot(True);self.thumbnail_timer.setInterval(0)
+        self.thumbnail_timer.timeout.connect(self.request_thumbnails)
         self.catalog_error = ""
         self.selected = None
         self.pending_identity = None
@@ -54,6 +58,9 @@ class PriceSearch(QWidget):
         self.retry_button.hide()
         layout.addWidget(self.retry_button,0,Qt.AlignmentFlag.AlignLeft)
         self.results = QListWidget()
+        self.results.setIconSize(QSize(32,32))
+        blank=QPixmap(32,32);blank.fill(Qt.GlobalColor.transparent);self.placeholder_icon=QIcon(blank)
+        self.results.verticalScrollBar().valueChanged.connect(self.request_thumbnails)
         self.results.setMaximumHeight(210)
         self.results.setStyleSheet("QListWidget { background: #1e2734; border: 1px solid #354255; border-radius: 7px; } QListWidget::item { padding: 9px 10px; border-bottom: 1px solid #2a3647; } QListWidget::item:selected { background: #35455c; color: #f4e7d1; }")
         self.results.currentItemChanged.connect(self.select_result)
@@ -76,6 +83,33 @@ class PriceSearch(QWidget):
         self.query.textChanged.connect(self.schedule_search)
         self.query.returnPressed.connect(self.choose_first)
         self.render()
+
+    def set_thumbnails(self,store):
+        self.thumbnails=store;store.ready.connect(self.on_thumbnail)
+
+    def request_thumbnails(self,*_):
+        if not self.thumbnails:return
+        items=[self.selected] if self.selected else []
+        if not self.results.isHidden():
+            region=self.results.viewport().rect().adjusted(0,-50,0,50)
+            for index in range(self.results.count()):
+                row=self.results.item(index);item=row.data(Qt.ItemDataRole.UserRole)
+                if hasattr(item,'game_id') and self.results.visualItemRect(row).intersects(region):items.append(item)
+        self.thumbnails.observe(items)
+
+    def on_thumbnail(self,item_id):
+        if not self.thumbnails:return
+        image=self.thumbnails.image(item_id)
+        if not image.isNull():
+            tile=QPixmap(32,32);tile.fill(Qt.GlobalColor.transparent)
+            if image.width()>32 or image.height()>32:image=image.scaled(QSize(32,32),Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.FastTransformation)
+            painter=QPainter(tile);painter.drawImage((32-image.width())//2,(32-image.height())//2,image);painter.end()
+            icon=QIcon(tile)
+        for index in range(self.results.count()):
+            row=self.results.item(index);item=row.data(Qt.ItemDataRole.UserRole)
+            if getattr(item,'game_id',None)==item_id and not image.isNull():row.setIcon(icon)
+        card=getattr(self,'price_view',None)
+        if self.selected and self.selected.game_id==item_id and card:card.thumbnail.set_image(image)
 
     def set_catalog(self, catalog):
         self.clear_selection()
@@ -127,13 +161,16 @@ class PriceSearch(QWidget):
                 item = candidates[0]
                 suffix = " · NX item" if item.cash else " · Equipment" if item.equipment else ""
                 row = QListWidgetItem(item.name+suffix)
+                row.setIcon(self.placeholder_icon);row.setSizeHint(QSize(0,50))
                 resolved = self.catalog.resolve(item.name)
                 row.setData(Qt.ItemDataRole.UserRole,resolved or (item.name,tuple(candidates)))
                 self.results.addItem(row)
+                if self.thumbnails and resolved:self.on_thumbnail(resolved.game_id)
         self.results.blockSignals(False)
         self.results.setEnabled(True)
         visibility(self.results,bool(found))
         if found:reveal(self.results)
+        self.thumbnail_timer.start()
         self.hint.setText("Item names are unavailable. Check your connection and retry." if self.catalog_error else
                           "Item names are loading…" if not self.catalog else
                           "Type at least two characters. Select a result to check its price." if len(query)<2 else
@@ -229,7 +266,10 @@ class PriceSearch(QWidget):
             self.card_item = self.selected.game_id
             self.detail_layout.addWidget(card)
             card.show()
+            if self.thumbnails:
+                card.thumbnail.show();card.thumbnail.set_image(self.thumbnails.image(self.selected.game_id))
             if changed:reveal(card)
+            self.request_thumbnails()
         else:
             while self.detail_layout.count():
                 widget = self.detail_layout.takeAt(0).widget()

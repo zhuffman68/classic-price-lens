@@ -1,7 +1,8 @@
 """Translation controls and the latest local results; no capture or networking."""
 from PySide6.QtCore import Signal,Qt
 from PySide6.QtWidgets import QWidget,QVBoxLayout,QHBoxLayout,QCheckBox,QPushButton,QScrollArea,QFrame,QLabel
-from .motion import reveal
+from .motion import reveal,AnimatedTabs
+from .composer_ui import ComposerWidget
 
 
 class TranslationPanel(QWidget):
@@ -10,10 +11,13 @@ class TranslationPanel(QWidget):
     shortcut_requested=Signal()
     clear_requested=Signal()
 
-    def __init__(self,enabled=False,parent=None):
+    def __init__(self,enabled=False,parent=None,composer=None,compose_shortcut='F8',configure_compose=None):
         super().__init__(parent)
-        layout=QVBoxLayout(self);layout.setContentsMargins(0,12,0,0);layout.setSpacing(12)
-        self.enabled_check=QCheckBox("Enable local Korean translation")
+        outer=QVBoxLayout(self);outer.setContentsMargins(0,0,0,0)
+        self.modes=AnimatedTabs(self);outer.addWidget(self.modes)
+        reader=QWidget();self.modes.addTab(reader,'Read Korean')
+        layout=QVBoxLayout(reader);layout.setContentsMargins(0,12,0,0);layout.setSpacing(12)
+        self.enabled_check=QCheckBox("Enable speech-bubble translation")
         self.enabled_check.setChecked(enabled);self.enabled_check.toggled.connect(self.enabled_changed.emit)
         layout.addWidget(self.enabled_check)
         actions=QHBoxLayout()
@@ -31,6 +35,10 @@ class TranslationPanel(QWidget):
         scroll.setWidget(self.results);layout.addWidget(scroll,1)
         clear=QPushButton("Clear results and popups");clear.clicked.connect(self.clear_requested.emit)
         layout.addWidget(clear);self.card_key=None;self.set_cards([])
+        if composer is not None:
+            self.writer=ComposerWidget(composer,compose_shortcut,configure_compose,self)
+            writer_scroll=QScrollArea();writer_scroll.setWidgetResizable(True);writer_scroll.setFrameShape(QFrame.Shape.NoFrame);writer_scroll.setWidget(self.writer)
+            self.modes.addTab(writer_scroll,'Write Korean')
 
     def set_shortcut(self,description):
         self.shortcut_button.setText("Shortcut: "+description)

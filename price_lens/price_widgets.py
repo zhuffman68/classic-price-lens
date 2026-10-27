@@ -5,6 +5,7 @@ from PySide6.QtWidgets import QFrame,QHBoxLayout,QPushButton,QVBoxLayout,QWidget
 from .domain import WORLD,age_text,compare
 from .motion import visibility
 from .ui_components import COLORS,mesos,text_label
+from .thumbnails import ItemImage
 
 
 class PriceCard(QFrame):
@@ -21,8 +22,11 @@ class PriceCard(QFrame):
             self.fields[name]=widget
             parent.addWidget(widget)
             return widget
-        field("name",layout,"font-size: 14px; font-weight: 650")
-        field("context",layout,"font-size: 10px; color: #98a3b1")
+        header=QHBoxLayout();self.thumbnail=ItemImage();self.thumbnail.hide();header.addWidget(self.thumbnail)
+        names=QVBoxLayout();names.setContentsMargins(0,0,0,0);names.setSpacing(4)
+        field("name",names,"font-size: 14px; font-weight: 650")
+        field("context",names,"font-size: 10px; color: #98a3b1")
+        header.addLayout(names,1);layout.addLayout(header)
         field("status",layout)
         numbers=QHBoxLayout()
         self.store=QWidget()

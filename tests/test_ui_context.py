@@ -119,6 +119,7 @@ class FakeSettings:
 
 class FakeHotkeys(QObject):
     activated = Signal()
+    activation_token = Signal(str)
     changed = Signal(str)
     status = Signal(str)
     portal = False
@@ -129,6 +130,14 @@ class FakeHotkeys(QObject):
 
     def close(self):
         pass
+
+
+class FakeThumbnails(QObject):
+    ready=Signal(int)
+    def __init__(self,*args):super().__init__();self.items=[]
+    def image(self,item_id):return QImage()
+    def observe(self,items):self.items=list(items)
+    def close(self):pass
 
 
 class ContextUiTests(unittest.TestCase):
@@ -191,7 +200,7 @@ class ContextUiTests(unittest.TestCase):
         self.patchers = [patch("price_lens.ui." + name, replacement) for name, replacement in
                          [("Overlay", FakeOverlay), ("PixelReader", FakeReader),
                           ("PriceService", FakeService), ("QSettings", FakeSettings), ("HotkeyManager", FakeHotkeys),
-                          ("data_directory", lambda: Path(self.exp_directory.name))]]
+                          ("data_directory", lambda: Path(self.exp_directory.name)),("ThumbnailCache",FakeThumbnails)]]
         for patcher in self.patchers:
             patcher.start()
         self.tray_show = patch("price_lens.tray.QSystemTrayIcon.show")

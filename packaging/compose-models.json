@@ -1,0 +1,43 @@
+{
+  "inputs": [
+    {
+      "name": "opus-en-ko-2022.zip",
+      "url": "https://object.pouta.csc.fi/Tatoeba-MT-models/eng-kor/opusTCv20210807-sepvoc_transformer-big_2022-07-28.zip",
+      "sha256": "41f771fa28e864428dd7589992867b2b6dfa402f1191670e818e019dddfceef7"
+    }
+  ],
+  "outputs": {
+    "target.spm": {
+      "size": 815483,
+      "sha256": "3d2aa641a0890d8966ab8703b109895a4e522713ce99b4a0192bfacb495bc97c"
+    },
+    "OPUS-SOURCE.md": {
+      "size": 1079,
+      "sha256": "22bde5ce038c70befb7fafc70a2db6ca2a1156efc4c9c2c4b4fc075d4fcf0267"
+    },
+    "LICENSE-OPUS.txt": {
+      "size": 18652,
+      "sha256": "945fbcb37deca05bccd7c3ca0e261679f1f5373515504fdbad68f6f3cf6f49b9"
+    },
+    "source.spm": {
+      "size": 789870,
+      "sha256": "3d0591e65c49541d82f48df33d7b322c3d4ee7aa0ee8747f9a7f9355dbf22c95"
+    },
+    "translation/model.bin": {
+      "size": 218915789,
+      "sha256": "ceb6dcaa4219827a46051fd5666cd46826e311bc5bfa4ef4ceda2b4512a60397"
+    },
+    "translation/target_vocabulary.json": {
+      "size": 745968,
+      "sha256": "67a328ec6f6e695727646f84aa7418ef44faeaf4d791959b565db77e8fdd6278"
+    },
+    "translation/config.json": {
+      "size": 221,
+      "sha256": "152eb448f1020eb55f90971d7b95f61896abee8415d555ca51ae7897ac0a0e68"
+    },
+    "translation/source_vocabulary.json": {
+      "size": 530595,
+      "sha256": "c689921fdb69d779d1698456e306aaa2cea4f68baa4ee8ef628a26d198957c90"
+    }
+  }
+}

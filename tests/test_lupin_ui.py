@@ -2,6 +2,9 @@
 import sys,time,unittest
 import test_ui_context as fixtures
 from test_experience import payload
+from unittest.mock import patch
+from PySide6.QtTest import QTest
+from PySide6.QtCore import Qt
 
 
 class LupinUiTests(unittest.TestCase):
@@ -19,6 +22,18 @@ class LupinUiTests(unittest.TestCase):
         self.assertEqual(self.window.hotkey_sequence,'F10')
         self.assertEqual(self.window.exp_sequence,'F11')
         self.assertEqual(self.window.chat_sequence,'F9' if sys.platform=='win32' else 'F12')
+        self.assertEqual(self.window.write_sequence,'F8')
+
+    def test_composer_hotkey_needs_no_capture_and_notifies_after_explicit_copy(self):
+        w=self.window;w.mode='idle';w.reader.image=w.reader.image.__class__()
+        with patch('price_lens.compose.QGuiApplication.clipboard') as clip,patch.object(w.tray.icon,'showMessage') as notify:
+            w.write_hotkeys.activated.emit()
+            self.assertTrue(w.composer_dialog.isVisible())
+            editor=w.composer_dialog.editor.input;editor.setText('ty')
+            QTest.keyClick(editor,Qt.Key.Key_Return)
+            clip.return_value.setText.assert_called_once_with('감사합니다.')
+            self.assertEqual(notify.call_args[0][0],'Translation copied to clipboard')
+            self.assertEqual(w.reader.starts,0)
 
     def test_exp_start_pause_resume_survives_price_toggle_and_stop_hides_overlay(self):
         w=self.window

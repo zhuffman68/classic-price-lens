@@ -71,6 +71,11 @@ class TrayController(QObject):
         self.restore()
         self.window.open_settings()
 
+    def translation_copied(self):
+        self.icon.showMessage('Translation copied to clipboard',
+            'Paste into Classic World with Ctrl+V, then send when ready.',
+            QSystemTrayIcon.MessageIcon.Information,3500)
+
     def activated(self, reason):
         if reason in (QSystemTrayIcon.ActivationReason.Trigger, QSystemTrayIcon.ActivationReason.DoubleClick):
             self.restore()

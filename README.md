@@ -5,9 +5,9 @@
 **Tools for MapleStory Classic World.**
 
 - Market prices beside shop, inventory and equipment items, including cash/NX resale prices.
-- Item search with a shared local price cache and clear price ages.
+- Item search with item images, a shared local price cache and clear price ages.
 - EXP tracking with percentage per minute/hour, a session timer, level-up ETA and saved history.
-- Local Korean speech-bubble translation with the original text alongside English.
+- Local Korean translation: read speech bubbles in English, or write a Korean reply and copy it to paste yourself.
 
 Lupin reads OS-shared screen pixels and draws separate, click-through labels. It never hooks into the game. Screenshots and translations stay on your device. Equipment prices assume unscrolled items.
 
@@ -18,12 +18,12 @@ Download from **[itch.io](https://zhuffman68.itch.io/lupin)**. Repository collab
 | System | Download | Install |
 | --- | --- | --- |
 | Windows 10/11 x64 | `Windows-x64-Setup.exe` | Run it, then open Lupin from Start. |
-| Arch / Manjaro | `.pkg.tar.zst` | `sudo pacman -U ./lupin-0.9.0-1-x86_64.pkg.tar.zst` |
-| Debian 12+ / Ubuntu 22.04+ | `.deb` | `sudo apt install ./lupin_0.9.0-1_amd64.deb` |
+| Arch / Manjaro | `.pkg.tar.zst` | `sudo pacman -U ./lupin-0.10.0-1-x86_64.pkg.tar.zst` |
+| Debian 12+ / Ubuntu 22.04+ | `.deb` | `sudo apt install ./lupin_0.10.0-1_amd64.deb` |
 
 Extract itch.io downloads before running an installer or package command. A Windows portable ZIP is also available: extract it fully and open `run-windows.bat`.
 
-Requirements: a supported 64-bit desktop, about **2 GB free space**, and internet for market updates. Python, Qt, OCR and local translation models are included. **Chrome, Edge or Chromium** enables the full-market cache; individual lookups work without it. Linux screen sharing needs PipeWire and a working desktop sharing portal, normally provided by KDE or GNOME.
+Requirements: a supported 64-bit desktop, about **3 GB free space** for installation, and internet for market updates and uncached item images. Python, Qt, OCR and local translation models are included. **Chrome, Edge or Chromium** enables the full-market cache; individual lookups work without it. Linux screen sharing needs PipeWire and a working desktop sharing portal, normally provided by KDE or GNOME.
 
 Updates preserve settings, prices and history. Linux packages are now named `lupin` and replace `classic-price-lens`.
 
@@ -33,10 +33,11 @@ Updates preserve settings, prices and history. Linux packages are now named `lup
 2. Keep the game's bottom status bar visible. Lupin finds the game area automatically.
 3. Open a shop or hover an inventory/equipment item to see market references. Search by name at the top of **Prices**; search works without sharing.
 4. Open **EXP Tracking** and press **Start tracking** when ready. Tracking always begins stopped when the app opens.
-5. Open **Translation** to enable local Korean translation, then press its shortcut near a speech bubble.
+5. Open **Translation → Read Korean** for speech bubbles, or **Write Korean** to translate an English draft and copy it. Writing needs no screen sharing.
 
 | Shortcut | Action |
 | --- | --- |
+| **F8** | Open the Korean writer. Enter translates and copies; paste and send yourself. |
 | **F10** | Toggle prices. EXP tracking continues. |
 | **F11** | Start EXP tracking, then pause/resume it. |
 | **F12** | Translate visible Korean speech bubbles. **F9 on Windows**, where F12 is reserved. |
@@ -50,6 +51,12 @@ Shop labels show names, market references, colored comparisons and price ages. S
 The full market refreshes in the background on launch and hourly. Missing items use individual lookups, cached for 15 minutes by default. Saved data remains visible during refreshes. Price-check time, market-report age and snapshot age are separate; old or thin data receive no deal rating. References are guides, not guaranteed sales.
 
 EXP gain and elapsed time appear immediately. Rates and ETA need **30 seconds of valid tracked time** to estimate a pace, then use a recent five-minute average. Pause excludes breaks; Stop saves the run and turns off EXP reading. Map segments save automatically. **Show tracker in game** controls the bottom-left overlay and is also available in Settings. Percentage is the default; Settings offers raw EXP or both. History stays local and exports to CSV.
+
+## Korean replies
+
+Press **F8**, type an English message, then press **Enter** or **Translate & Copy**. A notification confirms the copy. Open chat and paste with **Ctrl+V** when ready; Lupin never pastes, sends or controls the game. Both translation directions work offline with the included models.
+
+Common trade and party shorthand such as `WTS`, `WTB`, `pmo`, `ea` and `LF1M` is recognized. Known item names stay in English. Explicit prices and percentages are checked before copying: `250` stays `250`, `250k` stays `250k`, and `2.5m` stays `2.5m`. Review the preview, especially for unusual slang or freeform sentences.
 
 ## Help
 

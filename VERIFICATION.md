@@ -1,5 +1,14 @@
 # Verification — 2026-10-27
 
+## Lupin v0.10.0
+
+- The 255-test application suite passes (two platform-specific skips under offscreen Qt). New coverage exercises explicit-only clipboard writes, edit/dismiss/catalog-change cancellation, protected names, numbers/scales/currency/percent roles, contextual trade/party shorthand, UTF-8 real-worker inference and idle shutdown, including a draft change during model startup. No test starts OS sharing or sends game input. Portal tests cover four actions and forwarding activation tokens only for the matching own session/action.
+- Actual Qt composer and search widgets were rendered and inspected using isolated settings/service fixtures. Search previews use real cached public catalog images but synthetic prices; they do not establish current market values. Enter originally activated a dialog's shortcut button as well as copying; disabling automatic default buttons fixes that behavior, checked through the real editor.
+- A separate 12-draft real QProcess benchmark measured 770 ms for cold freeform inference, 190–320 ms warm and 0.1–1.1 ms for glossary fragments. Warm worker PSS was about 263 MiB with zero CPU ticks over a two-second idle sample. Other workloads were left untouched. These exclude typing debounce, OS activation/clipboard delivery and presentation; they do not establish universal sub-half-second response or perfect prose translation.
+- OSMS's current Classic World item-image route returned valid PNGs for exact Work Gloves and Blue Hawkeye IDs through the same Qt networking stack used by the app. Isolated local HTTP tests verify restart reuse, negative caching, two-download concurrency, obsolete queue removal and invalid/oversized response rejection. Search image requests do not invoke the price API.
+- Both local translation directions ship as pinned, verified model allowlists. Outgoing drafts/chat remain in memory; models and third-party notices are the only new staged data. The Windows and Linux runtime framework is shared. Manual Linux Korean paste was confirmed by the user; native Windows game paste/focus, live capture and mixed-DPI behavior remain separate playtests.
+- Package transaction and release acceptance are recorded in the release notes after artifact verification. Host installation is deliberately deferred; isolated package tests do not update the user's installed application.
+
 ## Lupin v0.9.0
 
 - The 236-test source suite passes (two platform-specific skips under offscreen Qt). Seven publisher tests pass separately. Coverage includes three independent shortcut actions in one real-marshalled portal session, manual EXP start/pause/resume/stop, stopping before the first EXP read, integrated search demand/layout, synchronized overlay settings and stable display/tab geometry. No test starts OS sharing or sends game input.

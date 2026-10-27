@@ -214,6 +214,7 @@ class X11Hotkey:
 
 class HotkeyManager(QObject):
     activated = Signal()
+    activation_token = Signal(str)
     changed = Signal(str)
     status = Signal(str)
 
