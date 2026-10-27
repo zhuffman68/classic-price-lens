@@ -7,3 +7,10 @@ available area so a display or scaling change cannot leave the window oversized.
 Retain the first-launch default that fits all normal page controls without scrolling.
 Preserve the existing display-selection and capture-sharing behavior. Do not
 implicitly start EXP tracking while restoring window state.
+
+Publication status
+
+The user requested that uploads wait until the next patch. v0.11.0 Windows and
+Linux builds are local; install/upgrade/removal checks passed under Wine,
+Arch/Manjaro, Debian 12 and Ubuntu 22.04. No git push, GitHub release upload or
+itch.io upload was performed for this patch. Window-size memory remains queued.
