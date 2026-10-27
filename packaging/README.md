@@ -1,6 +1,6 @@
 # Building installers and native packages
 
-Published artifacts are in [GitHub Releases](https://github.com/zhuffman68/classic-price-lens/releases). End users need none of these build tools.
+Published artifacts are in [GitHub Releases](https://github.com/zhuffman68/lupin/releases). End users need none of these build tools.
 
 All runtime downloads are pinned by SHA-256 in `runtime-linux.json` and `runtime-windows.json`. The staging scripts copy only application source, tiny upstream OCR fixtures, tests, runtime files and dependency notices. They never copy screenshots, databases, settings or private evidence. Python/Qt run from the application directory; installed files do not depend on the build path or system Python version.
 
@@ -66,7 +66,7 @@ python scripts/publish_itch.py --dry-run
 python scripts/publish_itch.py
 ```
 
-The default target is `zhuffman68/classic-price-lens`; `--project username/slug` selects another project. Dry-run validates checksums and prepares the local upload folders without network access. A real upload also checks the anonymous page's password form before and after publishing. It never changes project visibility or the shared password. Butler keeps authorization outside the repository; no credential belongs in source control.
+The default target is `zhuffman68/lupin`; `--project username/slug` selects another project. Dry-run validates checksums and prepares the local upload folders without network access. A real upload also checks the anonymous page's password form before and after publishing. It never changes project visibility or the shared password. Butler keeps authorization outside the repository; no credential belongs in source control.
 
 The five stable channels are `windows-portable`, `windows-installer`, `linux-arch`, `linux-debian` and `checksums`. Subsequent uploads update the same channels, use the app's version number, and skip identical content. Source-only publisher checks run with `python -m unittest discover -s scripts/tests -q`.
 

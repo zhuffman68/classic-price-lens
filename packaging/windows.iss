@@ -1,5 +1,5 @@
 #ifndef AppVersion
-  #define AppVersion "0.6.0"
+  #define AppVersion "0.7.0"
 #endif
 #ifndef StageDir
   #define StageDir "..\dist\Lupin-Windows-x64"
@@ -10,9 +10,9 @@ AppId={{1E77CC5D-AE19-4808-AD70-E009B578BA74}
 AppName=Lupin
 AppVersion={#AppVersion}
 AppPublisher=zhuffman68
-AppPublisherURL=https://github.com/zhuffman68/classic-price-lens
-AppSupportURL=https://github.com/zhuffman68/classic-price-lens/issues
-AppUpdatesURL=https://github.com/zhuffman68/classic-price-lens/releases
+AppPublisherURL=https://github.com/zhuffman68/lupin
+AppSupportURL=https://github.com/zhuffman68/lupin/issues
+AppUpdatesURL=https://github.com/zhuffman68/lupin/releases
 DefaultDirName={localappdata}\Programs\Classic Price Lens
 DefaultGroupName=Lupin
 UsePreviousGroup=no

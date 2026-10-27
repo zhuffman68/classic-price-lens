@@ -4,7 +4,7 @@ pkgver=0.4.2
 pkgrel=1
 pkgdesc='Lupin - screen-only Classic World market and EXP companion'
 arch=('x86_64')
-url='https://github.com/zhuffman68/classic-price-lens'
+url='https://github.com/zhuffman68/lupin'
 license=('custom')
 depends=('glibc>=2.34' 'gcc-libs' 'libglvnd' 'dbus' 'fontconfig' 'freetype2'
          'libx11' 'libxext' 'libxfixes' 'libxrender' 'libxrandr' 'libdrm' 'libxi' 'libxcb' 'xcb-util'

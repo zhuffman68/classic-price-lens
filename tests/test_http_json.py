@@ -4,27 +4,38 @@ from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 import json
 import socket
 import threading
+import time
+from concurrent.futures import CancelledError,ThreadPoolExecutor
 import unittest
 from unittest.mock import patch
 import urllib.error
 
-from price_lens.http_json import JsonTransport
+from price_lens.http_json import JsonTransport,RequestToken,request_scope
 
 
 class JsonTransportTests(unittest.TestCase):
     def setUp(self):
         self.ports=[]
         ports=self.ports
+        self.entered=threading.Event();self.release=threading.Event()
+        entered,release=self.entered,self.release
         class Handler(BaseHTTPRequestHandler):
             protocol_version="HTTP/1.1"
+            def handle(self):
+                try:super().handle()
+                except (ConnectionResetError,BrokenPipeError):pass
             def do_GET(self):
                 ports.append(self.client_address[1])
+                if self.path=="/slow":entered.set();release.wait(5)
                 body=json.dumps({"code":"fm_not_tradeable"} if self.path=="/bad" else {"value":42}).encode()
                 self.send_response(400 if self.path=="/bad" else 200)
                 self.send_header("Content-Length",str(len(body)))
                 self.send_header("Content-Type","application/json")
+                if self.path=="/close":self.send_header("Connection","close")
                 self.end_headers()
-                self.wfile.write(body);self.wfile.flush()
+                if self.path=="/slow-body":self.wfile.flush();entered.set();release.wait(5)
+                try:self.wfile.write(body);self.wfile.flush()
+                except (OSError,ValueError):return
                 if self.path=="/drop":
                     self.connection.shutdown(socket.SHUT_RDWR)
                     self.close_connection=True
@@ -42,6 +53,7 @@ class JsonTransportTests(unittest.TestCase):
         for patcher in self.patchers:patcher.start()
 
     def tearDown(self):
+        self.release.set()
         self.transport.close()
         for patcher in reversed(self.patchers):patcher.stop()
         self.server.shutdown();self.server.server_close();self.thread.join(timeout=2)
@@ -74,6 +86,51 @@ class JsonTransportTests(unittest.TestCase):
     def test_plain_http_or_embedded_credentials_are_rejected(self):
         for url in ('http://market.test/good','https://name:secret@market.test/good'):
             with self.assertRaises(ValueError):self.transport.get(url)
+
+    def test_cancellation_interrupts_a_real_waiting_socket_without_retry(self):
+        token=RequestToken()
+        def fetch():
+            try:
+                with request_scope(token):return self.transport.get('https://market.test/slow')
+            finally:self.transport.close()
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future=pool.submit(fetch)
+            self.assertTrue(self.entered.wait(2))
+            started=time.monotonic();token.cancel()
+            with self.assertRaises(CancelledError):future.result(timeout=1)
+            self.assertLess(time.monotonic()-started,.5)
+            self.assertEqual(len(self.ports),1)
+
+    def test_cancelled_scope_never_starts_a_request(self):
+        token=RequestToken();token.cancel()
+        with self.assertRaises(CancelledError):
+            with request_scope(token):self.transport.get('https://market.test/good')
+        self.assertEqual(self.ports,[])
+
+    def test_scoped_reader_preserves_reuse_and_coverage_error_body(self):
+        with request_scope(RequestToken()):
+            self.assertEqual(self.transport.get('https://market.test/good'),{"value":42})
+            with self.assertRaises(urllib.error.HTTPError) as error:self.transport.get('https://market.test/bad')
+            self.assertEqual(json.loads(error.exception.read()),{"code":"fm_not_tradeable"})
+            error.exception.close()
+        self.assertEqual(self.transport.get('https://market.test/good'),{"value":42})
+        self.assertEqual(len(set(self.ports)),1)
+
+    def test_scoped_connection_close_response_keeps_body_readable(self):
+        with request_scope(RequestToken()):
+            self.assertEqual(self.transport.get('https://market.test/close'),{"value":42})
+
+    def test_cancellation_also_interrupts_a_wait_for_the_response_body(self):
+        token=RequestToken()
+        def fetch():
+            try:
+                with request_scope(token):return self.transport.get('https://market.test/slow-body')
+            finally:self.transport.close()
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future=pool.submit(fetch);self.assertTrue(self.entered.wait(2))
+            started=time.monotonic();token.cancel()
+            with self.assertRaises(CancelledError):future.result(timeout=1)
+            self.assertLess(time.monotonic()-started,.5)
 
 
 if __name__ == "__main__":unittest.main()

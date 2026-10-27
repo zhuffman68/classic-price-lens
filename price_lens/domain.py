@@ -132,10 +132,16 @@ class Quote:
     world: str = WORLD
     condition: str = "clean"
     uncertain: bool = False
+    published_at: float | None = None
+
+    def expires_at(self, ttl=DEFAULT_TTL):
+        if self.published_at is not None:
+            return min(self.fetched_at, self.published_at) + 3600
+        return self.fetched_at + ttl
 
     def cache_valid(self, now=None, ttl=DEFAULT_TTL):
         now = time.time() if now is None else now
-        return 0 <= now - self.fetched_at < ttl
+        return 0 <= now - self.fetched_at and now < self.expires_at(ttl)
 
     def fresh(self, now=None, ttl=DEFAULT_TTL):
         now = time.time() if now is None else now

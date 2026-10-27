@@ -106,7 +106,7 @@ class PriceSchedulingTests(unittest.TestCase):
         self.gates[self.started[1]].set()
         self.until(lambda: revisit.game_id in self.started)
 
-    def test_pause_discards_queue_but_running_requests_can_finish(self):
+    def test_pause_cancels_obsolete_running_results_without_retry_cooldown(self):
         self.block_workers()
         self.service.observe(self.items[:12], 900)
         self.until(lambda: len(self.started) == 3)
@@ -115,7 +115,8 @@ class PriceSchedulingTests(unittest.TestCase):
             gate.set()
         self.until(lambda: not self.service.pending)
         self.assertEqual(len(self.started), 3)
-        self.assertEqual(len(self.service.delivered), 3)
+        self.assertEqual(len(self.service.delivered), 0)
+        self.assertEqual(self.service.retry_at,{})
 
     def test_queue_has_a_hard_bound_and_admits_a_new_hover(self):
         self.block_workers()

@@ -21,6 +21,29 @@ class AreaCaptureTests(unittest.TestCase):
         os.environ.setdefault("QT_QPA_PLATFORM","offscreen")
         cls.app=QApplication.instance() or QApplication([])
 
+    def test_slightly_moved_shop_recovers_prices_from_partially_clipped_crop(self):
+        reader=PixelReader(ROOT);reader.live_source=True
+        readings=[];reader.reading.connect(readings.append)
+        def wait_for(predicate):
+            deadline=time.monotonic()+10
+            while not predicate():
+                self.assertLess(time.monotonic(),deadline,"Moved shop did not recover full listing prices")
+                self.app.processEvents();time.sleep(.005)
+        try:
+            wait_for(lambda:reader.process.state()==reader.process.ProcessState.Running)
+            for x in (160,185):
+                frame=game_frame(x=0,y=0,width=800,height=800,desktop=(800,800))
+                painter=QPainter(frame)
+                painter.drawImage(x,140,QImage(str(ROOT/'vendor/minerva/samples/player-shop/gems-and-ores.png')))
+                painter.end();count=len(readings)
+                reader.on_stream_frame(frame,time.monotonic())
+                wait_for(lambda:len(readings)>count and bool(readings[-1].get("shop")) and
+                         len(readings[-1]["shop"]["rows"])==5 and all(r.get("price") for r in readings[-1]["shop"]["rows"]))
+                self.assertEqual(readings[-1]["shop"]["rows"][0]["price"],{"quantity":1,"mesos":999})
+        finally:
+            reader.close();reader.deleteLater()
+            QCoreApplication.sendPostedEvents(None,QEvent.Type.DeferredDelete);self.app.processEvents()
+
     def test_pixel_tracker_rejects_old_coordinates_and_stops_when_covered(self):
         reader=PixelReader(ROOT)
         reader.live_source=True

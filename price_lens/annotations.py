@@ -36,6 +36,7 @@ class AnnotationWindow(QWidget):
         self.retiring = []
         self.last_command = 0
         self.last_pointer = None
+        self.reduce_motion = False
         self.price_font = QFont("Noto Sans")
         self.price_font.setPixelSize(12)
         self.name_font = QFont("Noto Sans")
@@ -62,6 +63,7 @@ class AnnotationWindow(QWidget):
                 QApplication.quit()
                 return
             self.last_command = time.monotonic()
+            self.reduce_motion = bool(state.get("reduce_motion"))
             if state.get("hover_enabled") and not self.pointer_timer.isActive():
                 self.last_pointer = None
                 self.pointer_timer.start()
@@ -72,7 +74,7 @@ class AnnotationWindow(QWidget):
             geometry = state.get("geometry")
             if geometry:
                 self.setGeometry(*geometry)
-            incoming = state.get("rows", [])[:12]
+            incoming = state.get("rows", [])[:24]
             self.rows = []
             self.retiring = []
             metrics = QFontMetrics(self.price_font)
@@ -80,10 +82,17 @@ class AnnotationWindow(QWidget):
                 key = self.row_key(supplied)
                 old = previous.pop(key, None)
                 old_target = (old["x"], old["y"]) if old else None
+                old_text = old.get("text") if old else None
                 row = old if old is not None else supplied
                 row.update(supplied)
                 row.pop("_retired_rect", None)
-                row["_width"] = min(330, max(230, metrics.horizontalAdvance(row["text"]) + 20))
+                row["_width"] = min(350, max(230,metrics.horizontalAdvance(row["text"])+20,
+                                             metrics.horizontalAdvance(row.get("extra",""))+20,
+                                             metrics.horizontalAdvance(row.get("name",""))+20))
+                if self.reduce_motion:
+                    self.dispose_row(row)
+                    row["_alpha"] = row["_text_alpha"] = 1.0
+                    row.pop("_draw_pos",None)
                 if row.get("follow_pointer") is not None:
                     point = row["follow_pointer"]
                     offset = (row["x"] - (point[0] - self.x()), row["y"] - (point[1] - self.y()))
@@ -93,6 +102,8 @@ class AnnotationWindow(QWidget):
                     start = row.get("_draw_pos", QPointF(*old_target)) if old_target else target
                     self.animate_position(row, start, target)
                 self.rows.append(row)
+                if old_text is not None and old_text != row["text"] and not self.reduce_motion:
+                    self.fade_text(row)
                 if old is None:
                     row["_alpha"] = 0.0
                 if row.get("_fading_out") or old is None:
@@ -102,7 +113,7 @@ class AnnotationWindow(QWidget):
                 box = previous_boxes.get(key)
                 # Never trail an old item's reference behind a newly identified one.
                 replaced_hover = current_hover and row.get("follow_pointer") is not None
-                if state.get("hover_enabled") and box is not None and not replaced_hover:
+                if not self.reduce_motion and state.get("hover_enabled") and box is not None and not replaced_hover:
                     row["_retired_rect"] = box
                     self.retiring.append(row)
                     if not row.get("_fading_out"):
@@ -134,6 +145,10 @@ class AnnotationWindow(QWidget):
             self.update(dirty)
 
     def fade(self, row, target):
+        if self.reduce_motion:
+            row["_alpha"] = target
+            row["_fading_out"] = target == 0
+            return
         old = row.get("_fade")
         if old is not None:
             old.stop()
@@ -162,6 +177,19 @@ class AnnotationWindow(QWidget):
 
         animation.valueChanged.connect(changed)
         animation.finished.connect(finished)
+        animation.start()
+
+    def fade_text(self,row):
+        old=row.get("_text_fade")
+        if old:old.stop();old.deleteLater()
+        animation=QVariantAnimation(self)
+        row["_text_fade"]=animation
+        animation.setDuration(100);animation.setStartValue(.6);animation.setEndValue(1.0)
+        def changed(value):
+            row["_text_alpha"]=value;self.invalidate_row(row)
+        animation.valueChanged.connect(changed)
+        animation.finished.connect(animation.deleteLater)
+        animation.finished.connect(lambda:row.update(_text_fade=None))
         animation.start()
 
     def animate_position(self, row, start, target):
@@ -196,7 +224,7 @@ class AnnotationWindow(QWidget):
 
     @staticmethod
     def dispose_row(row):
-        for key in ("_move", "_fade"):
+        for key in ("_move", "_fade", "_text_fade"):
             animation = row.get(key)
             if animation is not None:
                 animation.stop()
@@ -244,9 +272,14 @@ class AnnotationWindow(QWidget):
             position = row["_draw_pos"]
             x, y = round(position.x()), round(position.y())
         width = row["_width"]
+        height = 53 if row.get("extra") else 36
+        if row.get("anchor")=="bottom_left" and row.get("bounds"):
+            bounds=QRect(*row["bounds"])
+            width=min(width,max(1,bounds.width()-8))
+            return QRect(bounds.left()+4,bounds.bottom()-height-3,width,height)
         x = min(max(2, x), max(2, self.width() - width - 2))
         y = min(max(7, y), max(7, self.height() - 33))
-        return QRect(x, y - 5, width, 36)
+        return QRect(x, y - 5, width, height)
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -265,13 +298,29 @@ class AnnotationWindow(QWidget):
             painter.setPen(QPen(QColor(92, 103, 119, 160), 1))
             painter.setBrush(QColor(22, 28, 38, 247))
             painter.drawRoundedRect(box, 5, 5)
+            if row.get("kind")=="shop":
+                color=QColor(row.get("color","#98a3b1"))
+                painter.fillRect(QRect(x+2,box.y()+5,3,box.height()-10),color)
+                if row.get("deal_delta"):
+                    chip=QRect(box.right()-64,box.y()+4,58,16)
+                    tint=QColor(color);tint.setAlpha(40)
+                    painter.setPen(Qt.PenStyle.NoPen);painter.setBrush(tint);painter.drawRoundedRect(chip,4,4)
+                    painter.setPen(color);painter.setFont(self.price_font)
+                    painter.drawText(chip,Qt.AlignmentFlag.AlignCenter,row["deal_delta"])
             painter.setFont(self.name_font)
+            if row.get("kind")=="experience":painter.setFont(self.price_font)
             painter.setPen(QColor("#c4cbd6"))
-            name = painter.fontMetrics().elidedText(row.get("name", "Unresolved item"), Qt.TextElideMode.ElideRight, width - 18)
-            painter.drawText(QRect(x + 9, y - 3, width - 18, 14), Qt.AlignmentFlag.AlignVCenter, name)
+            name_width=width-18-(64 if row.get("deal_delta") else 0)
+            name = painter.fontMetrics().elidedText(row.get("name", "Unresolved item"), Qt.TextElideMode.ElideRight, name_width)
+            painter.drawText(QRect(x + 9, y - 3, name_width, 14), Qt.AlignmentFlag.AlignVCenter, name)
             painter.setFont(self.price_font)
+            painter.setOpacity(float(row.get("_alpha",1.0))*float(row.get("_text_alpha",1.0)))
             painter.setPen(QColor(row.get("color", "#dce1e8")))
-            painter.drawText(QRect(x + 9, y + 10, width - 18, 18), Qt.AlignmentFlag.AlignVCenter, row["text"])
+            text=painter.fontMetrics().elidedText(row["text"],Qt.TextElideMode.ElideRight,width-18)
+            painter.drawText(QRect(x + 9, y + 10, width - 18, 18), Qt.AlignmentFlag.AlignVCenter,text)
+            if row.get("extra"):
+                painter.setFont(self.name_font);painter.setPen(QColor("#aab5c4"))
+                painter.drawText(QRect(x+9,y+28,width-18,15),Qt.AlignmentFlag.AlignVCenter,row["extra"])
 
 
 def main():

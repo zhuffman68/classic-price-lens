@@ -9,7 +9,7 @@
 - **Windows reader runtime**: LLVM `libunwind.dll` from the verified llvm-mingw 20261020 release, Apache-2.0 with LLVM exceptions and included notices. `licenses/LLVM-MinGW-LICENSE.txt` is included in the portable folder.
 - **Classic World reference catalog**: [OSMS Data Explorer](https://osmsdataexplorer.com/), cached locally at runtime, not bundled in our code.
 - **Market prices**: [NiaMeowDB Classic World](https://meowdb.com/msclassic/free-market), requested at runtime with a descriptive application User-Agent. The app visibly credits and links each reference.
-- **Optional imported market snapshots**: [MesoWatch](https://meso.watch/), user-supplied dated Classic World files. No MesoWatch data is bundled. The prototype does not automate requests to its protected endpoints.
+- **Whole-market prices**: [MesoWatch](https://meso.watch/), its live Classic World list read through a short-lived, installed browser. Snapshots stay in the user's local cache and are never bundled with source or releases. Individual fallback prices use NiaMeowDB.
 
 MapleStory item names, game artwork and screenshots belong to their respective owners, including Nexon. This is a local independent tool, without affiliation or approval implied.
 
@@ -24,3 +24,12 @@ The packaged builds use unmodified shared libraries; application Python source i
 - [Minerva at the linked revision](https://github.com/itechify/minerva/tree/7e1aa7d418fb255bd66eb4dce848fc9eb305cd81), [Rust 1.98.1](https://github.com/rust-lang/rust/tree/1.98.1), and [LLVM MinGW release/source references](https://github.com/mstorsjo/llvm-mingw/releases/tag/20261020).
 
 The release includes Rust dependency notices, the standard-library notices, the OCR model notice, LLVM runtime notices, and the unmodified Python/Qt package license files. Copyright in upstream game screenshot fixtures remains with their owners; they are used only for small offline OCR checks.
+
+
+## Lupin header artwork and typeface
+
+The animated Lupin is original MapleStory monster artwork, copyright Nexon, obtained unchanged from the public OSMS Data Explorer Classic World catalog (monster 35, move animation). Asset URL: https://osmsdataexplorer.com/data/images/monsters/70d804f09c8432cf87815c5b376a4c8b.webp . Lupin is an unofficial fan companion and is not affiliated with Nexon.
+
+The wordmark uses Nexon's official MapleStory Bold typeface. Its unmodified TTF and the distributor's copyright notice are included in `price_lens/resources/fonts/`. Official source: https://maplestory.nexon.com/Media/Font .
+
+MesoWatch's public NiaDB ID index is used only to validate already-confirmed NiaMeowDB item mappings; it is separate from the whole-market price list. Source: https://meso.watch/js/niadb.js .

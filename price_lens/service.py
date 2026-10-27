@@ -1,11 +1,16 @@
 """Visible-item HTTP scheduling, bounded concurrency and shared cached results."""
-from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from collections import deque
+from concurrent.futures import CancelledError, ThreadPoolExecutor
+from dataclasses import dataclass, field
 import time
 
 from PySide6.QtCore import QObject, Qt, Signal, Slot
 
 from .data import Cache, MeowProvider, load_catalog
+from .http_json import RequestToken, request_scope
+from .provider_index import load_index
+from .snapshot import SnapshotStore
+from .snapshot_updater import SnapshotUpdater
 
 
 @dataclass
@@ -17,6 +22,9 @@ class _Lookup:
     sequence: int
     ttl: int = 900
     early: bool = False
+    token: RequestToken = field(default_factory=RequestToken)
+    queued_at: float = field(default_factory=time.monotonic)
+    started_at: float = 0
 
 
 class PriceService(QObject):
@@ -35,12 +43,16 @@ class PriceService(QObject):
         super().__init__(parent)
         self.cache = Cache(cache_path)
         self.provider = MeowProvider(self.cache)
+        self.snapshot = SnapshotStore(self.cache)
+        self.snapshot_updater = None
+        self.refresh_snapshot = False
         self.pool = ThreadPoolExecutor(max_workers=self.MAX_WORKERS, thread_name_prefix="classic-prices")
         self.pending = set()
         self.retry_at = {}
         self.delivered = {}
         self.loaded = set()
         self.closed = False
+        self.refresh_index = False
         self.identity_pending = set()
         self.identity_retry = {}
         self.catalog_pending = False
@@ -49,6 +61,7 @@ class PriceService(QObject):
         self._sequence = 0
         self._batching = 0
         self._dirty = False
+        self.timings = deque(maxlen=256)
         self.manual_item = None
         self.manual_identity = None
         self.manual_candidates = ()
@@ -62,7 +75,28 @@ class PriceService(QObject):
         if self.closed or self.catalog_pending:
             return
         self._enqueue(("catalog", None), load_catalog, (self.cache,), -10)
+        if self.refresh_snapshot:
+            self.set_snapshot_enabled(True)
+        if self.refresh_index:self._enqueue(("index",None),load_index,(self.cache,),30)
         self._pump()
+
+    def set_snapshot_enabled(self, enabled):
+        self.refresh_snapshot = enabled
+        if self.closed:
+            return
+        if not self.snapshot_updater:
+            self.snapshot_updater = SnapshotUpdater(self.snapshot, self)
+            self.snapshot_updater.updated.connect(self._snapshot_updated)
+            self.snapshot_updater.changed.connect(self.state_changed.emit)
+        self.snapshot_updater.set_enabled(enabled)
+
+    def _snapshot_updated(self):
+        self.loaded.clear()
+        items, ttl, options = self._screen_demand
+        self.observe(items, ttl, **options)
+
+    def snapshot_summary(self):
+        return self.snapshot_updater.summary() if self.snapshot_updater else ""
 
     @staticmethod
     def refresh_lead(item_id, ttl):
@@ -71,7 +105,7 @@ class PriceService(QObject):
         return window * (0.5 + (item_id * 2654435761 % 1000) / 2000)
 
     def observe(self, items, ttl, *, hovered_id=None, identities=(), hovered_identity=None):
-        """Replace the visible demand; abandon only queued, unseen requests."""
+        """Replace demand, cancelling obsolete queued and running price requests."""
         if self.closed:
             return
         items = list(items)
@@ -90,6 +124,10 @@ class PriceService(QObject):
             for key in list(self._queued):
                 if key[0] != "catalog" and key not in visible:
                     self._cancel(key)
+            for key, job in list(self._active.items()):
+                if ((key[0] in ("quote", "identity") and key not in visible)
+                        or key[0]=="index" and visible):
+                    job.token.cancel()
             # Stage the whole view before starting anything, so the hovered
             # item can take the next free slot even in a newly opened shop.
             for item in items.values():
@@ -124,11 +162,21 @@ class PriceService(QObject):
             quote = self.cache.quote(item.game_id)
             self.loaded.add(item.game_id)
         now = time.time()
+        bulk = self.snapshot.quote(item)
+        if bulk and (bulk.cache_valid(now, ttl) or quote is None
+                     or not quote.cache_valid(now, ttl) and bulk.fetched_at > quote.fetched_at):
+            quote = bulk
         if quote:
             if self.delivered.get(item.game_id) != quote:
                 self.delivered[item.game_id] = quote
                 self.quote_ready.emit(item.game_id, quote)
             if quote.cache_valid(now, ttl):
+                if quote.published_at is not None:
+                    self._cancel(key)
+                    if active := self._active.get(key):
+                        active.token.cancel()
+                    self._pump()
+                    return
                 eligible = (early and quote.price is not None and quote.sample_count >= 5
                             and not quote.uncertain and quote.fresh(now, ttl))
                 if not eligible or now < quote.fetched_at + ttl - self.refresh_lead(item.game_id, ttl):
@@ -162,6 +210,10 @@ class PriceService(QObject):
     def resolve_identity(self, identity, candidates, ttl=900, *, priority=10):
         if self.closed or time.monotonic() < self.identity_retry.get(identity, 0):
             return
+        if item := self.snapshot.identify(candidates):
+            self.identity_retry[identity] = time.monotonic() + ttl
+            self.identity_ready.emit(identity, item)
+            return
         self._enqueue(("identity", identity), self.provider.resolve_name,
                       (identity[0], candidates), priority, ttl)
         self._pump()
@@ -185,7 +237,7 @@ class PriceService(QObject):
             self.pending.add(identity)
         elif kind == "identity":
             self.identity_pending.add(identity)
-        else:
+        elif kind == "catalog":
             self.catalog_pending = True
         self._dirty = True
 
@@ -195,7 +247,7 @@ class PriceService(QObject):
             self.pending.discard(identity)
         elif kind == "identity":
             self.identity_pending.discard(identity)
-        else:
+        elif kind == "catalog":
             self.catalog_pending = False
         self._dirty = True
 
@@ -211,12 +263,18 @@ class PriceService(QObject):
             job = min(self._queued.values(), key=lambda job: (job.priority, job.sequence))
             del self._queued[job.key]
             self._active[job.key] = job
-            future = self.pool.submit(job.function, *job.arguments)
+            job.started_at = time.monotonic()
+            future = self.pool.submit(self._run,job)
             future.add_done_callback(lambda result, key=job.key: self._deliver(key, result))
             self._dirty = True
         if self._dirty:
             self._dirty = False
             self.state_changed.emit()
+
+    @staticmethod
+    def _run(job):
+        with request_scope(job.token):
+            return job.function(*job.arguments)
 
     def _deliver(self, key, future):
         if not self.closed:
@@ -231,6 +289,14 @@ class PriceService(QObject):
             return
         self._forget(key)
         kind, identity = key
+        self.timings.append({"kind":kind,"queue_ms":round((job.started_at-job.queued_at)*1000,1),
+                             "request_ms":round((time.monotonic()-job.started_at)*1000,1),
+                             "cancelled":job.token.cancelled.is_set()})
+        if job.token.cancelled.is_set() or future.cancelled():
+            if kind=="quote":self.loaded.discard(identity)
+            items,ttl,options = self._screen_demand
+            self.observe(items,ttl,**options)
+            return
         if kind == "identity":
             self.identity_retry[identity] = time.monotonic() + job.ttl
         try:
@@ -241,8 +307,12 @@ class PriceService(QObject):
                 self.quote_ready.emit(identity, result)
             elif kind == "identity":
                 self.identity_ready.emit(identity, result)
+            elif kind == "index":
+                self.provider.index = result
             else:
                 self.catalog_ready.emit(result)
+        except CancelledError:
+            pass
         except Exception as error:
             if kind == "quote":
                 now = time.time()
@@ -263,6 +333,9 @@ class PriceService(QObject):
         if self.closed:
             return
         self.closed = True
+        if self.snapshot_updater:
+            self.snapshot_updater.close()
         for key in list(self._queued):
             self._cancel(key)
+        for job in self._active.values():job.token.cancel()
         self.pool.shutdown(wait=False, cancel_futures=True)

@@ -60,6 +60,12 @@ class Cache:
             return json.loads(row[1])
         return None
 
+    def update_payload(self,kind,identity,data):
+        # Enrich identity proof without pretending the provider was checked again.
+        with self.connect() as db:
+            db.execute("UPDATE entries SET payload=? WHERE world=? AND kind=? AND identity=?",
+                       (json.dumps(data,allow_nan=False),WORLD,kind,str(identity)))
+
     def save_quote(self, quote):
         if quote.world != WORLD:
             raise ValueError("Only Classic World market data is accepted")
@@ -127,11 +133,35 @@ def parse_summary(item, summary, provider_id, fetched_at):
 class MeowProvider:
     def __init__(self, cache):
         self.cache = cache
+        self.index = cache.get("identity-index","mesowatch",86400)
+
+    def index_matches(self,item,cached):
+        index=self.index
+        return bool(index and 0<=time.time()-index.get("fetched_at",0)<86400
+                    and key(cached.get("name",""))==key(item.name)
+                    and cached.get("index")==index.get("fingerprint")
+                    and index.get("entries",{}).get(str(item.game_id))==cached.get("id"))
+
+    def remember_id(self,item,provider_id,*,preserve_checked_at=False):
+        index=self.index
+        fingerprint=(index.get("fingerprint") if index and index.get("entries",{}).get(str(item.game_id))==provider_id else None)
+        data={"id":provider_id,"name":item.name,"index":fingerprint}
+        if preserve_checked_at:self.cache.update_payload("meow-id",item.game_id,data)
+        else:self.cache.put("meow-id",item.game_id,data)
 
     def resolve_id(self, item):
         cached = self.cache.get("meow-id", item.game_id, 86400)
         if cached:
+            # Daily mappings were checked against both the full name and game ID.
+            # Enrol them in index validation while that original proof is current.
+            if (self.index and 0<=time.time()-self.index.get("fetched_at",0)<86400
+                    and key(cached.get("name",""))==key(item.name)
+                    and cached.get("index")!=self.index.get("fingerprint")
+                    and self.index.get("entries",{}).get(str(item.game_id))==cached["id"]):
+                self.remember_id(item,cached["id"],preserve_checked_at=True)
             return cached["id"]
+        older=self.cache.get("meow-id",item.game_id,7*86400)
+        if older and self.index_matches(item,older):return older["id"]
         # The site's database row ID is different from the game's item ID.
         data = get_json(API + "items?" + urllib.parse.urlencode({"search": item.name}))
         matches = [row for row in data.get("items", []) if str(row.get("iconKey")) == str(item.game_id)
@@ -139,7 +169,7 @@ class MeowProvider:
         if len(matches) != 1:
             raise ValueError("No unique Classic World provider ID matches the item")
         provider_id = matches[0]["id"]
-        self.cache.put("meow-id", item.game_id, {"id": provider_id})
+        self.remember_id(item,provider_id)
         return provider_id
 
     def resolve_name(self, visible_name, candidates):
@@ -148,6 +178,11 @@ class MeowProvider:
         cached = self.cache.get("meow-name", key(visible_name), 86400)
         if cached and str(cached["game_id"]) in allowed:
             return allowed[str(cached["game_id"])]
+        older=self.cache.get("meow-name",key(visible_name),7*86400)
+        if older and str(older.get("game_id")) in allowed:
+            item=allowed[str(older["game_id"])]
+            mapping=self.cache.get("meow-id",item.game_id,7*86400)
+            if mapping and self.index_matches(item,mapping):return item
         search = visible_name.rstrip(". …")
         if candidates and len({key(item.name) for item in candidates}) == 1:
             search = candidates[0].name
@@ -160,7 +195,7 @@ class MeowProvider:
         if len(matches) != 1:
             raise ValueError("Several current item versions match; no unique price reference")
         item, provider_id = matches[0]
-        self.cache.put("meow-id", item.game_id, {"id": provider_id})
+        self.remember_id(item,provider_id)
         self.cache.put("meow-name", key(visible_name), {"game_id": item.game_id})
         return item
 

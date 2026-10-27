@@ -1,19 +1,17 @@
-"""Presentation for the EXP page; no sampling or session accounting lives here."""
+"""Presentation for automatic EXP watching; no sampling or accounting lives here."""
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox,
-    QFrame, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QProgressBar, QPushButton,
-    QSpinBox, QTableWidget, QVBoxLayout)
+from PySide6.QtWidgets import (QCheckBox,QComboBox,QDialog,QDialogButtonBox,QFrame,QHBoxLayout,
+    QHeaderView,QLineEdit,QProgressBar,QPushButton,QTableWidget,QVBoxLayout)
+from .motion import MotionLabel,visibility
 
 
-def label(value="", name="", parent=None):
-    widget = QLabel(value, parent)
-    widget.setTextFormat(Qt.TextFormat.PlainText)
-    widget.setWordWrap(True)
-    widget.setObjectName(name)
+def label(value="",name="",parent=None):
+    widget=MotionLabel(value,parent)
+    widget.setWordWrap(True);widget.setObjectName(name)
     return widget
 
 
-def build(panel, layout, enabled, window_minutes):
+def build(panel,layout,enabled,window_minutes=None):
     panel.setObjectName("experiencePage")
     panel.setStyleSheet("""
         QWidget#experiencePage { background: transparent; }
@@ -22,13 +20,12 @@ def build(panel, layout, enabled, window_minutes):
         QLabel#expEyebrow { color: #a6b3c5; font-size: 10px; font-weight: 600; }
         QLabel#expIdentity { font-size: 14px; font-weight: 600; color: #edf1f7; }
         QLabel#expMap, QLabel#expMuted { color: #a7b2c2; font-size: 11px; }
-        QLabel#expRate { color: #edc68a; font-size: 28px; font-weight: 650; }
+        QLabel#expRate { color: #edc68a; font-size: 26px; font-weight: 650; }
         QLabel#expMetric { font-size: 18px; font-weight: 600; color: #e5eaf2; }
         QLabel#expPosition { font-size: 16px; font-weight: 600; color: #dce4ef; }
         QProgressBar { background: #303a48; border: none; border-radius: 3px; }
         QProgressBar::chunk { background: #c6a166; border-radius: 3px; }
-        QComboBox, QSpinBox, QLineEdit { background: #1b2330; color: #e4eaf3; border: 1px solid #3b485c; border-radius: 6px; padding: 7px 9px; min-height: 17px; }
-        QComboBox:focus, QLineEdit:focus, QSpinBox:focus { border-color: #d9ad66; }
+        QComboBox, QLineEdit { background: #1b2330; color: #e4eaf3; border: 1px solid #3b485c; border-radius: 6px; padding: 7px 9px; }
         QDialog { background: #171e29; }
         QTableWidget { background: #1c2532; alternate-background-color: #202b3a; border: 1px solid #354255; border-radius: 7px; selection-background-color: #39475c; }
         QHeaderView::section { background: #273344; color: #aebbd0; border: none; padding: 8px 6px; font-size: 10px; }
@@ -36,107 +33,48 @@ def build(panel, layout, enabled, window_minutes):
         QPushButton#expLink { background: transparent; border: none; color: #b8c7dc; padding: 5px 0; text-align: left; }
         QPushButton#expLink:hover { color: #edc68a; }
     """)
-    layout.setContentsMargins(0, 12, 0, 0)
-    layout.setSpacing(13)
-    identity = QHBoxLayout()
-    names = QVBoxLayout()
-    names.setSpacing(3)
-    panel.character = label("Your next training session", "expIdentity")
-    panel.map_label = label("Keep the game's EXP bar visible.", "expMap")
-    names.addWidget(panel.character)
-    names.addWidget(panel.map_label)
-    identity.addLayout(names, 1)
-    panel.position = label("—", "expPosition")
-    panel.position.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-    identity.addWidget(panel.position)
-    layout.addLayout(identity)
-    panel.bar = QProgressBar()
-    panel.bar.setRange(0, 10_000)
-    panel.bar.setTextVisible(False)
-    panel.bar.setFixedHeight(6)
+    layout.setContentsMargins(0,12,0,0);layout.setSpacing(13)
+    identity=QHBoxLayout();names=QVBoxLayout();names.setSpacing(3)
+    panel.character=label("Ready to watch your EXP","expIdentity")
+    panel.map_label=label("Keep the game's EXP bar visible.","expMap")
+    names.addWidget(panel.character);names.addWidget(panel.map_label);identity.addLayout(names,1)
+    panel.position=label("—","expPosition");panel.position.setAlignment(Qt.AlignmentFlag.AlignRight|Qt.AlignmentFlag.AlignVCenter)
+    identity.addWidget(panel.position);layout.addLayout(identity)
+    panel.bar=QProgressBar();panel.bar.setRange(0,10000);panel.bar.setTextVisible(False);panel.bar.setFixedHeight(6)
     layout.addWidget(panel.bar)
-
-    hero = QFrame()
-    hero.setObjectName("expHero")
-    hero_layout = QVBoxLayout(hero)
-    hero_layout.setContentsMargins(18, 16, 18, 16)
-    hero_layout.setSpacing(10)
-    pace_header = QHBoxLayout()
-    pace_header.addWidget(label("EXP PACE", "expEyebrow"))
-    pace_header.addStretch()
-    panel.window_minutes = QSpinBox(panel)
-    panel.window_minutes.setRange(1, 60)
-    panel.window_minutes.setSuffix(" min")
-    panel.window_minutes.setValue(max(1, min(60, window_minutes)))
-    panel.window_minutes.setFixedWidth(86)
-    panel.window_minutes.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)
-    panel.window_minutes.setKeyboardTracking(False)
-    panel.window_picker = QComboBox()
-    panel.window_picker.setAccessibleName("EXP pace time window")
-    for value in (1,5,10,15,30,60):
-        panel.window_picker.addItem(f"{value} min", value)
-    panel.window_picker.addItem("Custom…", None)
-    selected = panel.window_picker.findData(panel.window_minutes.value())
-    panel.window_picker.setCurrentIndex(selected if selected >= 0 else 6)
-    panel.window_minutes.setVisible(selected < 0)
-    panel.window_picker.currentIndexChanged.connect(panel.select_window)
-    panel.window_minutes.valueChanged.connect(panel.refresh)
-    panel.window_minutes.valueChanged.connect(lambda:panel.changed.emit())
-    pace_header.addWidget(panel.window_picker)
-    pace_header.addWidget(panel.window_minutes)
-    hero_layout.addLayout(pace_header)
-    panel.rate = label("Ready to train", "expRate")
-    panel.observation = label("Start a session to measure your EXP gain.", "expMuted")
-    hero_layout.addWidget(panel.rate)
-    hero_layout.addWidget(panel.observation)
-    metrics = QHBoxLayout()
-    panel.gain, panel.elapsed, panel.eta = [label("—", "expMetric") for _ in range(3)]
-    for title, widget in zip(("SESSION GAIN", "TIME TRAINING", "NEXT LEVEL"), (panel.gain,panel.elapsed,panel.eta)):
-        column = QVBoxLayout()
-        column.setSpacing(5)
-        column.addWidget(label(title,"expEyebrow"))
-        column.addWidget(widget)
-        metrics.addLayout(column,1)
-    hero_layout.addSpacing(4)
+    hero=QFrame();hero.setObjectName("expHero")
+    hero_layout=QVBoxLayout(hero);hero_layout.setContentsMargins(18,16,18,16);hero_layout.setSpacing(12)
+    rate_row=QHBoxLayout()
+    panel.minute_caption=label("PROGRESS / MIN","expEyebrow")
+    panel.hour_caption=label("PROGRESS / HOUR","expEyebrow")
+    panel.rate=label("—","expRate");panel.hour_rate=label("—","expRate")
+    for caption,value in ((panel.minute_caption,panel.rate),(panel.hour_caption,panel.hour_rate)):
+        column=QVBoxLayout();column.setSpacing(5);column.addWidget(caption);column.addWidget(value);rate_row.addLayout(column,1)
+    hero_layout.addLayout(rate_row)
+    panel.raw_hint=label("","expMuted");panel.raw_hint.hide();hero_layout.addWidget(panel.raw_hint)
+    panel.observation=label("Start reading to watch EXP automatically.","expMuted");hero_layout.addWidget(panel.observation)
+    metrics=QHBoxLayout()
+    panel.gain,panel.elapsed,panel.eta=[label("—","expMetric") for _ in range(3)]
+    for title,widget in zip(("SESSION GAIN","TIME WATCHING","NEXT LEVEL"),(panel.gain,panel.elapsed,panel.eta)):
+        column=QVBoxLayout();column.setSpacing(5);column.addWidget(label(title,"expEyebrow"));column.addWidget(widget);metrics.addLayout(column,1)
     hero_layout.addLayout(metrics)
-    panel.details_button = QPushButton("More details")
-    panel.details_button.setObjectName("expLink")
-    panel.details_button.setCheckable(True)
-    panel.details = label("", "expMuted")
-    panel.details.hide()
-    panel.details_button.toggled.connect(panel.details.setVisible)
-    panel.details_button.toggled.connect(lambda expanded:panel.details_button.setText("Less detail" if expanded else "More details"))
-    hero_layout.addWidget(panel.details_button,0,Qt.AlignmentFlag.AlignLeft)
-    hero_layout.addWidget(panel.details)
+    panel.details_button=QPushButton("More details");panel.details_button.setObjectName("expLink");panel.details_button.setCheckable(True)
+    panel.details=label("","expMuted");panel.details.hide()
+    panel.details_button.toggled.connect(lambda shown:visibility(panel.details,shown))
+    panel.details_button.toggled.connect(lambda shown:panel.details_button.setText("Less detail" if shown else "More details"))
+    hero_layout.addWidget(panel.details_button,0,Qt.AlignmentFlag.AlignLeft);hero_layout.addWidget(panel.details)
     layout.addWidget(hero)
-    controls = QHBoxLayout()
-    panel.start_button = QPushButton("Start session")
-    panel.pause_button = QPushButton("Pause session")
-    for button in (panel.start_button,panel.pause_button):
-        button.setObjectName("primary")
-        button.setMinimumHeight(28)
-        controls.addWidget(button,1)
-    panel.start_button.clicked.connect(panel.start)
-    panel.pause_button.clicked.connect(panel.toggle_pause)
-    panel.save_button = QPushButton("Finish && save")
-    panel.save_button.setToolTip("Finish this run and save it to history")
-    panel.save_button.setMinimumHeight(28)
+    controls=QHBoxLayout()
+    panel.pause_button=QPushButton("Pause watching");panel.pause_button.setObjectName("primary");panel.pause_button.clicked.connect(panel.toggle_pause)
+    panel.save_button=QPushButton("Reset session");panel.save_button.setToolTip("Save the current run to history and start a new session")
     panel.save_button.clicked.connect(panel.save)
-    controls.addWidget(panel.save_button,1)
+    for button in (panel.pause_button,panel.save_button):button.setMinimumHeight(28);controls.addWidget(button,1)
     layout.addLayout(controls)
-    panel.state = label("", "expMuted")
-    layout.addWidget(panel.state)
-    links = QHBoxLayout()
-    panel.options_button = QPushButton("Session options…")
-    panel.history_button = QPushButton("History")
+    panel.state=label("","expMuted");layout.addWidget(panel.state)
+    links=QHBoxLayout();panel.options_button=QPushButton("Session options…");panel.history_button=QPushButton("History")
     for button in (panel.options_button,panel.history_button):button.setObjectName("expLink")
-    links.addWidget(panel.options_button)
-    links.addStretch()
-    links.addWidget(panel.history_button)
-    layout.addLayout(links)
-    panel.best = label("", "expMuted")
-    layout.addWidget(panel.best)
-    layout.addStretch()
+    links.addWidget(panel.options_button);links.addStretch();links.addWidget(panel.history_button);layout.addLayout(links)
+    panel.best=label("","expMuted");layout.addWidget(panel.best);layout.addStretch()
 
     panel.options_dialog = QDialog(panel)
     panel.options_dialog.setWindowTitle("Session options")
@@ -175,7 +113,7 @@ def build(panel, layout, enabled, window_minutes):
     history.setContentsMargins(20,20,20,20)
     history.setSpacing(12)
     history.addWidget(label("Training history", "expIdentity"))
-    history.addWidget(label("Compare your saved runs. Pace is shown per 5 minutes; notes are available on each row.", "expMuted"))
+    history.addWidget(label("Compare your saved runs. Pace is shown per minute; notes are available on each row.", "expMuted"))
     filters = QHBoxLayout()
     panel.filter = QComboBox()
     panel.filter.currentIndexChanged.connect(panel.refresh_history)
@@ -185,7 +123,7 @@ def build(panel, layout, enabled, window_minutes):
     filters.addWidget(panel.export_button)
     history.addLayout(filters)
     panel.table = QTableWidget(0,5)
-    panel.table.setHorizontalHeaderLabels(["Map / date","Level","Time","EXP gain","Pace / 5 min"])
+    panel.table.setHorizontalHeaderLabels(["Map / date","Level","Time","EXP gain","Progress / min"])
     panel.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
     panel.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
     panel.table.setShowGrid(False)

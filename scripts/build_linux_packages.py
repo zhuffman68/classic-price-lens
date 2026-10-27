@@ -43,7 +43,7 @@ def main():
         "Section: games\nPriority: optional\n"
         f"Installed-Size: {size}\nDepends: {DEB_DEPENDS}\n"
         "Recommends: xdg-desktop-portal-gtk | xdg-desktop-portal-kde | xdg-desktop-portal-gnome, fonts-dejavu-core\n"
-        "Suggests: spectacle\nHomepage: https://github.com/zhuffman68/classic-price-lens\n"
+        "Suggests: spectacle\nHomepage: https://github.com/zhuffman68/lupin\n"
         "Description: Lupin - Classic World market and EXP companion\n"
         " Shows item names and cached meso market references beside visible shop\n"
         " items and inventory tooltips. Uses ordinary OS screen sharing and\n"

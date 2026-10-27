@@ -44,6 +44,7 @@ class PixelReader(QObject):
         self.tooltip_rect = None
         self.tooltip_fingerprint = None
         self.using_roi = False
+        self.roi_clean = True
         self.shop_context = None
         self.crop = None
         self.auto_enabled = True
@@ -225,12 +226,11 @@ class PixelReader(QObject):
         if self.image.isNull() or self.process.state() != QProcess.ProcessState.Running:
             return
         now = time.monotonic()
-        if (self.experience_enabled and self.live_source and now-self.last_frame < 3
+        exp_due = (self.experience_enabled and self.live_source and now-self.last_frame < 3
                 and now-self.last_experience >= 1
-                and (self.game_area is not None if self.auto_active else self.crop is not None)):
-            self.scan_experience(now)
-            return
+                and (self.game_area is not None if self.auto_active else self.crop is not None))
         if self.image_sequence == self.submitted_sequence:
+            if exp_due:self.scan_experience(now)
             return
         if self.auto_active and self.game_area is None and time.monotonic() < self.next_area_search:
             return
@@ -239,7 +239,7 @@ class PixelReader(QObject):
         if pointer and self.crop:
             pointer = (pointer[0] - self.crop.x(), pointer[1] - self.crop.y())
         in_shop = pointer_in_shop(pointer, self.shop_context)
-        hover_check = self.tooltip_enabled and pointer is not None and not in_shop
+        hover_check = self.tooltip_enabled and pointer is not None and self.shop_rect is None and self.shop_context is None
         if self.auto_active:
             hover_check = bool(hover_check and self.game_area and self.game_area.contains(QPoint(*pointer)))
         tooltip_same = False
@@ -252,14 +252,19 @@ class PixelReader(QObject):
             if (fingerprint == self.shop_fingerprint and not shop_hover_due and (not hover_check or tooltip_same)
                     and (not self.auto_active or time.monotonic()-self.last_geometry_check<0.4)):
                 self.submitted_sequence = self.image_sequence
+                if exp_due:self.scan_experience(now)
                 return
         elif self.shop_rect is None and tooltip_same:
             self.submitted_sequence = self.image_sequence
+            if exp_due:self.scan_experience(now)
             return
         if self.shop_rect is None and time.monotonic() - self.pending_since < 0.2:
             return
+        if exp_due and now-self.last_experience>=1.6:
+            self.scan_experience(now)
+            return
         origin = {"x": 0, "y": 0}
-        self.using_roi = bool(self.shop_rect and not hover_check and not in_shop)
+        self.using_roi = bool(self.shop_rect and self.roi_clean and not hover_check and not in_shop)
         if self.using_roi:
             region = self.shop_rect.adjusted(-8, -8, 8, 8).intersected(image.rect())
             if not self.auto_active:
@@ -341,6 +346,17 @@ class PixelReader(QObject):
                         if changed:
                             self.area_changed.emit()
                     area = (result.get("shop") or {}).get("area")
+                    rows = (result.get("shop") or {}).get("rows") or []
+                    clean = all(row.get("covered") or row.get("name") and row.get("price") for row in rows)
+                    if self.using_roi and area and not clean:
+                        # A slightly moved shop can still be found inside the old
+                        # crop while the tail of each price is clipped. Read the
+                        # full current frame before publishing incomplete rows.
+                        self.shop_rect = self.shop_fingerprint = None
+                        self.image_sequence += 1
+                        self.pending_since = 0
+                        continue
+                    self.roi_clean = bool(clean)
                     if self.using_roi and area is None and (not self.auto_active or self.game_area):
                         # A moved/closed shop triggers an immediate full search
                         # in the same captured frame, not another polling delay.
@@ -353,11 +369,7 @@ class PixelReader(QObject):
                         else:
                             self.shop_context = self.shop_context.united(self.shop_rect)
                     else:
-                        point = self.pointer
-                        if point and self.crop:
-                            point = (point[0] - self.crop.x(), point[1] - self.crop.y())
-                        if not pointer_in_shop(point, self.shop_context):
-                            self.shop_context = None
+                        self.shop_context = None
                     if self.shop_rect:
                         source = self.image.copy(self.crop) if self.crop else self.image
                         # Only bind a fingerprint to the exact frame that was read.

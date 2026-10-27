@@ -46,7 +46,8 @@ class Overlay(QObject):
                 pass
 
     def update(self, geometry, rows, hover_enabled=False):
-        self.last_state = {"geometry": geometry, "rows": rows, "hover_enabled": hover_enabled}
+        self.last_state = {"geometry": geometry, "rows": rows, "hover_enabled": hover_enabled,
+                           "reduce_motion":getattr(self,"reduce_motion",False)}
         self.flush_state()
 
     def close(self):

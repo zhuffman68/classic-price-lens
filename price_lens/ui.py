@@ -22,6 +22,9 @@ from .tray import TrayController
 from .experience_ui import ExperiencePanel
 from .platform_paths import data_directory
 from .search import PriceSearch
+from .motion import AnimatedTabs, MotionLabel, reveal
+from .branding import Brand
+from .shop_rows import ShopRows
 from . import APP_NAME, LEGACY_APP_NAME
 
 COLORS = {"green": "#86ceac", "red": "#ed9394", "amber": "#e4bd7b", "blue": "#9ebde3", "muted": "#98a3b1"}
@@ -34,7 +37,7 @@ def mesos(value):
 
 
 def label(text="", style="", wrap=False):
-    widget = QLabel(text)
+    widget = MotionLabel(text)
     widget.setTextFormat(Qt.TextFormat.PlainText)
     widget.setWordWrap(wrap)
     if style:
@@ -86,8 +89,8 @@ class LensWindow(QMainWindow):
         super().__init__()
         self.root = Path(root)
         self.setWindowTitle(APP_NAME)
-        self.resize(480, 650)
-        self.setMinimumSize(430, 440)
+        self.resize(480, min(720, QApplication.primaryScreen().availableGeometry().height()-48))
+        self.setMinimumSize(430, 500)
         self.catalog = None
         self.catalog_loading = True
         self.catalog_error = ""
@@ -98,6 +101,8 @@ class LensWindow(QMainWindow):
         self.starting_at = 0.0
         self.session_available = False
         self.rows = []
+        self.shop_rows = ShopRows()
+        self.shop_open = False
         self.quotes = {}
         self.errors = {}
         self.expanded_details = set()
@@ -121,6 +126,10 @@ class LensWindow(QMainWindow):
         self.auto_game_area = self.settings.value("auto-game-area", True, type=bool)
         self.exp_enabled = self.settings.value("exp-enabled", True, type=bool)
         self.exp_overlay = self.settings.value("exp-overlay", True, type=bool)
+        self.exp_display = self.settings.value("exp-display", "percent")
+        if self.exp_display not in ("percent","raw","both"):self.exp_display = "percent"
+        self.reduce_motion = self.settings.value("reduce-motion", False, type=bool)
+        QApplication.instance().setProperty("reduceMotion", self.reduce_motion)
         self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, self.pinned)
         self.ttl = self.settings.value("cache-ttl", DEFAULT_TTL, type=int)
         if self.ttl not in (300, 900, 1800, 3600):
@@ -135,9 +144,12 @@ class LensWindow(QMainWindow):
         self.hotkeys.changed.connect(self.on_hotkey_changed)
         self.hotkeys.status.connect(self.on_hotkey_status)
         self.hover_enabled = self.settings.value("tooltip-prices", True, type=bool)
+        self.bulk_enabled = self.settings.value("full-market-cache", True, type=bool)
         self.tooltip_result = None
         self.shop_tooltip_active = False
         self.service = PriceService(cache_path, self)
+        self.service.refresh_index = True
+        self.service.refresh_snapshot = self.bulk_enabled
         self.reader = PixelReader(root, self)
         self.reader.auto_enabled = self.auto_game_area
         self.reader.tooltip_enabled = self.hover_enabled and self.labels_enabled
@@ -160,10 +172,8 @@ class LensWindow(QMainWindow):
         layout.setContentsMargins(18, 18, 18, 12)
         layout.setSpacing(10)
         heading = QHBoxLayout()
-        mark = QLabel()
-        mark.setPixmap(QPixmap(str(self.root / "price_lens/resources/icon.png")).scaled(32, 32, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.FastTransformation))
-        heading.addWidget(mark)
-        heading.addWidget(label(APP_NAME, "font-size: 21px; font-weight: 650; color: #f1e6d5"))
+        self.brand = Brand(self.root,self)
+        heading.addWidget(self.brand,1)
         heading.addStretch()
         self.settings_button = QPushButton("Settings")
         self.settings_button.clicked.connect(self.open_settings)
@@ -181,10 +191,14 @@ class LensWindow(QMainWindow):
         capture_header.addWidget(self.status_badge,1)
         setup.addLayout(capture_header)
         self.step_label = label("1 Choose a display   ›   2 Share it   ›   3 Open a shop", "color: #a6b1bf; font-size: 10px", True)
-        setup.addWidget(self.step_label)
+        self.setup_details = QWidget()
+        setup_details = QVBoxLayout(self.setup_details)
+        setup_details.setContentsMargins(0,4,0,0)
+        setup_details.setSpacing(8)
+        setup_details.addWidget(self.step_label)
         self.display_map = DisplayMap()
         self.display_map.selected.connect(lambda index: self.monitor.setCurrentIndex(index + 1))
-        setup.addWidget(self.display_map)
+        setup_details.addWidget(self.display_map)
         self.monitor = QComboBox()
         self.monitor.setAccessibleName("Display containing Classic World")
         self.monitor.addItem("Choose the display containing Classic World…", None)
@@ -208,12 +222,12 @@ class LensWindow(QMainWindow):
         actions.addWidget(self.cancel_setup)
         capture_header.addLayout(actions)
         self.capture_info = label("Choose a display to enable Start reading.", "color: #bbc4cf; font-size: 11px", True)
-        setup.addWidget(self.capture_info)
+        setup_details.addWidget(self.capture_info)
         self.recovery_button = QPushButton()
         self.recovery_button.setObjectName("quiet")
         self.recovery_button.clicked.connect(self.recover)
         self.recovery_button.setVisible(False)
-        setup.addWidget(self.recovery_button, 0, Qt.AlignmentFlag.AlignLeft)
+        setup_details.addWidget(self.recovery_button, 0, Qt.AlignmentFlag.AlignLeft)
         layout.addWidget(self.setup_frame)
 
         self.success_frame = QFrame()
@@ -235,10 +249,10 @@ class LensWindow(QMainWindow):
         options.addWidget(dismiss)
         success.addLayout(options)
         self.success_frame.setVisible(False)
-        layout.addWidget(self.success_frame)
+
 
         self.summary = label("", "font-size: 12px; color: #dde1e7", True)
-        layout.addWidget(self.summary)
+
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         self.scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -251,8 +265,17 @@ class LensWindow(QMainWindow):
                                         window_minutes=self.settings.value("exp-window", 5, type=int), parent=self)
         self.exp_panel.enabled_changed.connect(self.set_exp_enabled)
         self.exp_panel.changed.connect(self.on_experience_changed)
-        self.tabs = QTabWidget()
-        self.tabs.addTab(self.scroll, "Prices")
+        self.tabs = AnimatedTabs()
+        self.prices_page = QWidget()
+        prices_layout = QVBoxLayout(self.prices_page)
+        prices_layout.setContentsMargins(0,0,0,0)
+        prices_layout.setSpacing(8)
+        prices_layout.addWidget(self.setup_details)
+        prices_layout.addWidget(self.success_frame)
+        prices_layout.addWidget(self.summary)
+        prices_layout.addWidget(self.scroll,1)
+        self.card_views = {}
+        self.tabs.addTab(self.prices_page, "Prices")
         self.search_panel = PriceSearch(self)
         self.search_panel.ttl = self.ttl
         self.search_panel.item_selected.connect(self.on_search_item)
@@ -267,19 +290,8 @@ class LensWindow(QMainWindow):
         self.exp_tab_index = self.tabs.addTab(self.exp_scroll, "EXP")
         self.tabs.currentChanged.connect(self.on_tab_changed)
         layout.addWidget(self.tabs, 1)
-        footer = QHBoxLayout()
-        help_button = QPushButton("Setup help")
-        help_button.setObjectName("quiet")
-        help_button.clicked.connect(self.setup_help)
-        footer.addWidget(help_button)
-        footer.addStretch()
-        self.demo_button = QPushButton("Preview with examples")
-        self.demo_button.setObjectName("quiet")
-        self.demo_button.clicked.connect(self.preview_examples)
-        footer.addWidget(self.demo_button)
-        layout.addLayout(footer)
         self.notice = label("Screen pixels only · equipment assumed unscrolled", "color: #939eac; font-size: 10px", True)
-        layout.addWidget(self.notice)
+        prices_layout.addWidget(self.notice)
         self.status_label = label("", "color: #939eac; font-size: 10px", True)
         self.status_label.setVisible(False)
         self.setCentralWidget(body)
@@ -307,6 +319,8 @@ class LensWindow(QMainWindow):
             QTabBar::tab:selected { background: #303d51; color: #f1e1c6; }
             QTabBar::tab:hover:!selected { background: #222d3d; color: #dce4ef; }
         """)
+        self.exp_panel.set_display(self.exp_display)
+        self.overlay.reduce_motion = self.reduce_motion
         self.build_settings()
         self.tray = TrayController(self)
         self.timer = QTimer(self)
@@ -327,8 +341,17 @@ class LensWindow(QMainWindow):
     def build_settings(self):
         self.settings_dialog = QDialog(self)
         self.settings_dialog.setWindowTitle("Settings")
-        self.settings_dialog.setMinimumWidth(395)
-        layout = QVBoxLayout(self.settings_dialog)
+        self.settings_dialog.setMinimumSize(430, 300)
+        height = max(300, min(720, QApplication.primaryScreen().availableGeometry().height()-64))
+        self.settings_dialog.resize(480, height)
+        outer = QVBoxLayout(self.settings_dialog)
+        settings_scroll = QScrollArea()
+        settings_scroll.setWidgetResizable(True)
+        settings_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        contents = QWidget()
+        layout = QVBoxLayout(contents)
+        settings_scroll.setWidget(contents)
+        outer.addWidget(settings_scroll)
         layout.setSpacing(10)
         layout.addWidget(label("Overlay", "font-size: 15px; font-weight: 650"))
         self.auto_area_check = QCheckBox("Automatically find the Classic World area")
@@ -340,15 +363,27 @@ class LensWindow(QMainWindow):
         self.labels_check.setChecked(self.labels_enabled)
         self.labels_check.toggled.connect(self.set_labels)
         layout.addWidget(self.labels_check)
-        self.hover_check = QCheckBox("Also show prices when hovering inventory / equipment")
+        self.hover_check = QCheckBox("Show inventory/equipment prices outside player shops")
+        self.hover_check.setToolTip("Player shops always use their listing prices, wherever the pointer is.")
         self.hover_check.setChecked(self.hover_enabled)
         self.hover_check.setEnabled(self.labels_enabled)
         self.hover_check.toggled.connect(self.set_hover)
         layout.addWidget(self.hover_check)
-        self.exp_overlay_check = QCheckBox("Show the EXP session beside the game's status bar")
+        self.exp_overlay_check = QCheckBox("Show EXP tracker in the bottom-left of the game")
         self.exp_overlay_check.setChecked(self.exp_overlay)
         self.exp_overlay_check.toggled.connect(self.set_exp_overlay)
         layout.addWidget(self.exp_overlay_check)
+        layout.addWidget(label("EXP rate display", "font-size: 12px; color: #a6b1bf"))
+        self.exp_display_combo = QComboBox()
+        for value,title in (("percent","Percentage (default)"),("raw","Raw EXP"),("both","Both · percentage first")):
+            self.exp_display_combo.addItem(title,value)
+        self.exp_display_combo.setCurrentIndex(self.exp_display_combo.findData(self.exp_display))
+        self.exp_display_combo.currentIndexChanged.connect(lambda *_:self.set_exp_display(self.exp_display_combo.currentData()))
+        layout.addWidget(self.exp_display_combo)
+        self.motion_check = QCheckBox("Reduce motion")
+        self.motion_check.setChecked(self.reduce_motion)
+        self.motion_check.toggled.connect(self.set_reduce_motion)
+        layout.addWidget(self.motion_check)
         self.pin_check = QCheckBox("Keep the control panel on top")
         self.pin_check.setChecked(self.pinned)
         self.pin_check.toggled.connect(self.pin)
@@ -360,14 +395,19 @@ class LensWindow(QMainWindow):
         self.hotkey_button = QPushButton("Keyboard shortcut…")
         self.hotkey_button.clicked.connect(self.configure_hotkey)
         layout.addWidget(self.hotkey_button)
-        layout.addWidget(label("Price update interval", "font-size: 13px; font-weight: 650"))
+        self.bulk_check = QCheckBox("Cache the full market on launch and hourly")
+        self.bulk_check.setChecked(self.bulk_enabled)
+        self.bulk_check.toggled.connect(self.set_bulk_enabled)
+        layout.addWidget(self.bulk_check)
+        layout.addWidget(label("Uses an installed Chrome, Edge or Chromium briefly in the background, then closes it. Saved prices stay available if an update fails.", "font-size: 11px; color: #a6b1bf", True))
+        layout.addWidget(label("Per-item fallback interval", "font-size: 13px; font-weight: 650"))
         self.ttl_combo = QComboBox()
         for minutes in (5, 15, 30, 60):
             self.ttl_combo.addItem(f"{minutes} minutes" + (" · recommended" if minutes == 15 else ""), minutes * 60)
         self.ttl_combo.setCurrentIndex((300, 900, 1800, 3600).index(self.ttl))
         self.ttl_combo.currentIndexChanged.connect(lambda index: self.set_ttl(self.ttl_combo.itemData(index)))
         layout.addWidget(self.ttl_combo)
-        layout.addWidget(label("Prices are reused for this interval. Visible references may refresh up to 30 seconds early. Pausing stops new lookups. Cache age and market-report age are shown separately.", "font-size: 11px; color: #a6b1bf", True))
+        layout.addWidget(label("Used when the full-market cache has no matching price. Visible references may refresh up to 30 seconds early. Pausing stops item lookups. Price ages remain visible.", "font-size: 11px; color: #a6b1bf", True))
         layout.addWidget(label("Troubleshooting", "font-size: 15px; font-weight: 650"))
         self.crop_button = QPushButton("Limit the reading area…")
         self.crop_button.clicked.connect(self.crop)
@@ -385,9 +425,10 @@ class LensWindow(QMainWindow):
         about = QPushButton("About / price sources")
         about.clicked.connect(self.about)
         layout.addWidget(about)
+        layout.addStretch()
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         buttons.rejected.connect(self.settings_dialog.reject)
-        layout.addWidget(buttons)
+        outer.addWidget(buttons)
 
     def open_settings(self):
         self.update_capture_controls()
@@ -400,9 +441,14 @@ class LensWindow(QMainWindow):
         self.reader.last_experience = 0
         self.render()
 
+    def set_bulk_enabled(self, enabled):
+        self.bulk_enabled = enabled
+        self.settings.setValue("full-market-cache", enabled)
+        self.service.set_snapshot_enabled(enabled)
+        self.update_price_status()
+
     def on_tab_changed(self, index):
         self.summary.setVisible(index == 0)
-        self.demo_button.setVisible(index == 0)
         self.notice.setVisible(index == 0)
         if hasattr(self,"search_panel"):
             panel = self.search_panel
@@ -410,10 +456,6 @@ class LensWindow(QMainWindow):
                                     identity=panel.pending_identity if index == self.search_tab_index else None,
                                     candidates=panel.pending_candidates)
         self.update_capture_controls()
-        if index == self.exp_tab_index:
-            height = min(720, self.screen().availableGeometry().height()-48)
-            if self.height() < height:
-                self.resize(self.width(), height)
 
     def on_search_item(self, item):
         if self.tabs.currentIndex() == self.search_tab_index:
@@ -436,11 +478,26 @@ class LensWindow(QMainWindow):
 
     def on_experience(self, result):
         if self.mode == "live" and self.exp_enabled:
+            self.exp_panel.set_connected(time.time()-self.last_screen<3 and
+                                         (not self.reader.auto_active or self.reader.game_area is not None))
             self.exp_panel.feed(result)
 
     def on_experience_changed(self):
-        self.settings.setValue("exp-window", self.exp_panel.window_minutes.value())
         self.draw_labels(time.time(), time.time()-self.last_screen > 3)
+
+    def set_exp_display(self, mode):
+        self.exp_display = mode
+        self.settings.setValue("exp-display", mode)
+        self.exp_panel.set_display(mode)
+        self.render()
+
+    def set_reduce_motion(self, reduced):
+        self.reduce_motion = reduced
+        self.settings.setValue("reduce-motion",reduced)
+        QApplication.instance().setProperty("reduceMotion",reduced)
+        self.overlay.reduce_motion = reduced
+        self.brand.sync()
+        self.render()
 
     def set_minimize_to_tray(self, enabled):
         self.minimize_to_tray = enabled
@@ -686,7 +743,7 @@ class LensWindow(QMainWindow):
                 return ("Looking for Classic World", "Keep the bottom status bar visible and uncover the game window. The reading area follows it automatically. If needed, choose an area in Settings → Limit the reading area.", "amber", "")
             if not self.labels_enabled:
                 return ("Reading · labels hidden", "Price labels are disabled. Item prices still appear in this panel; enable labels to show them beside the game.", "blue", "Show price labels")
-            return ("Reading " + display, "Open a Classic World shop or hover over an inventory / equipment item. Keep names and prices visible.", "green", "")
+            return ("Classic World identified" if self.reader.auto_active else "Reading selected area", "Reading " + display + ". Open a player shop or hover an inventory item outside shops.", "green", "")
         return ("Ready to start", self.setup_notice or f"Click Start reading, then choose {display} in the OS sharing chooser. This app reads screen pixels only.", "blue", "")
 
     def show_status(self, message):
@@ -709,15 +766,15 @@ class LensWindow(QMainWindow):
             self.render()
 
     def update_capture_controls(self):
-        search_view = hasattr(self,"tabs") and self.tabs.currentIndex() == self.search_tab_index
-        exp_live = hasattr(self, "tabs") and self.tabs.currentIndex() in (self.exp_tab_index,self.search_tab_index) and self.mode == "live"
-        self.setup_frame.setVisible(not search_view or self.mode == "live" or self.capture_starting or bool(self.capture_error))
+        exp_live = False
+        self.setup_frame.setVisible(True)
+        self.setup_details.setVisible(self.mode != "live" or not self.first_price_seen or bool(self.capture_error))
         valid = self.screen_index is not None and 0 <= self.screen_index < len(self.screens)
         self.share.setEnabled(valid and not self.capture_starting)
         self.share.setText("Waiting for sharing…" if self.capture_starting else "Pause reading" if self.mode == "live" else "Resume reading" if self.mode == "paused" and self.session_available else "Start reading")
         self.share.setToolTip("Choose a display first" if not valid else "Toggle reading and price labels")
         self.monitor.setEnabled(not self.capture_starting)
-        self.monitor.setVisible(not exp_live)
+        self.monitor.setVisible(True)
         self.display_map.setEnabled(not self.capture_starting)
         self.display_map.configure(self.screens, self.screen_index)
         self.display_map.setVisible(len(self.screens) > 1 and self.mode == "idle")
@@ -729,6 +786,7 @@ class LensWindow(QMainWindow):
         self.cancel_setup.setVisible(self.capture_starting)
         title, detail, tone, action = self.connection_state()
         self.status_badge.setText(title)
+        self.status_badge.setToolTip(detail)
         self.status_badge.setStyleSheet(f"color: {COLORS[tone]}; font-weight: 650; font-size: 13px")
         self.capture_info.setText(detail)
         self.capture_info.setVisible(not exp_live or bool(self.capture_error))
@@ -950,7 +1008,11 @@ class LensWindow(QMainWindow):
         if self.mode not in ("live", "screenshot"):
             return
         self.ocr_ms = result.get("atMs")
-        rows = (result.get("shop") or {}).get("rows", [])
+        shop = result.get("shop")
+        image = getattr(self.reader,"submitted_image",self.reader.image)
+        if self.reader.crop:image = image.copy(self.reader.crop)
+        rows = self.shop_rows.observe(shop,image)
+        self.shop_open = self.shop_rows.active
         tooltip = result.get("tooltip")
         found = tooltip.get("found") if isinstance(tooltip, dict) else None
         shop_tooltip = (result.get("hover") or {}).get("tooltip")
@@ -959,7 +1021,7 @@ class LensWindow(QMainWindow):
         pointer = self.reader.pointer
         if pointer and self.reader.crop:
             pointer = (pointer[0] - self.reader.crop.x(), pointer[1] - self.reader.crop.y())
-        found = found if self.hover_enabled and pointer is not None and not result.get("hover") and not pointer_in_shop(pointer, self.reader.shop_context) else None
+        found = found if self.hover_enabled and not self.shop_open and pointer is not None and not result.get("hover") and not pointer_in_shop(pointer, self.reader.shop_context) else None
         if found:
             name = found.get("name")
             area = found.get("area") or {}
@@ -1072,9 +1134,11 @@ class LensWindow(QMainWindow):
         observations = self.rows + ([self.tooltip_result] if self.tooltip_result else [])
         failed = any((item := self.catalog.resolve(row.get("name"), row.get("tier")))
                      and item.game_id in self.errors for row in observations)
-        self.status_label.setText("Some market references are unavailable; cached prices are kept." if failed else "Market references cached locally")
+        snapshot = self.service.snapshot_summary() if hasattr(self.service, "snapshot_summary") else ""
+        self.status_label.setText("Some market references are unavailable; cached prices are kept." if failed else snapshot or "Market references cached locally")
 
     def tick(self):
+        self.update_price_status()
         self.exp_panel.set_connected(self.mode == "live" and time.time()-self.last_screen < 3
                                      and (not self.reader.auto_active or self.reader.game_area is not None))
         self.render()
@@ -1114,7 +1178,7 @@ class LensWindow(QMainWindow):
         layout.setSpacing(8)
         if self.mode == "idle":
             title = "Let's find your first price" if not self.first_price_seen else "Ready when you are"
-            detail = "Choose a display above, then click Start reading. You can preview the labels with example items below."
+            detail = "Choose a display above, then click Start reading. Screen sharing is only needed for the in-game overlay; Search works without it."
         elif self.mode == "paused":
             title, detail = "Reading is paused", "Resume to show price labels again. Existing references remain cached."
         elif self.capture_starting:
@@ -1172,24 +1236,42 @@ class LensWindow(QMainWindow):
             self.card_key = card_key
             position = self.scroll.verticalScrollBar().value()
             while self.cards_layout.count():
-                take = self.cards_layout.takeAt(0)
-                if take.widget():
-                    take.widget().deleteLater()
+                self.cards_layout.takeAt(0)
+            used = set()
             if not observations:
-                self.cards_layout.addWidget(self.empty_card())
+                key = ("empty",self.mode,self.capture_starting,self.catalog_error,self.catalog_loading,
+                       self.reader.game_area is not None)
+                used.add(key)
+                if key not in self.card_views:self.card_views[key]=self.empty_card()
+                self.cards_layout.addWidget(self.card_views[key])
+                self.card_views[key].show()
             card_rows = ([(self.tooltip_result, True)] if self.tooltip_result else []) + [(row, False) for row in self.rows]
             for index, (row, hovered) in enumerate(card_rows):
                 item = self.catalog.resolve(row.get("name"), row.get("tier")) if self.catalog else None
                 quote = self.quote_for(item)
                 key = (index, item.game_id if item else row.get("name"), hovered)
-                card = price_card(item=item, row=row, quote=quote, now=now, ttl=self.ttl,
+                data = dict(item=item, row=row, quote=quote, now=now, ttl=self.ttl,
                                   paused=self.mode == "paused", old_capture=self.mode == "live" and screen_old,
                                   lookup_error=bool(item and item.game_id in self.errors), hovered=hovered,
                                   lookup_state=self.service.state_for(item.game_id) if item else "",
                                   expanded=key in self.expanded_details,
                                   details_changed=lambda expanded, key=key: self.set_details_open(key, expanded),
                                   open_source=self.open_source)
+                used.add(key)
+                if key in self.card_views:
+                    card = self.card_views[key]
+                    card.update_data(**data)
+                    fresh_view = False
+                else:
+                    card = self.card_views[key] = price_card(**data)
+                    fresh_view = True
                 self.cards_layout.addWidget(card)
+                card.show()
+                if fresh_view:reveal(card)
+            for key in list(self.card_views):
+                if key not in used:
+                    card = self.card_views.pop(key)
+                    card.hide();card.deleteLater()
             self.cards_layout.addStretch()
             self.scroll.verticalScrollBar().setValue(position)
         self.draw_labels(now, screen_old)
@@ -1208,7 +1290,7 @@ class LensWindow(QMainWindow):
         screen_matches = (not image.isNull() and abs(image.width() - geometry.width() * dpr) <= 2
                           and abs(image.height() - geometry.height() * dpr) <= 2)
         game_visible = not self.reader.auto_active or self.reader.game_area is not None
-        if self.labels_enabled and self.mode == "live" and not screen_old and screen_matches and self.catalog and game_visible and not self.shop_tooltip_active:
+        if self.labels_enabled and self.mode == "live" and not screen_old and screen_matches and self.catalog and game_visible:
             sx, sy = geometry.width() / image.width(), geometry.height() / image.height()
             crop = self.reader.crop
             offset_x, offset_y = (crop.x(), crop.y()) if crop else (0, 0)
@@ -1224,8 +1306,9 @@ class LensWindow(QMainWindow):
                 verdict = compare(item, price.get("quantity"), price.get("mesos"), quote, now, self.ttl)
                 if quote and quote.price is not None and quote.fresh(now, self.ttl):
                     ready_price = True
-                    suffix = f"{verdict.delta:+.0f}%" if verdict.delta is not None else ("listing price unclear" if verdict.label == "Unreadable" else verdict.label)
+                    suffix = "listing covered" if row.get("listing_old") else "listing price unclear" if verdict.label == "Unreadable" else ""
                     text = f"FM {mesos(quote.price)} • {suffix} • {status}"
+                    if not suffix:text = f"FM {mesos(quote.price)} • {status}"
                     if verdict.label == "Thin data":
                         text = f"FM {mesos(quote.price)} • few reports • {status}"
                 elif quote and quote.price is None:
@@ -1243,8 +1326,9 @@ class LensWindow(QMainWindow):
                                     "name": item.name if item else row.get("name") or "Unresolved item",
                                     "text": text, "color": COLORS[verdict.tone],
                                     "key": f"shop:{index}:{item.game_id if item else row.get('name')}",
-                                    "animate_move": True})
-        if self.labels_enabled and self.hover_enabled and self.tooltip_result and self.mode == "live" and not screen_old and screen_matches and self.catalog and game_visible:
+                                    "animate_move": True,"kind":"shop",
+                                    "deal_delta":f"{verdict.delta:+.0f}%" if verdict.delta is not None else ""})
+        if self.labels_enabled and self.hover_enabled and not self.shop_open and self.tooltip_result and self.mode == "live" and not screen_old and screen_matches and self.catalog and game_visible:
             found = self.tooltip_result
             area = found["area"]
             name = found.get("name")
@@ -1284,8 +1368,11 @@ class LensWindow(QMainWindow):
             if row:
                 area = self.reader.game_area if self.reader.auto_active else self.reader.crop
                 if area:
-                    row.update(x=max(8, round(area.right()*geometry.width()/image.width())-326),
-                               y=max(12, round(area.bottom()*geometry.height()/image.height())-88))
+                    row.update(x=round(area.left()*geometry.width()/image.width())+4,
+                               y=round(area.bottom()*geometry.height()/image.height())-4,
+                               anchor="bottom_left",bounds=[round(area.x()*geometry.width()/image.width()),
+                                      round(area.y()*geometry.height()/image.height()),
+                                      round(area.width()*geometry.width()/image.width()),round(area.height()*geometry.height()/image.height())])
                     annotations.insert(0,row)
         self.overlay.update(list(geometry.getRect()), annotations, hover_enabled=self.labels_enabled and self.mode == "live" and game_visible and screen_matches and not screen_old)
         if (annotations and ready_price and not self.first_price_seen):
@@ -1341,7 +1428,7 @@ class LensWindow(QMainWindow):
             self.render()
 
     def about(self):
-        QMessageBox.information(self, APP_NAME, "Reads OS-shared pixels and draws this independent window.\n\nNo game hooks, memory, files, messages, input or packet access. Screenshots remain local. Only item names/IDs go to public price sources.\n\nOCR: Minerva (MIT), pinned at 7e1aa7d. OCR model: ocrs, CC BY-SA 4.0. Catalog: OSMS Data Explorer. Prices: NiaMeowDB Classic World.\n\n24h median with at least 5 samples, otherwise the site's longer window. These are reported prices, not guaranteed trades. Equipment is assumed unscrolled, as requested. Its actual stats are not assessed.\n\nCache defaults to 15 minutes. Expired data has no deal rating; latest reports over 24h old also have no rating.\n\nPrices and requests are cached locally. No telemetry or screenshot uploads.")
+        QMessageBox.information(self, APP_NAME, "Reads OS-shared pixels and draws this independent window.\n\nNo game hooks, memory, files, messages, input or packet access. Screenshots remain local. Only item names/IDs go to public price sources.\n\nOCR: Minerva (MIT), pinned at 7e1aa7d. OCR model: ocrs, CC BY-SA 4.0. Catalog: OSMS Data Explorer. Prices: MesoWatch Classic World snapshot with NiaMeowDB fallback.\n\n24h median with at least 5 samples, otherwise the site's longer window. These are reported prices, not guaranteed trades. Equipment is assumed unscrolled, as requested. Its actual stats are not assessed.\n\nFull-market cache refreshes on launch and hourly through an installed Chrome/Edge/Chromium, then closes that browser. Per-item fallback defaults to 15 minutes. Expired data has no deal rating; latest reports over 24h old also have no rating.\n\nPrices and requests are cached locally. No telemetry or screenshot uploads.")
 
     def closeEvent(self, event):
         if self.closing:

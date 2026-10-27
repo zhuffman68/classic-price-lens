@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from price_lens import __version__
 
-DEFAULT_PROJECT = "zhuffman68/classic-price-lens"
+DEFAULT_PROJECT = "zhuffman68/lupin"
 
 
 @dataclass(frozen=True)

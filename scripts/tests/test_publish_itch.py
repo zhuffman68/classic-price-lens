@@ -88,7 +88,7 @@ class PublishTests(unittest.TestCase):
     def test_password_gate_requires_the_actual_project_form(self):
         url = publish.project_url(publish.DEFAULT_PROJECT)
         for html, expected in [
-            ('<form method="post" action="/classic-price-lens/password"><input type="password" name="game_password"></form>', True),
+            ('<form method="post" action="/lupin/password"><input type="password" name="game_password"></form>', True),
             ('<form method="post" action="https://elsewhere.example/password"><input type="password" name="game_password"></form>', False),
             ('<form method="post" action="/login"><input type="password" name="password"></form>', False),
             ('<p>A password is required</p>', False),
@@ -101,7 +101,7 @@ class PublishTests(unittest.TestCase):
     def test_push_uses_argument_arrays_and_same_channel_with_release_version(self):
         upload = publish.Upload("linux-debian", Path("folder with spaces"))
         command = publish.push_command("butler", upload, publish.DEFAULT_PROJECT, self.version)
-        self.assertEqual(command, ["butler", "push", "folder with spaces", "zhuffman68/classic-price-lens:linux-debian",
+        self.assertEqual(command, ["butler", "push", "folder with spaces", "zhuffman68/lupin:linux-debian",
                                    "--userversion", "0.4.2", "--if-changed"])
 
 

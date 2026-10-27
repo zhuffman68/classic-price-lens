@@ -96,6 +96,9 @@ class FakeService(QObject):
     def set_manual(self, item, ttl=900, **kwargs):
         self.manual_item = item
 
+    def set_snapshot_enabled(self, enabled):
+        self.refresh_snapshot = enabled
+
     def state_for(self, item_id):
         return self.states.get(item_id, "")
 
@@ -129,6 +132,41 @@ class FakeHotkeys(QObject):
 
 
 class ContextUiTests(unittest.TestCase):
+    def test_display_selector_and_tab_position_remain_stable_on_every_page(self):
+        self.window.mode="idle"
+        self.window.show();self.app.processEvents()
+        height=self.window.height();positions=[]
+        for index in (0,1,2,0,2,1):
+            self.window.tabs.setCurrentIndex(index);self.app.processEvents()
+            bar=self.window.tabs.tabBar()
+            positions.append(bar.mapTo(self.window,bar.rect().topLeft()).y())
+            self.assertTrue(self.window.monitor.isVisible())
+            self.assertTrue(self.window.setup_frame.isVisible())
+            self.assertEqual(self.window.height(),height)
+        self.assertEqual(len(set(positions)),1)
+        self.assertEqual(self.window.reader.starts,0)
+        self.assertFalse(any(b.text() in ("Setup help","Preview with examples") for b in self.window.findChildren(QPushButton)))
+
+    def test_rate_display_and_reduce_motion_settings_are_persistent(self):
+        self.assertEqual(self.window.exp_panel.display_mode,"percent")
+        self.window.exp_display_combo.setCurrentIndex(self.window.exp_display_combo.findData("both"))
+        self.assertEqual(self.window.settings.values["exp-display"],"both")
+        self.assertEqual(self.window.exp_panel.display_mode,"both")
+        self.window.motion_check.setChecked(True)
+        self.assertTrue(self.window.settings.values["reduce-motion"])
+        self.assertTrue(self.window.overlay.reduce_motion)
+
+    def test_quote_and_age_updates_keep_the_same_price_card(self):
+        self.window.on_reading(self.reading(shop_hover=True))
+        before=next(iter(self.window.card_views.values()))
+        now=time.time()
+        for value in (1000,1200):
+            self.window.on_quote(1,Quote(1,value,now,now,20,"Test","","24h"))
+            self.assertIs(next(iter(self.window.card_views.values())),before)
+        self.assertEqual(before.fields["market"].text(),"1,200 mesos")
+        with patch("price_lens.ui.time.time",return_value=now+6):self.window.render()
+        self.assertIs(next(iter(self.window.card_views.values())),before)
+
     def test_price_search_works_without_starting_capture(self):
         self.window.mode = "idle"
         self.window.tabs.setCurrentIndex(self.window.search_tab_index)
@@ -173,10 +211,14 @@ class ContextUiTests(unittest.TestCase):
             patcher.stop()
         self.tray_show.stop()
 
-    def reading(self, shop_hover):
+    def reading(self, shop_hover, store=None):
+        store = shop_hover if store is None else store
+        if not store:
+            self.window.reader.shop_context=None
+            self.window.shop_rows.reset()  # Closing removes the header/scrollbar pixels in a real frame.
         return {"atMs": 123, "shop": {"area": {"x": 300, "y": 200, "width": 240, "height": 300},
                 "rows": [{"name": "Example Hat", "price": {"quantity": 1, "mesos": 100},
-                          "area": {"x": 340, "y": 220, "width": 180, "height": 40}}]},
+                          "area": {"x": 340, "y": 220, "width": 180, "height": 40}}]} if store else None,
                 "hover": {"pointer": {"x": 340, "y": 240}} if shop_hover else None,
                 "tooltip": {"found": {"name": "Example Hat", "area": {"x": 100, "y": 100, "width": 180, "height": 20}}}}
 
@@ -188,6 +230,13 @@ class ContextUiTests(unittest.TestCase):
     def test_automatic_game_area_is_enabled_by_default(self):
         self.assertTrue(self.window.auto_area_check.isChecked())
         self.assertTrue(self.window.reader.auto_enabled)
+
+    def test_full_market_cache_defaults_on_and_can_be_disabled_persistently(self):
+        self.assertTrue(self.window.bulk_check.isChecked())
+        self.assertTrue(self.window.service.refresh_snapshot)
+        self.window.bulk_check.setChecked(False)
+        self.assertFalse(self.window.service.refresh_snapshot)
+        self.assertFalse(self.window.settings.values["full-market-cache"])
 
     def test_lost_game_area_hides_labels_and_stops_price_requests(self):
         self.window.on_reading(self.reading(shop_hover=True))
@@ -217,7 +266,7 @@ class ContextUiTests(unittest.TestCase):
         self.window.reader.pointer = (100, 100)
         self.window.on_reading(self.reading(shop_hover=False))
         self.assertEqual(self.window.tooltip_result["name"], "Example Hat")
-        self.assertEqual(len(self.window.overlay.rows), 2)
+        self.assertEqual(len(self.window.overlay.rows), 1)
 
     def test_disabling_setting_stops_tooltip_processing_and_clears_label(self):
         self.window.reader.pointer = (100, 100)
@@ -235,7 +284,7 @@ class ContextUiTests(unittest.TestCase):
                 reading["tooltip"]["found"]["name"] = name
                 self.window.on_reading(reading)
                 self.assertIsNone(self.window.tooltip_result)
-                self.assertEqual(len(self.window.overlay.rows), 1)
+                self.assertEqual(len(self.window.overlay.rows), 0)
 
     def test_tooltip_without_pointer_or_far_from_it_is_ignored(self):
         self.window.reader.pointer = None
@@ -249,7 +298,7 @@ class ContextUiTests(unittest.TestCase):
         self.window.reader.pointer = (100, 600)
         self.window.on_reading(self.reading(shop_hover=False))
         self.assertEqual(self.window.tooltip_result["name"], "Example Hat")
-        self.assertEqual(len(self.window.overlay.rows), 2)
+        self.assertEqual(len(self.window.overlay.rows), 1)
 
     def test_named_bandana_and_greater_scroll_use_the_actual_item_name(self):
         self.window.on_catalog(Catalog({"items": [{"id": 1002013, "name": "Blue Bandana", "category": "Equipment"}],
@@ -263,12 +312,13 @@ class ContextUiTests(unittest.TestCase):
                 self.window.on_reading(reading)
                 self.assertEqual(self.window.overlay.rows[-1]["name"], expected)
 
-    def test_native_shop_stats_popup_temporarily_hides_market_labels(self):
+    def test_native_shop_stats_popup_keeps_shop_prices_visible(self):
         reading = self.reading(shop_hover=True)
         reading["hover"]["tooltip"] = {"found": reading["tooltip"]["found"]}
         self.window.on_reading(reading)
         self.assertTrue(self.window.shop_tooltip_active)
-        self.assertEqual(self.window.overlay.rows, [])
+        self.assertEqual(len(self.window.overlay.rows), 1)
+        self.assertEqual(self.window.overlay.rows[0]["kind"],"shop")
         self.window.on_reading(self.reading(shop_hover=True))
         self.assertFalse(self.window.shop_tooltip_active)
         self.assertEqual(len(self.window.overlay.rows), 1)
@@ -447,7 +497,7 @@ class ContextUiTests(unittest.TestCase):
         self.window.reader.pointer = (100, 100)
         self.window.on_reading(self.reading(shop_hover=False))
         self.window.on_quote(1, Quote(1, None, time.time(), None, 0, "Test", "", "24h"))
-        self.assertEqual(len(self.window.overlay.rows), 2)
+        self.assertEqual(len(self.window.overlay.rows), 1)
         self.assertEqual(self.window.overlay.rows[-1]["text"], "FM • source has no market data")
 
     def test_saved_screenshot_is_labeled_even_without_a_display_selected(self):
@@ -493,33 +543,35 @@ class ContextUiTests(unittest.TestCase):
             self.assertNotIn("below reference", content)
             self.assertTrue(any("refresh needed" in row["text"] for row in self.window.overlay.rows))
 
-    def test_hovered_item_is_the_priority_even_when_shop_rows_are_present(self):
+    def test_shop_rows_take_precedence_over_inventory_hover_anywhere(self):
         self.window.on_catalog(Catalog({"items": [{"id": 1, "name": "Example Hat"},
                                                   {"id": 2, "name": "Other Hat"}], "scrolls": []}))
         self.window.reader.pointer = (100, 100)
-        reading = self.reading(shop_hover=False)
+        reading = self.reading(shop_hover=False,store=True)
         reading["tooltip"]["found"]["name"] = "Other Hat"
         self.window.on_reading(reading)
-        self.assertEqual(self.window.service.hovered_id, 2)
-        self.assertEqual(self.window.service.visible, [2, 1])
+        self.assertIsNone(self.window.tooltip_result)
+        self.assertNotIn(2,self.window.service.visible)
+        self.assertEqual(self.window.service.visible, [1])
 
     def test_refresh_progress_updates_cards_and_both_overlay_contexts(self):
-        self.window.reader.pointer = (100, 100)
-        self.window.on_reading(self.reading(shop_hover=False))
-        now = time.time()
-        self.window.on_quote(1, Quote(1, 1000, now - 1080, now, 20, "Test", "", "24h"))
-        self.window.service.states[1] = "refreshing"
-        self.window.service.state_changed.emit()
-        self.app.processEvents()
-        content = "\n".join(widget.text() for widget in self.window.cards.findChildren(QLabel))
-        self.assertIn("Refreshing market reference", content)
-        self.assertEqual(len(self.window.overlay.rows), 2)
-        for row in self.window.overlay.rows:
-            self.assertIn("18m old", row["text"])
-            self.assertIn("refreshing", row["text"])
-            self.assertNotEqual(row["color"], "#86ceac")
+        for shop in (True,False):
+            with self.subTest(shop=shop):
+                self.window.reader.pointer = (340,240) if shop else (100,100)
+                self.window.on_reading(self.reading(shop_hover=shop))
+                now=time.time()
+                self.window.on_quote(1,Quote(1,1000,now-1080,now,20,"Test","","24h"))
+                self.window.service.states[1]="refreshing"
+                self.window.service.state_changed.emit();self.app.processEvents()
+                content="\n".join(widget.text() for widget in self.window.cards.findChildren(QLabel))
+                self.assertIn("Refreshing market reference",content)
+                self.assertEqual(len(self.window.overlay.rows),1)
+                row=self.window.overlay.rows[0]
+                self.assertIn("18m old",row["text"])
+                self.assertIn("refreshing",row["text"])
+                self.assertNotEqual(row["color"],"#86ceac")
         self.window.pause()
-        self.assertEqual(self.window.service.visible, [])
+        self.assertEqual(self.window.service.visible,[])
 
     def test_recent_lookup_with_old_reports_explains_the_market_data_age(self):
         self.window.on_reading(self.reading(shop_hover=True))

@@ -36,7 +36,7 @@ def main():
             subprocess.run(command, cwd=cwd or ROOT, env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
         # Only dependency checks are skipped: dependencies come from the host,
         # while all package/database writes are confined to this disposable root.
-        previous = ROOT / "dist/classic-price-lens-0.5.0-1-x86_64.pkg.tar.zst"
+        previous = ROOT / "dist/lupin-0.6.0-1-x86_64.pkg.tar.zst"
         if previous.exists():
             run([*pacman, "-Udd", str(previous)])
         run([*pacman, "-Udd", str(package)])
