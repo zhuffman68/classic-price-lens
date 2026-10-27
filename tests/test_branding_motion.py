@@ -6,10 +6,10 @@ import unittest
 from PySide6.QtCore import QPoint,QRect
 from PySide6.QtGui import QMovie,QImageReader
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication,QLabel,QWidget
+from PySide6.QtWidgets import QApplication,QLabel,QWidget,QVBoxLayout
 
 from price_lens.branding import Brand
-from price_lens.motion import AnimatedTabs
+from price_lens.motion import AnimatedTabs,RollingLabel
 from price_lens.annotations import AnnotationWindow
 
 
@@ -66,9 +66,28 @@ class BrandingMotionTests(unittest.TestCase):
             for index in (1,2,0,2):tabs.setCurrentIndex(index);self.app.processEvents()
             QTest.qWait(390)
             self.assertEqual(tabs.currentWidget().text(),"EXP")
-            self.assertIsNone(tabs.snapshot)
+            self.assertFalse(tabs.sliding)
             self.app.setProperty("reduceMotion",True);tabs.setCurrentIndex(0)
-            self.assertIsNone(tabs.snapshot)
+            self.assertFalse(tabs.sliding)
+        finally:tabs.close();tabs.deleteLater();self.app.processEvents()
+
+    def test_live_slide_keeps_zeros_visible_and_handles_mid_transition_updates(self):
+        tabs=AnimatedTabs();tabs.resize(460,700);tabs.addTab(QLabel('Prices'),'Prices')
+        page=QWidget();layout=QVBoxLayout(page);value=RollingLabel('0m 00s');layout.addWidget(value)
+        tabs.addTab(page,'Tracking');self.app.setProperty('reduceMotion',False)
+        try:
+            tabs.show();self.app.processEvents();tabs.setCurrentIndex(1)
+            self.assertTrue(tabs.sliding)
+            self.assertEqual(value.roll.progress,1.0)
+            tabs.animation.setCurrentTime(150)
+            self.assertGreater(page.x(),0)
+            self.assertLess(page.x(),tabs.width())
+            value.setText('0m 01s');self.assertEqual(value.roll.text,'0m 01s')
+            tabs.animation.setCurrentTime(300)
+            self.assertFalse(tabs.sliding)
+            self.assertFalse(tabs.widget(0).isVisible())
+            self.assertTrue(value.isVisible())
+            self.assertTrue(tabs.stack.layout().isEnabled())
         finally:tabs.close();tabs.deleteLater();self.app.processEvents()
 
     def test_exp_anchor_uses_game_bottom_left_for_two_and_three_lines(self):

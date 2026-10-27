@@ -69,6 +69,15 @@ class ExperienceUiTests(unittest.TestCase):
         self.assertNotIn("EXP/min",self.panel.overlay_row()["text"])
         self.assertTrue(self.panel.overlay_row()["name"].startswith("Lv."))
 
+    def test_exp_and_meso_rate_columns_align_at_compact_and_wide_sizes(self):
+        self.train();self.panel.show()
+        for width in (428,608):
+            self.panel.resize(width,650);self.app.processEvents()
+            for exp,money in ((self.panel.gain,self.panel.meso_gain),
+                              (self.panel.rate,self.panel.meso_rate),(self.panel.hour_rate,self.panel.meso_hour)):
+                self.assertEqual(exp.mapTo(self.panel,exp.rect().topLeft()).x(),money.mapTo(self.panel,money.rect().topLeft()).x())
+                self.assertEqual(exp.width(),money.width())
+
     def test_raw_and_both_keep_percentage_first(self):
         self.train()
         self.panel.set_display("raw")

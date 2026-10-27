@@ -2,7 +2,7 @@
 import re
 from PySide6.QtCore import QEasingCurve,QPoint,Qt,QVariantAnimation,QSize,QRect
 from PySide6.QtGui import QPainter, QPalette
-from PySide6.QtWidgets import QApplication, QGraphicsOpacityEffect, QLabel, QTabWidget, QWidget,QSizePolicy
+from PySide6.QtWidgets import QApplication, QGraphicsOpacityEffect, QLabel, QTabWidget, QWidget,QSizePolicy,QStackedWidget
 from .number_motion import NumberRoll
 
 
@@ -156,38 +156,73 @@ class AnimatedTabs(QTabWidget):
     def __init__(self,parent=None):
         super().__init__(parent)
         self.previous_page=None
-        self.snapshot=None
         self.previous_index=0
+        self.sliding=False
+        self.scroll=0.0
+        self.stack=None
+        self.mouse_before={}
+        self.animation=QVariantAnimation(self)
+        self.animation.setDuration(300)
+        self.animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
+        self.animation.valueChanged.connect(self.move_pages)
+        self.animation.finished.connect(self.finish_slide)
         self.currentChanged.connect(self.transition)
 
     def transition(self,index):
         page=self.currentWidget()
-        previous=self.previous_page
+        previous=self.previous_page;old_index=self.previous_index
         self.previous_page=page
-        direction=1 if index>=self.previous_index else -1
         self.previous_index=index
-        if self.snapshot:
-            self.snapshot.hide();self.snapshot.deleteLater();self.snapshot=None
-        if not page or not previous or not enabled(self):return
-        snapshot=QWidget(self)
-        snapshot.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        snapshot.setGeometry(QRect(page.mapTo(self,QPoint()),page.size()))
-        old=QLabel(snapshot);old.setPixmap(previous.grab());old.resize(page.size())
-        new=QLabel(snapshot);new.setPixmap(page.grab());new.resize(page.size())
-        width=page.width();new.move(direction*width,0)
-        animation=QVariantAnimation(snapshot)
-        animation.setDuration(350);animation.setStartValue(0.0);animation.setEndValue(1.0)
-        animation.setEasingCurve(QEasingCurve.Type.OutCubic)
-        def move(value):
-            offset=round(value*width)*direction
-            old.move(-offset,0);new.move(direction*width-offset,0)
-        animation.valueChanged.connect(move)
-        self.snapshot=snapshot
-        def finish():
-            if self.snapshot is snapshot:self.snapshot=None
-            snapshot.hide();snapshot.deleteLater()
-        animation.finished.connect(finish)
-        snapshot.show();snapshot.raise_();animation.start()
+        if not page or not previous or not enabled(self):
+            self.finish_slide();return
+        stack=self.findChild(QStackedWidget,'qt_tabwidget_stackedwidget',Qt.FindChildOption.FindDirectChildrenOnly)
+        if stack is None:return
+        self.animation.stop()
+        if not self.sliding:
+            self.stack=stack;self.base=stack.contentsRect();self.slide_width=self.base.width()
+            if self.slide_width<=0:return
+            self.scroll=old_index*self.slide_width
+            self.layout_enabled=stack.layout().isEnabled()
+            stack.layout().setEnabled(False)
+            self.sliding=True
+        stack.setUpdatesEnabled(False)
+        for i in range(self.count()):
+            child=self.widget(i)
+            if child not in self.mouse_before:
+                self.mouse_before[child]=child.testAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+            child.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,child is not page)
+            child.resize(self.base.size());child.show()
+        self.move_pages(self.scroll)
+        page.raise_();stack.setUpdatesEnabled(True)
+        self.animation.setStartValue(self.scroll)
+        self.animation.setEndValue(index*self.slide_width)
+        self.animation.start()
+
+    def move_pages(self,value):
+        if not self.sliding:return
+        if not enabled(self):self.finish_slide();return
+        self.scroll=float(value)
+        for i in range(self.count()):
+            self.widget(i).move(self.base.left()+round(i*self.slide_width-self.scroll),self.base.top())
+
+    def finish_slide(self):
+        self.animation.stop()
+        if not self.sliding:return
+        self.sliding=False;stack=self.stack;current=self.currentWidget()
+        stack.setUpdatesEnabled(False)
+        for i in range(self.count()):
+            child=self.widget(i)
+            child.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,self.mouse_before.get(child,False))
+            child.setGeometry(stack.contentsRect());child.setVisible(child is current)
+        self.mouse_before.clear()
+        stack.layout().setEnabled(self.layout_enabled);stack.layout().activate()
+        stack.setUpdatesEnabled(True)
+
+    def hideEvent(self,event):
+        self.finish_slide();super().hideEvent(event)
+
+    def resizeEvent(self,event):
+        self.finish_slide();super().resizeEvent(event)
 
 
 class RollingLabel(QLabel):
@@ -220,13 +255,6 @@ class RollingLabel(QLabel):
         painter=QPainter(self);painter.setFont(self.font());painter.setPen(self.palette().color(QPalette.ColorRole.WindowText))
         if not enabled(self):self.roll.finish()
         self.roll.paint(painter,self.contentsRect(),self.alignment())
-
-    def showEvent(self,event):
-        super().showEvent(event)
-        if enabled(self):
-            text=self.text();self.roll=NumberRoll()
-            if self.roll.set_text(text):
-                self.animation.setStartValue(0.0);self.animation.setEndValue(1.0);self.animation.start()
 
     def hideEvent(self,event):
         self.animation.stop();self.roll.finish();super().hideEvent(event)

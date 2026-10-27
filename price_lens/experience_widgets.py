@@ -24,7 +24,7 @@ def build(panel,layout,enabled,window_minutes=None):
         QLabel#expEyebrow { color: #a6b3c5; font-size: 10px; font-weight: 600; }
         QLabel#expIdentity { font-size: 14px; font-weight: 600; color: #edf1f7; }
         QLabel#expMap, QLabel#expMuted { color: #a7b2c2; font-size: 11px; }
-        QLabel#expRate { color: #edc68a; font-size: 26px; font-weight: 650; }
+        QLabel#trackingFigure { color: #edc68a; font-size: 20px; font-weight: 650; }
         QLabel#expMetric { font-size: 18px; font-weight: 600; color: #e5eaf2; }
         QLabel#expPosition { font-size: 16px; font-weight: 600; color: #dce4ef; }
         QComboBox, QLineEdit { background: #1b2330; color: #e4eaf3; border: 1px solid #3b485c; border-radius: 6px; padding: 7px 9px; }
@@ -38,26 +38,28 @@ def build(panel,layout,enabled,window_minutes=None):
     layout.addWidget(panel.character);layout.addWidget(panel.map_label)
     hero=QFrame();hero.setObjectName("expHero")
     hero_layout=QVBoxLayout(hero);hero_layout.setContentsMargins(16,12,16,12);hero_layout.setSpacing(8)
-    rate_row=QHBoxLayout()
+    hero_layout.addWidget(label('EXP','expEyebrow'))
+    rate_row=QHBoxLayout();rate_row.setSpacing(12)
     panel.minute_caption=label("PROGRESS / MIN","expEyebrow")
     panel.hour_caption=label("PROGRESS / HOUR","expEyebrow")
-    panel.rate=number("—","expRate");panel.hour_rate=number("—","expRate")
-    for caption,value in ((panel.minute_caption,panel.rate),(panel.hour_caption,panel.hour_rate)):
+    panel.gain=number('—','trackingFigure')
+    panel.rate=number("—","trackingFigure");panel.hour_rate=number("—","trackingFigure")
+    for caption,value in ((label('SESSION GAIN','expEyebrow'),panel.gain),(panel.minute_caption,panel.rate),(panel.hour_caption,panel.hour_rate)):
         column=QVBoxLayout();column.setSpacing(5);column.addWidget(caption);column.addWidget(value);rate_row.addLayout(column,1)
     hero_layout.addLayout(rate_row)
     panel.raw_hint=label("","expMuted");panel.raw_hint.hide();hero_layout.addWidget(panel.raw_hint)
     panel.observation=label("Press Start tracking to begin a session.","expMuted");hero_layout.addWidget(panel.observation)
     metrics=QHBoxLayout()
-    panel.gain,panel.elapsed,panel.eta=[number("—","expMetric") for _ in range(3)]
-    for title,widget in zip(("SESSION GAIN","TIME WATCHING","NEXT LEVEL"),(panel.gain,panel.elapsed,panel.eta)):
+    panel.elapsed,panel.eta=[number("—","expMetric") for _ in range(2)]
+    for title,widget in zip(("TIME WATCHING","NEXT LEVEL"),(panel.elapsed,panel.eta)):
         column=QVBoxLayout();column.setSpacing(5);column.addWidget(label(title,"expEyebrow"));column.addWidget(widget);metrics.addLayout(column,1)
     hero_layout.addLayout(metrics)
     layout.addWidget(hero)
     money=QFrame();money.setObjectName('expHero')
     money_layout=QVBoxLayout(money);money_layout.setContentsMargins(16,10,16,10);money_layout.setSpacing(7)
     money_layout.addWidget(label('MESOS', 'expEyebrow'))
-    metrics=QHBoxLayout()
-    panel.meso_gain,panel.meso_rate,panel.meso_hour=[number('—','expMetric') for _ in range(3)]
+    metrics=QHBoxLayout();metrics.setSpacing(12)
+    panel.meso_gain,panel.meso_rate,panel.meso_hour=[number('—','trackingFigure') for _ in range(3)]
     for title,widget in zip(('NET CHANGE','PER MIN','PER HOUR'),(panel.meso_gain,panel.meso_rate,panel.meso_hour)):
         column=QVBoxLayout();column.setSpacing(4);column.addWidget(label(title,'expEyebrow'));column.addWidget(widget);metrics.addLayout(column,1)
     money_layout.addLayout(metrics)
