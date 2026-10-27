@@ -13,14 +13,18 @@ def pixels(image):
     return np.frombuffer(bytes(image.constBits()), np.uint8).reshape(image.height(), image.bytesPerLine())[:, :image.width()*3].reshape(image.height(),image.width(),3)
 
 
-def bubbles(image):
+def bubbles(image,relaxed=False):
     """Connected runs of Classic's neutral bubble fill; no full-scene OCR.
 
     A one-level tolerance permits normal capture rounding. Exclude large UI
     panels and scenery by component size, fill ratio and subsequent text checks.
     """
     a = pixels(image)
-    mask = (a[:,:,0]>=237)&(a[:,:,0]<=239)&(a[:,:,1]==a[:,:,0])&(a[:,:,2]==a[:,:,0])
+    if relaxed:
+        high=a.max(2);low=a.min(2)
+        mask=(low>=224)&(high<=247)&(high-low<=3)
+    else:
+        mask = (a[:,:,0]>=237)&(a[:,:,0]<=239)&(a[:,:,1]==a[:,:,0])&(a[:,:,2]==a[:,:,0])
     parents, boxes, areas, previous = [], [], [], []
     def find(i):
         while parents[i]!=i:

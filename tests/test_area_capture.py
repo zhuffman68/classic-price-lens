@@ -5,7 +5,7 @@ import time
 import unittest
 from unittest.mock import patch
 
-from PySide6.QtCore import QCoreApplication, QEvent
+from PySide6.QtCore import QCoreApplication, QEvent, QRect
 from PySide6.QtGui import QColor, QImage, QPainter
 from PySide6.QtWidgets import QApplication
 
@@ -80,6 +80,55 @@ class AreaCaptureTests(unittest.TestCase):
             QCoreApplication.sendPostedEvents(None,QEvent.Type.DeferredDelete)
             self.app.processEvents()
 
+    def test_focus_colours_keep_game_location_without_reacquisition(self):
+        reader=PixelReader(ROOT);reader.live_source=True
+        def wait_for(predicate):
+            deadline=time.monotonic()+10
+            while not predicate():
+                self.assertLess(time.monotonic(),deadline)
+                self.app.processEvents();time.sleep(.005)
+        try:
+            wait_for(lambda:reader.process.state()==reader.process.ProcessState.Running)
+            reader.on_stream_frame(game_frame(),time.monotonic())
+            wait_for(lambda:reader.game_area is not None and not reader.pending)
+            area=QRect(reader.game_area);generation=reader.generation
+            frame=game_frame();painter=QPainter(frame)
+            painter.fillRect(120,90,960,24,QColor('#686868'));painter.end()
+            reader.on_stream_frame(frame,time.monotonic())
+            self.assertEqual(reader.game_area,area)
+            self.assertEqual(reader.generation,generation)
+            wait_for(lambda:not reader.pending)
+            self.assertEqual(reader.game_area,area)
+        finally:
+            reader.close();reader.deleteLater()
+            QCoreApplication.sendPostedEvents(None,QEvent.Type.DeferredDelete);self.app.processEvents()
+
+    def test_tooltip_hiding_first_rows_cannot_shrink_the_recovery_crop(self):
+        reader=PixelReader(ROOT);reader.live_source=True;readings=[];reader.reading.connect(readings.append)
+        def wait_for(predicate):
+            deadline=time.monotonic()+10
+            while not predicate():
+                self.assertLess(time.monotonic(),deadline,'Shop rows did not recover after tooltip')
+                self.app.processEvents();time.sleep(.005)
+        frame=game_frame(width=1200,height=800,desktop=(1600,1000));painter=QPainter(frame)
+        painter.drawImage(340,180,QImage(str(ROOT/'vendor/minerva/samples/player-shop/gems-and-ores.png')));painter.end()
+        try:
+            wait_for(lambda:reader.process.state()==reader.process.ProcessState.Running)
+            reader.on_stream_frame(frame,time.monotonic());wait_for(lambda:bool(readings) and not reader.pending)
+            self.assertEqual(len(readings[-1]['shop']['rows']),5)
+            original=QRect(reader.shop_context)
+            masked=frame.copy();painter=QPainter(masked);painter.fillRect(440,184,220,125,QColor('#eeeeee'));painter.end()
+            reader.pointer=(500,230);count=len(readings)
+            reader.on_stream_frame(masked,time.monotonic());wait_for(lambda:len(readings)>count and not reader.pending)
+            self.assertTrue(reader.shop_context.contains(original))
+            reader.pointer=(250,100);count=len(readings)
+            reader.on_stream_frame(frame,time.monotonic())
+            wait_for(lambda:len(readings)>count and bool(readings[-1].get('shop')) and len(readings[-1]['shop']['rows'])==5)
+            self.assertEqual(readings[-1]['shop']['rows'][0]['name'],'Garnet')
+        finally:
+            reader.close();reader.deleteLater()
+            QCoreApplication.sendPostedEvents(None,QEvent.Type.DeferredDelete);self.app.processEvents()
+
     def test_stationary_shop_skips_ocr_until_geometry_check_is_due(self):
         reader=PixelReader(ROOT)
         reader.live_source=True
@@ -109,7 +158,7 @@ class AreaCaptureTests(unittest.TestCase):
                 self.app.processEvents()
                 self.assertEqual(reader.pending_since,submitted,"Unchanged pixels should skip another OCR request")
             self.assertEqual(len(results),count)
-            reader.last_geometry_check=time.monotonic()-1
+            reader.last_locator_check=time.monotonic()-2
             reader.on_stream_frame(frame,time.monotonic())
             wait_for(lambda:len(results)>count)
             self.assertIsNotNone(reader.game_area)

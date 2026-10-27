@@ -16,6 +16,8 @@ This is a screen-only companion for **MapleStory Classic World**.
 
 Keep vendor Minerva at its pinned revision; read its own AGENTS.md before changing it. Do not include private `evidence/`, live screenshots, caches or database files in a package.
 
-Lupin keeps legacy internal application/package/settings/socket IDs for upgrade compatibility. Price Search is explicit manual demand, works without capture, and must share the existing scheduler, cache and limits. Typing or browsing suggestions must not issue price requests.
+Lupin keeps legacy internal application/settings/socket IDs for upgrade compatibility. Price Search is explicit manual demand, works without capture, and must share the existing scheduler, cache and limits. Typing or browsing suggestions must not issue price requests.
 
-EXP watching starts automatically from reliable, connected readings; percentage rates are the default, with raw/both settings. Keep header/display/tabs fixed between pages. Respect Reduce motion and stop the header movie while hidden. Provider identity proof may be extended only by a fresh, matching public index; hints never establish an unverified identity.
+EXP tracking starts only after the user presses Start tracking, always begins stopped on app launch, and disables its reader when stopped; percentage rates are the default, with raw/both settings. Keep header/display/tabs fixed between pages. Respect Reduce motion and stop the header movie while hidden. Provider identity proof may be extended only by a fresh, matching public index; hints never establish an unverified identity.
+
+Linux packages are named `lupin` and replace `classic-price-lens`. Preserve existing per-user data and the desktop/portal identity during migration. Prices includes manual search; Translation has its own tab. Shortcuts default to F10 prices, F11 EXP and F12 translation (F9 on Windows, where F12 is reserved); retain later user assignments. Shop labels stay in place and fade to 15 percent opacity only where they overlap a recognized native item-description tooltip.

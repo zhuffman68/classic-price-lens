@@ -25,7 +25,9 @@ from .search import PriceSearch
 from .motion import AnimatedTabs, MotionLabel, reveal
 from .branding import Brand
 from .shop_rows import ShopRows
+from .tooltip_geometry import description_bounds, still_present
 from .chat import ChatTranslation
+from .translation_ui import TranslationPanel
 from . import APP_NAME, LEGACY_APP_NAME
 
 COLORS = {"green": "#86ceac", "red": "#ed9394", "amber": "#e4bd7b", "blue": "#9ebde3", "muted": "#98a3b1"}
@@ -104,12 +106,14 @@ class LensWindow(QMainWindow):
         self.rows = []
         self.shop_rows = ShopRows()
         self.shop_open = False
+        self.shop_tooltip_rect = None
         self.quotes = {}
         self.errors = {}
         self.expanded_details = set()
         self.mode = "idle"
         self.snapshot_path = snapshot
         self.last_screen = 0
+        self.last_identified_at=0.0
         self.ocr_ms = None
         self.overlay = Overlay(root, self)
         self.screens = sorted(QApplication.screens(), key=lambda screen: (screen.geometry().x(), screen.geometry().y()))
@@ -125,7 +129,7 @@ class LensWindow(QMainWindow):
         self.pinned = self.settings.value("keep-on-top", False, type=bool)
         self.minimize_to_tray = self.settings.value("minimize-to-tray", True, type=bool)
         self.auto_game_area = self.settings.value("auto-game-area", True, type=bool)
-        self.exp_enabled = self.settings.value("exp-enabled", True, type=bool)
+        self.exp_enabled = False
         self.exp_overlay = self.settings.value("exp-overlay", True, type=bool)
         self.exp_display = self.settings.value("exp-display", "percent")
         if self.exp_display not in ("percent","raw","both"):self.exp_display = "percent"
@@ -140,19 +144,43 @@ class LensWindow(QMainWindow):
         self.hotkey_status = ""
         self.hotkey_dialog_open = False
         self.hotkeys = HotkeyManager(self)
-        self.hotkey_enabled = self.settings.value("hotkey-enabled", not self.hotkeys.portal, type=bool)
+        self.hotkey_enabled = self.settings.value("hotkey-enabled", True, type=bool)
         self.hotkeys.activated.connect(self.on_hotkey)
         self.hotkeys.changed.connect(self.on_hotkey_changed)
         self.hotkeys.status.connect(self.on_hotkey_status)
         self.chat_enabled=self.settings.value("korean-chat",False,type=bool)
         self.chat=ChatTranslation(self.root,self)
-        self.chat.changed.connect(lambda:self.draw_labels(time.time(),time.time()-self.last_screen>3))
+        self.chat.changed.connect(self.on_chat_changed)
         self.chat.status.connect(self.on_chat_status)
+        self.chat.retry_requested.connect(lambda:self.translate_chat(retry=True))
         self.chat_hotkeys=HotkeyManager(self)
         self.chat_hotkeys.action="translate-chat"
         self.chat_hotkeys.activated.connect(self.translate_chat)
-        self.chat_sequence=self.settings.value("chat-hotkey","Ctrl+Alt+Y")
-        self.chat_hotkeys.changed.connect(lambda value:self.chat_shortcut.setToolTip(value))
+        self.chat_sequence=self.settings.value("chat-hotkey","F9" if sys.platform=='win32' else "F12")
+        self.exp_sequence=self.settings.value("exp-hotkey","F11")
+        self.exp_hotkey_description=self.settings.value("exp-hotkey-description",self.exp_sequence)
+        self.exp_hotkeys=HotkeyManager(self)
+        self.exp_hotkeys.activated.connect(self.on_exp_hotkey)
+        self.exp_hotkeys.changed.connect(self.on_exp_hotkey_changed)
+        self.exp_hotkeys.status.connect(self.on_hotkey_status)
+        self.prices_enabled=True
+        self.pending_exp_start=False
+        self.pending_translation=False
+        if self.settings.value('shortcut-layout',0,type=int)<1:
+            self.hotkey_sequence='F10';self.chat_sequence='F9' if sys.platform=='win32' else 'F12';self.exp_sequence='F11'
+            self.hotkey_description=self.hotkey_sequence;self.hotkey_enabled=True
+            for key,value in [('hotkey-sequence',self.hotkey_sequence),('chat-hotkey',self.chat_sequence),('exp-hotkey',self.exp_sequence),('shortcut-layout',1),('hotkey-enabled',True)]:self.settings.setValue(key,value)
+        self.hotkeys.action='toggle-prices'
+        self.exp_hotkeys.action='toggle-exp'
+        self.chat_hotkeys.action='translate-text'
+        if self.hotkeys.portal:
+            self.hotkeys.actions={
+                'toggle-prices':{'key':self.hotkey_sequence,'description':'Pause or resume Lupin prices','activate':self.on_hotkey,'changed':self.on_hotkey_changed},
+                'toggle-exp':{'key':self.exp_sequence,'description':'Start, pause or resume EXP tracking','activate':self.on_exp_hotkey,'changed':self.on_exp_hotkey_changed},
+                'translate-text':{'key':self.chat_sequence,'description':'Translate visible Korean speech bubbles','activate':self.translate_chat,'changed':self.on_chat_hotkey_changed}}
+
+        self.chat_hotkey_description=self.chat_sequence
+        self.chat_hotkeys.changed.connect(self.on_chat_hotkey_changed)
         self.chat_hotkeys.status.connect(self.on_chat_status)
         self.hover_enabled = self.settings.value("tooltip-prices", True, type=bool)
         self.bulk_enabled = self.settings.value("full-market-cache", True, type=bool)
@@ -163,7 +191,7 @@ class LensWindow(QMainWindow):
         self.service.refresh_snapshot = self.bulk_enabled
         self.reader = PixelReader(root, self)
         self.reader.auto_enabled = self.auto_game_area
-        self.reader.tooltip_enabled = self.hover_enabled and self.labels_enabled
+        self.reader.tooltip_enabled = self.hover_enabled and self.labels_enabled and self.prices_enabled
         self.reader.experience_enabled = self.exp_enabled
         self.overlay.pointer.connect(self.on_pointer)
         self.reader.reading.connect(self.on_reading)
@@ -190,7 +218,7 @@ class LensWindow(QMainWindow):
         self.settings_button.clicked.connect(self.open_settings)
         heading.addWidget(self.settings_button)
         layout.addLayout(heading)
-        layout.addWidget(label("Market prices and EXP tracking for Classic World", "color: #a6b1bf; font-size: 11px", True))
+        layout.addWidget(label("Tools for MapleStory Classic World", "color: #a6b1bf; font-size: 11px", True))
 
         self.setup_frame = QFrame()
         self.setup_frame.setObjectName("setup")
@@ -201,15 +229,10 @@ class LensWindow(QMainWindow):
         capture_header = QHBoxLayout()
         capture_header.addWidget(self.status_badge,1)
         setup.addLayout(capture_header)
-        self.step_label = label("1 Choose a display   ›   2 Share it   ›   3 Open a shop", "color: #a6b1bf; font-size: 10px", True)
         self.setup_details = QWidget()
         setup_details = QVBoxLayout(self.setup_details)
         setup_details.setContentsMargins(0,4,0,0)
         setup_details.setSpacing(8)
-        setup_details.addWidget(self.step_label)
-        self.display_map = DisplayMap()
-        self.display_map.selected.connect(lambda index: self.monitor.setCurrentIndex(index + 1))
-        setup_details.addWidget(self.display_map)
         self.monitor = QComboBox()
         self.monitor.setAccessibleName("Display containing Classic World")
         self.monitor.addItem("Choose the display containing Classic World…", None)
@@ -231,7 +254,10 @@ class LensWindow(QMainWindow):
         self.cancel_setup.clicked.connect(self.cancel_capture_setup)
         self.cancel_setup.setVisible(False)
         actions.addWidget(self.cancel_setup)
-        capture_header.addLayout(actions)
+        self.shortcuts_button=QPushButton("Hotkeys…")
+        self.shortcuts_button.clicked.connect(self.configure_shortcuts)
+        actions.addWidget(self.shortcuts_button)
+        setup.addLayout(actions)
         self.capture_info = label("Choose a display to enable Start reading.", "color: #bbc4cf; font-size: 11px", True)
         setup_details.addWidget(self.capture_info)
         self.recovery_button = QPushButton()
@@ -239,6 +265,7 @@ class LensWindow(QMainWindow):
         self.recovery_button.clicked.connect(self.recover)
         self.recovery_button.setVisible(False)
         setup_details.addWidget(self.recovery_button, 0, Qt.AlignmentFlag.AlignLeft)
+        setup.addWidget(self.setup_details)
         layout.addWidget(self.setup_frame)
 
         self.success_frame = QFrame()
@@ -276,12 +303,16 @@ class LensWindow(QMainWindow):
                                         window_minutes=self.settings.value("exp-window", 5, type=int), parent=self)
         self.exp_panel.enabled_changed.connect(self.set_exp_enabled)
         self.exp_panel.changed.connect(self.on_experience_changed)
+        self.exp_panel.overlay_changed.connect(self.set_exp_overlay)
+        self.exp_panel.overlay_check.blockSignals(True)
+        self.exp_panel.overlay_check.setChecked(self.exp_overlay)
+        self.exp_panel.overlay_check.blockSignals(False)
+        self.exp_panel.shortcut_hint.setText(self.exp_hotkey_description+' · Start / pause / resume')
         self.tabs = AnimatedTabs()
         self.prices_page = QWidget()
         prices_layout = QVBoxLayout(self.prices_page)
         prices_layout.setContentsMargins(0,0,0,0)
         prices_layout.setSpacing(8)
-        prices_layout.addWidget(self.setup_details)
         prices_layout.addWidget(self.success_frame)
         prices_layout.addWidget(self.summary)
         prices_layout.addWidget(self.scroll,1)
@@ -293,15 +324,31 @@ class LensWindow(QMainWindow):
         self.search_panel.identity_selected.connect(self.on_search_identity)
         self.search_panel.source_requested.connect(self.open_source)
         self.search_panel.catalog_retry.connect(self.retry_catalog)
-        self.search_tab_index = self.tabs.addTab(self.search_panel, "Search")
+        self.prices_layout=prices_layout
+        prices_layout.insertWidget(0,self.search_panel)
+        self.onscreen_button=QPushButton("On-screen items")
+        self.onscreen_button.setCheckable(True);self.onscreen_button.toggled.connect(self.update_price_layout)
+        prices_layout.insertWidget(1,self.onscreen_button)
+        self.search_panel.active_changed.connect(self.update_price_layout)
+        self.search_tab_index=0
         self.exp_scroll = QScrollArea()
         self.exp_scroll.setWidgetResizable(True)
         self.exp_scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.exp_scroll.setWidget(self.exp_panel)
-        self.exp_tab_index = self.tabs.addTab(self.exp_scroll, "EXP")
+        self.exp_tab_index = self.tabs.addTab(self.exp_scroll, "EXP Tracking")
+        self.translation_panel=TranslationPanel(self.chat_enabled,self)
+        self.translation_panel.enabled_changed.connect(self.set_chat_enabled)
+        self.translation_panel.translate_requested.connect(self.translate_chat)
+        self.translation_panel.shortcut_requested.connect(self.configure_chat_hotkey)
+        self.translation_panel.clear_requested.connect(self.chat.clear)
+        self.chat_check=self.translation_panel.enabled_check
+        self.chat_shortcut=self.translation_panel.shortcut_button
+        self.chat_status_label=self.translation_panel.status_label
+        self.translation_panel.set_shortcut(self.chat_hotkey_description)
+        self.translation_tab_index=self.tabs.addTab(self.translation_panel,"Translation")
         self.tabs.currentChanged.connect(self.on_tab_changed)
         layout.addWidget(self.tabs, 1)
-        self.notice = label("Screen pixels only · equipment assumed unscrolled", "color: #939eac; font-size: 10px", True)
+        self.notice = label("");self.notice.hide()
         prices_layout.addWidget(self.notice)
         self.status_label = label("", "color: #939eac; font-size: 10px", True)
         self.status_label.setVisible(False)
@@ -405,23 +452,13 @@ class LensWindow(QMainWindow):
         self.tray_check.setChecked(self.minimize_to_tray)
         self.tray_check.toggled.connect(self.set_minimize_to_tray)
         layout.addWidget(self.tray_check)
-        self.hotkey_button = QPushButton("Keyboard shortcut…")
-        self.hotkey_button.clicked.connect(self.configure_hotkey)
+        self.hotkey_button = QPushButton("Hotkeys…")
+        self.hotkey_button.clicked.connect(self.configure_shortcuts)
         layout.addWidget(self.hotkey_button)
-        layout.addWidget(label("Korean chat", "font-size: 15px; font-weight: 650"))
-        self.chat_check=QCheckBox("Enable local Korean speech-bubble translation")
-        self.chat_check.setChecked(self.chat_enabled)
-        self.chat_check.toggled.connect(self.set_chat_enabled)
-        layout.addWidget(self.chat_check)
-        layout.addWidget(label("Press Ctrl+Alt+Y near a message, or choose a shortcut below. Reads a snapshot of the shared game area. Originals remain visible; translations are approximate. Cards disappear when their bubble changes. No continuous chat scanning or uploads.","color: #a6b1bf; font-size: 11px",True))
-        self.chat_shortcut=QPushButton("Translation shortcut…")
-        self.chat_shortcut.clicked.connect(self.configure_chat_hotkey)
-        layout.addWidget(self.chat_shortcut)
-        chat_scan=QPushButton("Translate visible Korean now")
-        chat_scan.clicked.connect(self.translate_chat)
-        layout.addWidget(chat_scan)
-        self.chat_status_label=label("Disabled · local models load only when enabled",wrap=True)
-        layout.addWidget(self.chat_status_label)
+        translation_settings=QPushButton("Translation settings…")
+        def open_translation():
+            self.settings_dialog.close();self.tabs.setCurrentIndex(self.translation_tab_index)
+        translation_settings.clicked.connect(open_translation);layout.addWidget(translation_settings)
         self.bulk_check = QCheckBox("Cache the full market on launch and hourly")
         self.bulk_check.setChecked(self.bulk_enabled)
         self.bulk_check.toggled.connect(self.set_bulk_enabled)
@@ -461,50 +498,117 @@ class LensWindow(QMainWindow):
         self.update_capture_controls()
         self.settings_dialog.exec()
 
+    def configure_shortcuts(self):
+        dialog=QDialog(self);dialog.setWindowTitle("Hotkeys")
+        layout=QVBoxLayout(dialog)
+        for title,description,action in (("Prices",self.hotkey_description or self.hotkey_sequence,self.configure_hotkey),
+                                          ("EXP tracking",self.exp_hotkey_description,self.configure_exp_hotkey),
+                                          ("Translate Korean text",self.chat_hotkey_description,self.configure_chat_hotkey)):
+            row=QHBoxLayout();row.addWidget(label(title+" · "+description),1)
+            button=QPushButton("Change…");button.clicked.connect(action);row.addWidget(button);layout.addLayout(row)
+        close=QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        close.rejected.connect(dialog.reject);layout.addWidget(close);dialog.exec()
+
+    def update_price_layout(self,*_):
+        if not hasattr(self,"onscreen_button"):return
+        active=bool(self.search_panel.query.text().strip())
+        self.onscreen_button.setVisible(active and bool(self.rows))
+        self.onscreen_button.setText(f"On-screen items · {len(self.rows)}"+ (" ▾" if self.onscreen_button.isChecked() else " ▸"))
+        self.scroll.setVisible(not active or self.onscreen_button.isChecked())
+        self.scroll.setMaximumHeight(220 if active else 16777215)
+        self.summary.setVisible(not active or self.onscreen_button.isChecked())
+        self.prices_layout.setStretch(self.prices_layout.indexOf(self.search_panel),1 if active else 0)
+        self.prices_layout.setStretch(self.prices_layout.indexOf(self.scroll),0 if active else 1)
+
+    def on_chat_changed(self):
+        if hasattr(self,"translation_panel"):self.translation_panel.set_cards(self.chat.cards)
+        self.draw_labels(time.time(),time.time()-self.last_screen>3)
+
+    def on_chat_hotkey_changed(self,description):
+        self.chat_hotkey_description=description
+        self.settings.setValue("chat-hotkey-description",description)
+        if hasattr(self,"translation_panel"):self.translation_panel.set_shortcut(description)
+
+    def on_exp_hotkey_changed(self,description):
+        self.exp_hotkey_description=description;self.settings.setValue('exp-hotkey-description',description)
+        if hasattr(self,'exp_panel'):self.exp_panel.shortcut_hint.setText(description+' · Start / pause / resume')
+
+    def toggle_prices(self):
+        if self.mode!='live':
+            self.prices_enabled=True;self.reader.prices_enabled=True;self.toggle_capture();return
+        self.prices_enabled=not self.prices_enabled
+        self.reader.prices_enabled=self.prices_enabled
+        self.reader.image_sequence+=1
+        if not self.prices_enabled:self.service.clear_visible()
+        self.render()
+
+    def on_exp_hotkey(self):
+        if self.hotkey_dialog_open:return
+        if self.mode!='live':
+            self.pending_exp_start=True
+            if self.screen_index is not None:self.toggle_capture()
+            else:
+                self.tabs.setCurrentIndex(self.exp_tab_index)
+                if hasattr(self,'tray'):self.tray.restore()
+            return
+        self.exp_panel.set_connected(time.time()-self.last_screen<3 and
+                                    (not self.reader.auto_active or self.reader.game_area is not None))
+        if not self.exp_panel.connected:
+            self.pending_exp_start=True;return
+        if self.exp_panel.requested:self.exp_panel.toggle_pause()
+        else:self.exp_panel.start()
+
+    def configure_exp_hotkey(self):self.configure_feature_hotkey('exp')
+
+    def check_shortcut_conflict(self,action,sequence):
+        for name,value in [('prices',self.hotkey_sequence),('exp',self.exp_sequence),('chat',self.chat_sequence)]:
+            if name!=action and sequence==value:raise ValueError('That key is assigned to '+name+'. Choose another key.')
+
+    def configure_feature_hotkey(self,kind):
+        if self.hotkeys.portal:
+            self.hotkey_enabled=True;self.settings.setValue('hotkey-enabled',True)
+            self.initialize_hotkey();self.hotkeys.configure();return
+        manager=self.exp_hotkeys if kind=='exp' else self.chat_hotkeys
+        sequence=self.exp_sequence if kind=='exp' else self.chat_sequence
+        dialog=QDialog(self);dialog.setWindowTitle('EXP shortcut' if kind=='exp' else 'Translation shortcut')
+        layout=QVBoxLayout(dialog);editor=QKeySequenceEdit(QKeySequence(sequence));layout.addWidget(editor)
+        details=label('Choose one key or a key combination.',wrap=True);layout.addWidget(details)
+        button=QPushButton('Set shortcut');layout.addWidget(button)
+        for entry in (self.hotkeys,self.exp_hotkeys,self.chat_hotkeys):entry.close()
+        self.hotkey_dialog_open=True
+        def save():
+            try:
+                text=parse_shortcut(editor.keySequence().toString(QKeySequence.SequenceFormat.PortableText)).text
+                self.check_shortcut_conflict(kind,text)
+                if manager.start(text):
+                    if kind=='exp':self.exp_sequence=text
+                    else:self.chat_sequence=text
+                    self.settings.setValue('exp-hotkey' if kind=='exp' else 'chat-hotkey',text)
+                    self.hotkey_enabled=True;self.settings.setValue('hotkey-enabled',True);dialog.accept()
+            except ValueError as error:details.setText(str(error))
+        button.clicked.connect(save);manager.status.connect(details.setText)
+        try:dialog.exec()
+        finally:
+            manager.status.disconnect(details.setText);self.hotkey_dialog_open=False;self.initialize_hotkey()
+
     def on_chat_status(self,message):
-        if hasattr(self,"chat_status_label"):self.chat_status_label.setText(message)
+        if hasattr(self,"translation_panel"):self.translation_panel.set_status(message)
+        if self.pending_translation and self.chat.ready:
+            self.pending_translation=False;QTimer.singleShot(0,self.translate_chat)
 
     def set_chat_enabled(self,enabled):
         self.chat_enabled=enabled;self.settings.setValue("korean-chat",enabled)
         self.chat.enable(enabled)
         if not enabled:
-            self.chat_hotkeys.close();self.on_chat_status("Disabled · local worker unloaded")
-        elif not self.chat_hotkeys.portal or self.settings.value("chat-hotkey-enabled",False,type=bool):
-            self.chat_hotkeys.start(self.chat_sequence)
+            self.on_chat_status("Disabled · local models unloaded")
 
-    def configure_chat_hotkey(self):
-        if self.chat_hotkeys.portal:
-            self.chat_check.setChecked(True)
-            self.settings.setValue("chat-hotkey-enabled",True)
-            self.chat_hotkeys.start(self.chat_sequence);self.chat_hotkeys.configure()
-            return
-        dialog=QDialog(self);dialog.setWindowTitle("Translation shortcut")
-        layout=QVBoxLayout(dialog)
-        layout.addWidget(label("Translate Korean speech bubbles from the shared game area.",wrap=True))
-        editor=QKeySequenceEdit(QKeySequence(self.chat_sequence));layout.addWidget(editor)
-        details=label("Default: Ctrl+Alt+Y",wrap=True);layout.addWidget(details)
-        apply=QPushButton("Set translation shortcut");layout.addWidget(apply)
-        self.chat_hotkeys.close()
-        def save():
-            try:
-                sequence=parse_shortcut(editor.keySequence().toString(QKeySequence.SequenceFormat.PortableText)).text
-                if self.hotkey_enabled and sequence==self.hotkey_sequence:
-                    raise ValueError("Choose a different combination from Pause / resume.")
-                if self.chat_hotkeys.start(sequence):
-                    self.chat_sequence=sequence;self.settings.setValue("chat-hotkey",sequence)
-                    self.chat_check.setChecked(True);dialog.accept()
-            except ValueError as error:details.setText(str(error))
-        apply.clicked.connect(save)
-        self.chat_hotkeys.status.connect(details.setText)
-        try:dialog.exec()
-        finally:
-            self.chat_hotkeys.status.disconnect(details.setText)
-            if self.chat_enabled:self.chat_hotkeys.start(self.chat_sequence)
-            else:self.chat_hotkeys.close()
 
-    def translate_chat(self):
+    def configure_chat_hotkey(self):self.configure_feature_hotkey("chat")
+
+    def translate_chat(self,*_,retry=False):
+        if self.hotkey_dialog_open:return
         if not self.chat_enabled:
-            self.on_chat_status("Enable local Korean translation in Settings first.");return
+            self.pending_translation=True;self.chat_check.setChecked(True);return
         image=self.reader.image
         if self.mode!="live" or image.isNull() or time.monotonic()-self.reader.last_frame>1:
             self.on_chat_status("Start reading and share a display first. Translation needs a fresh game image.");return
@@ -517,13 +621,12 @@ class LensWindow(QMainWindow):
         if abs(image.width()-geometry.width()*dpr)>2 or abs(image.height()-geometry.height()*dpr)>2:
             self.on_chat_status("Share the selected full display so translation cards can be positioned correctly.");return
         point=QCursor.pos()
-        cursor=((point.x()-geometry.x())*image.width()/geometry.width(),(point.y()-geometry.y())*image.height()/geometry.height())
-        self.chat.request(image,region,cursor)
+        cursor=self.reader.pointer or ((point.x()-geometry.x())*image.width()/geometry.width(),(point.y()-geometry.y())*image.height()/geometry.height())
+        self.chat.request(image,region,cursor,retry=retry)
 
     def set_exp_enabled(self, enabled):
         self.exp_enabled = enabled
         self.reader.experience_enabled = enabled
-        self.settings.setValue("exp-enabled", enabled)
         self.reader.last_experience = 0
         self.render()
 
@@ -534,8 +637,7 @@ class LensWindow(QMainWindow):
         self.update_price_status()
 
     def on_tab_changed(self, index):
-        self.summary.setVisible(index == 0)
-        self.notice.setVisible(index == 0)
+        self.update_price_layout()
         if hasattr(self,"search_panel"):
             panel = self.search_panel
             self.service.set_manual(panel.selected if index == self.search_tab_index else None,self.ttl,
@@ -560,6 +662,9 @@ class LensWindow(QMainWindow):
     def set_exp_overlay(self, enabled):
         self.exp_overlay = enabled
         self.settings.setValue("exp-overlay", enabled)
+        for widget in (self.exp_panel.overlay_check,getattr(self,'exp_overlay_check',None)):
+            if widget is not None:
+                widget.blockSignals(True);widget.setChecked(enabled);widget.blockSignals(False)
         self.render()
 
     def on_experience(self, result):
@@ -598,12 +703,15 @@ class LensWindow(QMainWindow):
         self.render()
 
     def on_area_changed(self):
+        if self.reader.game_area is not None:self.last_identified_at=time.monotonic()
         if hasattr(self, "exp_panel"):
             self.exp_panel.tracker.interrupt()
             self.exp_panel.set_connected(False)
         if self.reader.auto_active and self.reader.game_area is None:
             self.rows = []
             self.tooltip_result = None
+        elif self.pending_exp_start:
+            self.pending_exp_start=False;self.exp_panel.set_connected(True);self.exp_panel.start()
         self.render()
 
     def changeEvent(self, event):
@@ -699,10 +807,12 @@ class LensWindow(QMainWindow):
     def initialize_hotkey(self):
         if self.hotkey_enabled:
             self.hotkeys.start(self.hotkey_sequence)
+            if not self.hotkeys.portal:
+                self.exp_hotkeys.start(self.exp_sequence);self.chat_hotkeys.start(self.chat_sequence)
 
     def on_hotkey(self):
         if not self.hotkey_dialog_open:
-            self.toggle_capture()
+            self.toggle_prices()
 
     def on_hotkey_changed(self, description):
         self.hotkey_description = description
@@ -721,8 +831,8 @@ class LensWindow(QMainWindow):
         dialog.setWindowTitle("Keyboard shortcut")
         dialog.setMinimumWidth(360)
         layout = QVBoxLayout(dialog)
-        layout.addWidget(label("Toggle reading and price labels while any window is focused.", wrap=True))
-        enabled = QCheckBox("Enable global hotkey")
+        layout.addWidget(label("Toggle prices while any window is focused. EXP tracking keeps running.", wrap=True))
+        enabled = QCheckBox("Enable global hotkeys")
         enabled.setChecked(self.hotkey_enabled)
         layout.addWidget(enabled)
         details = label(self.hotkey_status or self.hotkey_description or "Default: " + self.hotkey_sequence, wrap=True)
@@ -730,13 +840,13 @@ class LensWindow(QMainWindow):
         self.hotkey_dialog_open = True
         if not self.hotkeys.portal:
             # Let the key editor receive a chord already registered by this app.
-            self.hotkeys.close()
+            self.hotkeys.close();self.exp_hotkeys.close();self.chat_hotkeys.close()
         def set_enabled(checked):
             self.hotkey_enabled = checked
             self.settings.setValue("hotkey-enabled", checked)
             if not checked:
-                self.hotkeys.close()
-                details.setText("Hotkey disabled")
+                self.hotkeys.close();self.exp_hotkeys.close();self.chat_hotkeys.close()
+                details.setText("Hotkeys disabled")
             elif self.hotkeys.portal:
                 self.initialize_hotkey()
         enabled.toggled.connect(set_enabled)
@@ -748,7 +858,7 @@ class LensWindow(QMainWindow):
                 self.hotkeys.configure()
             choose.clicked.connect(choose_shortcut)
             layout.addWidget(choose)
-            layout.addWidget(label("The desktop confirms and saves the key combination. On older desktops, assign classic-price-lens --toggle in system keyboard shortcuts.", wrap=True))
+            layout.addWidget(label("The desktop confirms and saves the key combination. On older desktops, assign lupin --prices in system keyboard shortcuts.", wrap=True))
         else:
             editor = QKeySequenceEdit(QKeySequence(self.hotkey_sequence))
             editor.setMaximumSequenceLength(1)
@@ -762,6 +872,7 @@ class LensWindow(QMainWindow):
                     return
                 enabled.setChecked(True)
                 set_enabled(True)
+                self.check_shortcut_conflict("prices",spec.text)
                 if self.hotkeys.start(spec.text):
                     self.hotkey_sequence = spec.text
                     self.settings.setValue("hotkey-sequence", spec.text)
@@ -826,10 +937,12 @@ class LensWindow(QMainWindow):
             if not self.image_matches_screen():
                 return ("Share the selected display", f"The shared image does not match {display}. Reconnect and choose that display, or share the full workspace, so labels can line up.", "amber", "Reconnect display")
             if self.reader.auto_active and self.reader.game_area is None:
+                if time.monotonic()-self.last_identified_at<.6:
+                    return ("Classic World identified", "Confirming game visibility…", "green", "")
                 return ("Looking for Classic World", "Keep the bottom status bar visible and uncover the game window. The reading area follows it automatically. If needed, choose an area in Settings → Limit the reading area.", "amber", "")
             if not self.labels_enabled:
                 return ("Reading · labels hidden", "Price labels are disabled. Item prices still appear in this panel; enable labels to show them beside the game.", "blue", "Show price labels")
-            return ("Classic World identified" if self.reader.auto_active else "Reading selected area", "Reading " + display + ". Open a player shop or hover an inventory item outside shops.", "green", "")
+            return ("Classic World identified" if self.reader.auto_active else "Reading selected area", "Game area located on " + display + ".", "green", "")
         return ("Ready to start", self.setup_notice or f"Click Start reading, then choose {display} in the OS sharing chooser. This app reads screen pixels only.", "blue", "")
 
     def show_status(self, message):
@@ -854,21 +967,13 @@ class LensWindow(QMainWindow):
     def update_capture_controls(self):
         exp_live = False
         self.setup_frame.setVisible(True)
-        self.setup_details.setVisible(self.mode != "live" or not self.first_price_seen or bool(self.capture_error))
+        self.setup_details.setVisible(self.mode != "live" or bool(self.capture_error))
         valid = self.screen_index is not None and 0 <= self.screen_index < len(self.screens)
         self.share.setEnabled(valid and not self.capture_starting)
         self.share.setText("Waiting for sharing…" if self.capture_starting else "Pause reading" if self.mode == "live" else "Resume reading" if self.mode == "paused" and self.session_available else "Start reading")
-        self.share.setToolTip("Choose a display first" if not valid else "Toggle reading and price labels")
+        self.share.setToolTip("Choose a display first" if not valid else "Toggle screen reading")
         self.monitor.setEnabled(not self.capture_starting)
         self.monitor.setVisible(True)
-        self.display_map.setEnabled(not self.capture_starting)
-        self.display_map.configure(self.screens, self.screen_index)
-        self.display_map.setVisible(len(self.screens) > 1 and self.mode == "idle")
-        self.step_label.setVisible(not exp_live and not self.first_price_seen and self.mode != "screenshot")
-        self.step_label.setText("Step 1 of 3 · Choose where Classic World is running" if not valid else
-                                "Step 2 of 3 · Approve screen sharing" if self.capture_starting else
-                                "Step 3 of 3 · Open a shop or hover an item" if self.mode == "live" else
-                                "Step 2 of 3 · Start reading to share this display")
         self.cancel_setup.setVisible(self.capture_starting)
         title, detail, tone, action = self.connection_state()
         self.status_badge.setText(title)
@@ -878,7 +983,7 @@ class LensWindow(QMainWindow):
         self.capture_info.setVisible(not exp_live or bool(self.capture_error))
         self.recovery_button.setVisible(bool(action))
         self.recovery_button.setText(action)
-        self.success_frame.setVisible(not exp_live and self.first_price_seen and self.labels_enabled and not self.setup_dismissed and self.mode == "live" and not self.capture_starting and not self.capture_error)
+        self.success_frame.setVisible(False)
         if hasattr(self, "crop_button"):
             self.crop_button.setEnabled(not self.reader.image.isNull() and self.mode in ("live", "screenshot") and not self.capture_starting)
         if hasattr(self, "kde_button"):
@@ -1086,6 +1191,11 @@ class LensWindow(QMainWindow):
         self.session_available = self.mode == "live"
         self.capture_error = ""
         self.last_screen = time.time() - max(0, time.monotonic() - self.reader.last_frame)
+        if self.shop_tooltip_rect is not None:
+            pixels=image.copy(self.reader.crop) if self.reader.crop else image
+            if not still_present(pixels,self.shop_tooltip_rect):
+                self.shop_tooltip_rect=None
+                self.draw_labels(time.time(),False)
         if self.chat.cards:self.draw_labels(time.time(),False)
         self.update_capture_controls()
         if was_starting:
@@ -1098,12 +1208,19 @@ class LensWindow(QMainWindow):
         shop = result.get("shop")
         image = getattr(self.reader,"submitted_image",self.reader.image)
         if self.reader.crop:image = image.copy(self.reader.crop)
-        rows = self.shop_rows.observe(shop,image)
-        self.shop_open = self.shop_rows.active
         tooltip = result.get("tooltip")
-        found = tooltip.get("found") if isinstance(tooltip, dict) else None
         shop_tooltip = (result.get("hover") or {}).get("tooltip")
-        shop_tooltip_active = bool(isinstance(shop_tooltip, dict) and shop_tooltip.get("found"))
+        native = (shop_tooltip or {}).get('found') or ((tooltip or {}).get('found') if shop or self.shop_open else None)
+        bounds=description_bounds(image,native.get('area')) if native else None
+        if bounds is not None and self.shop_tooltip_rect is not None:
+            if all(abs(a-b)<=3 for a,b in zip(bounds.getRect(),self.shop_tooltip_rect.getRect())):
+                bounds=self.shop_tooltip_rect
+        bounds_changed=bounds!=self.shop_tooltip_rect
+        self.shop_tooltip_rect=bounds
+        rows = self.shop_rows.observe(shop,image,tooltip=bounds)
+        self.shop_open = self.shop_rows.active
+        found = tooltip.get("found") if isinstance(tooltip, dict) else None
+        shop_tooltip_active = bool(self.shop_open and ((shop_tooltip or {}).get('found') or bounds is not None))
         read_pointer = result.get("pointerAtRead", self.reader.pointer)
         pointer = self.reader.pointer
         if pointer and self.reader.crop:
@@ -1128,7 +1245,7 @@ class LensWindow(QMainWindow):
                     found = {**found, "_pointer": list(read_pointer)}
             except (KeyError, TypeError, ValueError):
                 found = None
-        changed = rows != self.rows or found != self.tooltip_result or shop_tooltip_active != self.shop_tooltip_active
+        changed = bounds_changed or rows != self.rows or found != self.tooltip_result or shop_tooltip_active != self.shop_tooltip_active
         self.shop_tooltip_active = shop_tooltip_active
         self.tooltip_result = found
         self.rows = rows
@@ -1155,7 +1272,7 @@ class LensWindow(QMainWindow):
         self.render()
 
     def prices_active(self):
-        return bool(self.catalog and self.mode in ("live", "screenshot")
+        return bool(self.prices_enabled and self.catalog and self.mode in ("live", "screenshot")
                     and (self.mode != "live" or self.last_screen and time.time() - self.last_screen <= 8)
                     and (not self.reader.auto_active or self.reader.game_area is not None))
 
@@ -1263,11 +1380,13 @@ class LensWindow(QMainWindow):
         layout = QVBoxLayout(frame)
         layout.setContentsMargins(15, 15, 15, 15)
         layout.setSpacing(8)
-        if self.mode == "idle":
+        if not self.prices_enabled:
+            title,detail='Prices paused',f'Press {self.hotkey_description or self.hotkey_sequence} to resume prices.'
+        elif self.mode == "idle":
             title = "Let's find your first price" if not self.first_price_seen else "Ready when you are"
-            detail = "Choose a display above, then click Start reading. Screen sharing is only needed for the in-game overlay; Search works without it."
+            detail = "Choose a display above, then click Start reading. You can also search for an item above without screen sharing."
         elif self.mode == "paused":
-            title, detail = "Reading is paused", "Resume to show price labels again. Existing references remain cached."
+            title, detail = "Reading is paused", "Resume to show price labels again."
         elif self.capture_starting:
             title, detail = "Finish screen sharing", "Use the OS chooser to share the selected display or the full workspace. This panel will update when a screen arrives."
         elif self.catalog_error:
@@ -1338,7 +1457,7 @@ class LensWindow(QMainWindow):
                 quote = self.quote_for(item)
                 key = (index, item.game_id if item else row.get("name"), hovered)
                 data = dict(item=item, row=row, quote=quote, now=now, ttl=self.ttl,
-                                  paused=self.mode == "paused", old_capture=self.mode == "live" and screen_old,
+                                  paused=self.mode == "paused" or not self.prices_enabled, old_capture=self.mode == "live" and screen_old,
                                   lookup_error=bool(item and item.game_id in self.errors), hovered=hovered,
                                   lookup_state=self.service.state_for(item.game_id) if item else "",
                                   expanded=key in self.expanded_details,
@@ -1361,6 +1480,7 @@ class LensWindow(QMainWindow):
                     card.hide();card.deleteLater()
             self.cards_layout.addStretch()
             self.scroll.verticalScrollBar().setValue(position)
+        self.update_price_layout()
         self.draw_labels(now, screen_old)
 
     def draw_labels(self, now, screen_old):
@@ -1377,12 +1497,12 @@ class LensWindow(QMainWindow):
         screen_matches = (not image.isNull() and abs(image.width() - geometry.width() * dpr) <= 2
                           and abs(image.height() - geometry.height() * dpr) <= 2)
         game_visible = not self.reader.auto_active or self.reader.game_area is not None
-        if self.labels_enabled and self.mode == "live" and not screen_old and screen_matches and self.catalog and game_visible:
+        if self.prices_enabled and self.labels_enabled and self.mode == "live" and not screen_old and screen_matches and self.catalog and game_visible:
             sx, sy = geometry.width() / image.width(), geometry.height() / image.height()
             crop = self.reader.crop
             offset_x, offset_y = (crop.x(), crop.y()) if crop else (0, 0)
             for index, row in enumerate(self.rows):
-                if row.get("covered"):
+                if row.get("covered") and not row.get('reference_only'):
                     continue
                 area = row["area"]
                 item = self.catalog.resolve(row.get("name"), row.get("tier"))
@@ -1414,8 +1534,12 @@ class LensWindow(QMainWindow):
                                     "text": text, "color": COLORS[verdict.tone],
                                     "key": f"shop:{index}:{item.game_id if item else row.get('name')}",
                                     "animate_move": True,"kind":"shop",
+                                    "occlusion": ([round((self.shop_tooltip_rect.x()+offset_x)*sx),
+                                                   round((self.shop_tooltip_rect.y()+offset_y)*sy),
+                                                   round(self.shop_tooltip_rect.width()*sx),
+                                                   round(self.shop_tooltip_rect.height()*sy)] if self.shop_tooltip_rect is not None else None),
                                     "deal_delta":f"{verdict.delta:+.0f}%" if verdict.delta is not None else ""})
-        if self.labels_enabled and self.hover_enabled and not self.shop_open and self.tooltip_result and self.mode == "live" and not screen_old and screen_matches and self.catalog and game_visible:
+        if self.prices_enabled and self.labels_enabled and self.hover_enabled and not self.shop_open and self.tooltip_result and self.mode == "live" and not screen_old and screen_matches and self.catalog and game_visible:
             found = self.tooltip_result
             area = found["area"]
             name = found.get("name")
@@ -1468,7 +1592,7 @@ class LensWindow(QMainWindow):
                 bounds=[round(area.x()*sx),round(area.y()*sy),round(area.width()*sx),round(area.height()*sy)]
                 # Shop and EXP references paint above a manually requested chat card.
                 annotations=self.chat.annotations(image,sx,sy,bounds)+annotations
-        self.overlay.update(list(geometry.getRect()), annotations, hover_enabled=self.labels_enabled and self.mode == "live" and game_visible and screen_matches and not screen_old)
+        self.overlay.update(list(geometry.getRect()), annotations, hover_enabled=self.prices_enabled and self.labels_enabled and self.mode == "live" and game_visible and screen_matches and not screen_old)
         if (annotations and ready_price and not self.first_price_seen):
             self.first_price_seen = True
             self.settings.setValue("first-price-seen", True)
@@ -1532,6 +1656,7 @@ class LensWindow(QMainWindow):
         self.timer.stop()
         self.exp_panel.close_session()
         self.hotkeys.close()
+        self.exp_hotkeys.close()
         self.chat_hotkeys.close()
         self.chat.close()
         self.reader.close(keep_stream=self.keep_capture)

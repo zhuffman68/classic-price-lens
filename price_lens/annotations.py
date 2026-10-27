@@ -44,6 +44,8 @@ class AnnotationWindow(QWidget):
         self.price_font.setPixelSize(12)
         self.name_font = QFont("Noto Sans")
         self.name_font.setPixelSize(10)
+        self.translation_font=QFont(self.price_font);self.translation_font.setPixelSize(13)
+        self.original_font=QFont(self.name_font);self.original_font.setPixelSize(11)
         if self.korean_family is None:
             identity=QFontDatabase.addApplicationFont(str(Path(__file__).parent/"resources/fonts/Maplestory-Bold.ttf"))
             families=QFontDatabase.applicationFontFamilies(identity)
@@ -51,6 +53,8 @@ class AnnotationWindow(QWidget):
         if self.korean_family:
             self.name_font.setFamilies(["Noto Sans",self.korean_family])
             self.price_font.setFamilies(["Noto Sans",self.korean_family])
+            self.original_font.setFamilies(["Noto Sans",self.korean_family])
+            self.translation_font.setFamilies(["Noto Sans",self.korean_family])
         self.pointer_timer = QTimer(self)
         self.pointer_timer.setInterval(100)
         self.pointer_timer.timeout.connect(self.report_pointer)
@@ -93,6 +97,7 @@ class AnnotationWindow(QWidget):
                 old = previous.pop(key, None)
                 old_target = (old["x"], old["y"]) if old else None
                 old_text = old.get("text") if old else None
+                old_alpha_target=old.get('_target_alpha',1.0) if old else None
                 row = old if old is not None else supplied
                 row.update(supplied)
                 row.pop("_retired_rect", None)
@@ -100,15 +105,15 @@ class AnnotationWindow(QWidget):
                                              metrics.horizontalAdvance(row.get("extra",""))+20,
                                              metrics.horizontalAdvance(row.get("name",""))+20))
                 if row.get("kind")=="translation":
-                    row["_width"]=min(330,max(180,row.get("bounds",[0,0,330,0])[2]-8))
+                    row["_width"]=min(360,max(180,row.get("bounds",[0,0,360,0])[2]-8))
                     wrap=Qt.TextFlag.TextWordWrap|Qt.AlignmentFlag.AlignLeft
                     inner=QRect(0,0,row["_width"]-20,2000)
-                    row["_english_height"]=min(120,metrics.boundingRect(inner,int(wrap),row["text"]).height())
-                    row["_original_height"]=min(84,QFontMetrics(self.name_font).boundingRect(inner,int(wrap),row.get("original","")).height())
-                    row["_height"]=row["_english_height"]+row["_original_height"]+38
+                    row["_english_height"]=min(120,QFontMetrics(self.translation_font).boundingRect(inner,int(wrap),row["text"]).height())
+                    row["_original_height"]=min(84,QFontMetrics(self.original_font).boundingRect(inner,int(wrap),row.get("original","")).height())
+                    row["_height"]=row["_english_height"]+row["_original_height"]+46+(16 if row.get('note') else 0)
                 if self.reduce_motion:
                     self.dispose_row(row)
-                    row["_alpha"] = row["_text_alpha"] = 1.0
+                    row["_text_alpha"] = 1.0
                     row.pop("_draw_pos",None)
                 if row.get("follow_pointer") is not None:
                     point = row["follow_pointer"]
@@ -119,12 +124,17 @@ class AnnotationWindow(QWidget):
                     start = row.get("_draw_pos", QPointF(*old_target)) if old_target else target
                     self.animate_position(row, start, target)
                 self.rows.append(row)
+                box=self.label_rect(row,QCursor.pos())
+                occlusion=row.get('occlusion')
+                target=.15 if row.get('kind')=='shop' and occlusion and box and box.intersects(QRect(*occlusion)) else 1.0
+                row['_target_alpha']=target
+                if self.reduce_motion:row['_alpha']=target
                 if old_text is not None and old_text != row["text"] and not self.reduce_motion:
                     self.fade_text(row)
-                if old is None:
+                if old is None and not self.reduce_motion:
                     row["_alpha"] = 0.0
-                if row.get("_fading_out") or old is None:
-                    self.fade(row, 1.0)
+                if row.get("_fading_out") or old is None or old_alpha_target!=target:
+                    self.fade(row, target)
             current_hover = any(row.get("follow_pointer") is not None for row in self.rows)
             for key, row in previous.items():
                 box = previous_boxes.get(key)
@@ -326,10 +336,15 @@ class AnnotationWindow(QWidget):
                 painter.setFont(self.name_font);painter.setPen(QColor("#b5c9e4"))
                 name=painter.fontMetrics().elidedText(row.get("name","Korean chat"),Qt.TextElideMode.ElideRight,width-20)
                 painter.drawText(QRect(x+10,box.y()+5,width-20,15),Qt.AlignmentFlag.AlignVCenter,name)
-                painter.setFont(self.price_font);painter.setPen(QColor("#edf1f7"))
+                painter.setFont(self.translation_font);painter.setPen(QColor("#edf1f7"))
                 painter.drawText(QRect(x+10,box.y()+24,width-20,row["_english_height"]),int(Qt.TextFlag.TextWordWrap),row["text"])
-                painter.setFont(self.name_font);painter.setPen(QColor("#b2bccb"))
-                painter.drawText(QRect(x+10,box.y()+29+row["_english_height"],width-20,row["_original_height"]),int(Qt.TextFlag.TextWordWrap),row.get("original",""))
+                line_y=box.y()+29+row['_english_height']
+                painter.setPen(QColor('#3b4655'));painter.drawLine(x+10,line_y,x+width-10,line_y)
+                painter.setFont(self.original_font);painter.setPen(QColor("#b2bccb"))
+                painter.drawText(QRect(x+10,line_y+7,width-20,row["_original_height"]),int(Qt.TextFlag.TextWordWrap),row.get("original",""))
+                if row.get('note'):
+                    painter.setFont(self.name_font);painter.setPen(QColor('#e4bd7b'))
+                    painter.drawText(QRect(x+10,box.bottom()-18,width-20,14),Qt.AlignmentFlag.AlignVCenter,row['note'])
                 painter.restore();continue
             if row.get("kind")=="shop":
                 color=QColor(row.get("color","#98a3b1"))

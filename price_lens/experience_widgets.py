@@ -2,13 +2,17 @@
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QCheckBox,QComboBox,QDialog,QDialogButtonBox,QFrame,QHBoxLayout,
     QHeaderView,QLineEdit,QProgressBar,QPushButton,QTableWidget,QVBoxLayout)
-from .motion import MotionLabel,visibility
+from .motion import MotionLabel,RollingLabel
 
 
 def label(value="",name="",parent=None):
     widget=MotionLabel(value,parent)
     widget.setWordWrap(True);widget.setObjectName(name)
     return widget
+
+
+def number(value="",name=""):
+    widget=RollingLabel(value);widget.setObjectName(name);return widget
 
 
 def build(panel,layout,enabled,window_minutes=None):
@@ -38,7 +42,7 @@ def build(panel,layout,enabled,window_minutes=None):
     panel.character=label("Ready to watch your EXP","expIdentity")
     panel.map_label=label("Keep the game's EXP bar visible.","expMap")
     names.addWidget(panel.character);names.addWidget(panel.map_label);identity.addLayout(names,1)
-    panel.position=label("—","expPosition");panel.position.setAlignment(Qt.AlignmentFlag.AlignRight|Qt.AlignmentFlag.AlignVCenter)
+    panel.position=number("—","expPosition");panel.position.setAlignment(Qt.AlignmentFlag.AlignRight|Qt.AlignmentFlag.AlignVCenter)
     identity.addWidget(panel.position);layout.addLayout(identity)
     panel.bar=QProgressBar();panel.bar.setRange(0,10000);panel.bar.setTextVisible(False);panel.bar.setFixedHeight(6)
     layout.addWidget(panel.bar)
@@ -47,32 +51,35 @@ def build(panel,layout,enabled,window_minutes=None):
     rate_row=QHBoxLayout()
     panel.minute_caption=label("PROGRESS / MIN","expEyebrow")
     panel.hour_caption=label("PROGRESS / HOUR","expEyebrow")
-    panel.rate=label("—","expRate");panel.hour_rate=label("—","expRate")
+    panel.rate=number("—","expRate");panel.hour_rate=number("—","expRate")
     for caption,value in ((panel.minute_caption,panel.rate),(panel.hour_caption,panel.hour_rate)):
         column=QVBoxLayout();column.setSpacing(5);column.addWidget(caption);column.addWidget(value);rate_row.addLayout(column,1)
     hero_layout.addLayout(rate_row)
     panel.raw_hint=label("","expMuted");panel.raw_hint.hide();hero_layout.addWidget(panel.raw_hint)
-    panel.observation=label("Start reading to watch EXP automatically.","expMuted");hero_layout.addWidget(panel.observation)
+    panel.observation=label("Press Start tracking to begin a session.","expMuted");hero_layout.addWidget(panel.observation)
     metrics=QHBoxLayout()
-    panel.gain,panel.elapsed,panel.eta=[label("—","expMetric") for _ in range(3)]
+    panel.gain,panel.elapsed,panel.eta=[number("—","expMetric") for _ in range(3)]
     for title,widget in zip(("SESSION GAIN","TIME WATCHING","NEXT LEVEL"),(panel.gain,panel.elapsed,panel.eta)):
         column=QVBoxLayout();column.setSpacing(5);column.addWidget(label(title,"expEyebrow"));column.addWidget(widget);metrics.addLayout(column,1)
     hero_layout.addLayout(metrics)
-    panel.details_button=QPushButton("More details");panel.details_button.setObjectName("expLink");panel.details_button.setCheckable(True)
-    panel.details=label("","expMuted");panel.details.hide()
-    panel.details_button.toggled.connect(lambda shown:visibility(panel.details,shown))
-    panel.details_button.toggled.connect(lambda shown:panel.details_button.setText("Less detail" if shown else "More details"))
-    hero_layout.addWidget(panel.details_button,0,Qt.AlignmentFlag.AlignLeft);hero_layout.addWidget(panel.details)
     layout.addWidget(hero)
     controls=QHBoxLayout()
-    panel.pause_button=QPushButton("Pause watching");panel.pause_button.setObjectName("primary");panel.pause_button.clicked.connect(panel.toggle_pause)
-    panel.save_button=QPushButton("Reset session");panel.save_button.setToolTip("Save the current run to history and start a new session")
-    panel.save_button.clicked.connect(panel.save)
-    for button in (panel.pause_button,panel.save_button):button.setMinimumHeight(28);controls.addWidget(button,1)
+    panel.start_button=QPushButton("Start tracking");panel.start_button.setObjectName("primary")
+    panel.start_button.clicked.connect(panel.start)
+    panel.pause_button=QPushButton("Pause");panel.pause_button.clicked.connect(panel.toggle_pause)
+    panel.stop_button=QPushButton("Stop and save");panel.stop_button.clicked.connect(panel.stop)
+    panel.save_button=panel.stop_button
+    for button in (panel.start_button,panel.pause_button,panel.stop_button):
+        button.setMinimumHeight(32);controls.addWidget(button,1)
     layout.addLayout(controls)
+    panel.shortcut_hint=label("F11 · Start / pause / resume","expMuted");layout.addWidget(panel.shortcut_hint)
+    panel.overlay_check=QCheckBox("Show EXP overlay in the game")
+    panel.overlay_check.setChecked(True);panel.overlay_check.toggled.connect(panel.overlay_changed.emit)
+    layout.addWidget(panel.overlay_check)
     panel.state=label("","expMuted");layout.addWidget(panel.state)
     links=QHBoxLayout();panel.options_button=QPushButton("Session options…");panel.history_button=QPushButton("History")
-    for button in (panel.options_button,panel.history_button):button.setObjectName("expLink")
+    panel.options_button.setObjectName("expLink")
+    panel.history_button.setMinimumHeight(32)
     links.addWidget(panel.options_button);links.addStretch();links.addWidget(panel.history_button);layout.addLayout(links)
     panel.best=label("","expMuted");layout.addWidget(panel.best);layout.addStretch()
 
@@ -97,10 +104,6 @@ def build(panel,layout,enabled,window_minutes=None):
     options.addWidget(panel.notes)
     panel.map_input.textEdited.connect(panel.edit_context)
     panel.notes.textEdited.connect(panel.edit_context)
-    panel.enabled_check = QCheckBox("Enable EXP reading")
-    panel.enabled_check.setChecked(enabled)
-    panel.enabled_check.toggled.connect(panel.set_enabled)
-    options.addWidget(panel.enabled_check)
     buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
     buttons.rejected.connect(panel.options_dialog.reject)
     options.addWidget(buttons)

@@ -28,7 +28,7 @@ def main():
     log_path = evidence / "package-pacman.log"
     pacman = ["pacman", "--root", str(folder), "--dbpath", str(folder / "var/lib/pacman"),
               "--cachedir", str(folder / "cache"), "--logfile", str(folder / "pacman.log"),
-              "--config", str(config), "--noconfirm"]
+              "--config", str(config), "--noconfirm", "--ask", "4"]
     env = {**os.environ, "QT_QPA_PLATFORM": "offscreen", "PYTHONDONTWRITEBYTECODE": "1",
            "XDG_CACHE_HOME": str(folder / "user-cache")}
     with log_path.open("w") as log:
@@ -36,7 +36,7 @@ def main():
             subprocess.run(command, cwd=cwd or ROOT, env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
         # Only dependency checks are skipped: dependencies come from the host,
         # while all package/database writes are confined to this disposable root.
-        previous = ROOT / "dist/lupin-0.6.0-1-x86_64.pkg.tar.zst"
+        previous = ROOT / "dist/lupin-0.8.0-1-x86_64.pkg.tar.zst"
         if previous.exists():
             run([*pacman, "-Udd", str(previous)])
         run([*pacman, "-Udd", str(package)])
@@ -50,8 +50,8 @@ def main():
         run([str(launcher), "--self-test"])
         app = folder / "opt/classic-price-lens"
         run([str(app / "runtime/bin/python3"), "-B", "-m", "unittest", "discover", "-s", "tests", "-q"], app)
-        run([*pacman, "-Qkk", "classic-price-lens"])
-        run([*pacman, "-Rdd", "classic-price-lens"])
+        run([*pacman, "-Qkk", "lupin"])
+        run([*pacman, "-Rdd", "lupin"])
         assert not launcher.exists(), "Uninstall left launcher behind"
         assert not alias.is_symlink(), "Uninstall left Lupin alias behind"
         assert not app.exists(), "Uninstall left application files behind"

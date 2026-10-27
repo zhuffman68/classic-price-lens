@@ -1,11 +1,14 @@
 # Generated payload is built by scripts/package_linux.py; no runtime downloads.
-pkgname=classic-price-lens
-pkgver=0.4.2
+pkgname=lupin
+pkgver=0.9.0
 pkgrel=1
-pkgdesc='Lupin - screen-only Classic World market and EXP companion'
+pkgdesc='Tools for MapleStory Classic World'
 arch=('x86_64')
 url='https://github.com/zhuffman68/lupin'
 license=('custom')
+provides=('classic-price-lens')
+conflicts=('classic-price-lens')
+replaces=('classic-price-lens')
 depends=('glibc>=2.34' 'gcc-libs' 'libglvnd' 'dbus' 'fontconfig' 'freetype2'
          'libx11' 'libxext' 'libxfixes' 'libxrender' 'libxrandr' 'libdrm' 'libxi' 'libxcb' 'xcb-util'
          'xcb-util-cursor' 'xcb-util-image' 'xcb-util-keysyms' 'xcb-util-renderutil'

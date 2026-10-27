@@ -1,5 +1,15 @@
 # Verification — 2026-10-27
 
+## Lupin v0.9.0
+
+- The 236-test source suite passes (two platform-specific skips under offscreen Qt). Seven publisher tests pass separately. Coverage includes three independent shortcut actions in one real-marshalled portal session, manual EXP start/pause/resume/stop, stopping before the first EXP read, integrated search demand/layout, synchronized overlay settings and stable display/tab geometry. No test starts OS sharing or sends game input.
+- Actual reader IPC fixtures check focus-color changes without game-area loss, stable shop geometry, temporary occlusion and recovery of the full shop crop after a tooltip hides its first rows. The native description-panel fixture is clipped at the display edge; affected shop labels fade to 15 percent opacity and recover in place, while unaffected labels remain opaque. Covered references cannot borrow an unverified listing/deal from another page.
+- A synthetic captured-page benchmark runs real Rust OCR, Qt classification, five cached shop rows and enabled EXP sampling. Six first-page/move reads took 167.7, 191.2, 8.8, 15.1, 6.8 and 14.1 ms with zero price API calls. These exclude OS capture age and compositor presentation and do not establish live-game latency.
+- Real QWidget previews were inspected for Prices, selected manual search, EXP Tracking and Translation using isolated fixture settings/history. EXP previews use controlled clocks and synthetic gains. The approved revision-1 Lupin portrait is exported from its unchanged native tile to all PNG/ICO sizes. The desktop icon resource changes while the desktop/portal identity stays stable.
+- Linux package metadata is now `lupin`, explicitly replacing `classic-price-lens`; hidden install/settings/socket identities remain compatible. Shortcuts are F10 prices, F11 EXP and F12 translation, with F9 translation on Windows because its global-shortcut API reserves F12. Prices can pause independently of an active EXP session.
+- The v0.8.0 local Korean benchmark below remains the translation timing/resource baseline. v0.9.0 adds one fresh-frame no-result retry, clearer controls and formatting; it does not claim new live timing measurements. The original-game walk/attack delays remain unchanged.
+- Package transaction, artifact-checksum and release-upload acceptance are recorded in the release notes. Physical Windows game capture, mixed-DPI alignment and a sustained live training/level-up session remain separate playtests; Wine, fixture and process-level results do not prove those behaviors.
+
 ## Lupin v0.8.0
 
 - The 219-test suite covers exact Korean/English numeric units, refusing invented currency or scale, contextual game phrases, source-pixel/timeout retirement, wrapped cards within game bounds, independent shortcut actions, complete animation delays, attack completion and hidden/reduced-motion idling. A real isolated worker reads a synthetic Korean speech bubble and unloads cleanly. No test starts sharing or sends game input.

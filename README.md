@@ -1,67 +1,63 @@
-<p align="center"><img src="price_lens/resources/lupin.gif" width="73" height="64" alt="Animated Lupin"> <img src="price_lens/resources/wordmark.svg" width="122" height="45" alt="Lupin"></p>
+<p align="center"><img src="price_lens/resources/icon-64.png" width="48" height="48" alt="Lupin icon"> <img src="price_lens/resources/lupin.gif" width="73" height="64" alt="Animated Lupin"> <img src="price_lens/resources/wordmark.svg" width="122" height="45" alt="Lupin"></p>
 
 # Lupin
 
-Market prices beside your **MapleStory Classic World** items.
+**Tools for MapleStory Classic World.**
 
-Previously named Classic Price Lens. Updates keep your settings and saved history.
+- Market prices beside shop, inventory and equipment items, including cash/NX resale prices.
+- Item search with a shared local price cache and clear price ages.
+- EXP tracking with percentage per minute/hour, a session timer, level-up ETA and saved history.
+- Local Korean speech-bubble translation with the original text alongside English.
 
-Open a player shop or hover over an inventory/equipment item to see its name and a market-price reference. Prices include cash/NX items and are shown in **mesos**. Equipment is treated as unscrolled.
-
-Watch EXP gain, percentage per minute/hour, and estimated time to level automatically. Switch to raw EXP or both in Settings. Training history stays on your device and can be exported to CSV.
-
-The app reads shared screen pixels and draws separate, click-through labels. It never hooks into the game. Screenshots stay on your device.
+Lupin reads OS-shared screen pixels and draws separate, click-through labels. It never hooks into the game. Screenshots and translations stay on your device. Equipment prices assume unscrolled items.
 
 ## Download and install
 
-Get the latest files from **[itch.io](https://zhuffman68.itch.io/lupin)**. Repository collaborators can also use [GitHub Releases](https://github.com/zhuffman68/lupin/releases).
+Download from **[itch.io](https://zhuffman68.itch.io/lupin)**. Repository collaborators can also use [GitHub Releases](https://github.com/zhuffman68/lupin/releases).
 
-| System | Choose | Install |
+| System | Download | Install |
 | --- | --- | --- |
 | Windows 10/11 x64 | `Windows-x64-Setup.exe` | Run it, then open Lupin from Start. |
-| Arch / Manjaro | `.pkg.tar.zst` | `sudo pacman -U ./lupin-0.8.0-1-x86_64.pkg.tar.zst` |
-| Debian 12+ / Ubuntu 22.04+ | `.deb` | `sudo apt install ./lupin_0.8.0-1_amd64.deb` |
+| Arch / Manjaro | `.pkg.tar.zst` | `sudo pacman -U ./lupin-0.9.0-1-x86_64.pkg.tar.zst` |
+| Debian 12+ / Ubuntu 22.04+ | `.deb` | `sudo apt install ./lupin_0.9.0-1_amd64.deb` |
 
-You'll need a supported 64-bit desktop, about **1 GB free space**, and internet for price updates. Python, Qt and the reader are included. **Chrome, Edge or Chromium** enables the full-market cache; otherwise prices use individual lookups. Linux screen sharing needs PipeWire and a working desktop sharing portal; KDE and GNOME normally provide them.
+Extract itch.io downloads before running an installer or package command. A Windows portable ZIP is also available: extract it fully and open `run-windows.bat`.
 
-A portable Windows ZIP is also available: extract it fully and open `run-windows.bat`.
+Requirements: a supported 64-bit desktop, about **2 GB free space**, and internet for market updates. Python, Qt, OCR and local translation models are included. **Chrome, Edge or Chromium** enables the full-market cache; individual lookups work without it. Linux screen sharing needs PipeWire and a working desktop sharing portal, normally provided by KDE or GNOME.
+
+Updates preserve settings, prices and history. Linux packages are now named `lupin` and replace `classic-price-lens`.
 
 ## Get started
 
-1. Open Lupin and choose the display containing the game.
-2. Click **Start reading** and approve screen sharing if prompted.
-3. Keep the bottom status bar visible. The app finds the game area automatically and follows it when it moves. Moving or closing the minimap is fine.
-4. Open a shop or hover an item. Minimize the panel when you're ready.
+1. Choose the display containing Classic World and click **Start reading**. Approve OS screen sharing if prompted.
+2. Keep the game's bottom status bar visible. Lupin finds the game area automatically.
+3. Open a shop or hover an inventory/equipment item to see market references. Search by name at the top of **Prices**; search works without sharing.
+4. Open **EXP Tracking** and press **Start tracking** when ready. Tracking always begins stopped when the app opens.
+5. Open **Translation** to enable local Korean translation, then press its shortcut near a speech bubble.
 
-Use **Search** to look up an item by name, including NX items. Select a result to check its meso price. Search works without screen sharing and shares the overlay's saved price cache.
+| Shortcut | Action |
+| --- | --- |
+| **F10** | Toggle prices. EXP tracking continues. |
+| **F11** | Start EXP tracking, then pause/resume it. |
+| **F12** | Translate visible Korean speech bubbles. **F9 on Windows**, where F12 is reserved. |
 
-For **Korean speech bubbles**, enable local translation in Settings and choose its shortcut (default **Ctrl+Alt+Y**). Press it near a message to show English with the Korean original. Everything runs locally. Bubbles are read on demand; translations disappear when the original changes. Unknown shorthand may remain untranslated. [Translation details](docs/KOREAN_CHAT.md).
+Change shortcuts with **Hotkeys…** beside Pause/Resume or in Settings. Wayland uses the desktop's shortcut chooser. **Pause reading** pauses the shared reader; **Minimize** sends the panel to the tray by default. Right-click the tray icon for controls. **Close / Quit** ends sharing.
 
-**EXP watching starts automatically** once the character and EXP bar are readable. The page shows elapsed tracking time, gain, rates per minute/hour and time to next level. Rates settle after 30 seconds and use a recent smoothed average. **Pause watching** excludes a break; **Reset session** saves the current run and starts fresh. Map changes save history segments and watching continues. Optional labels and notes are in **Session options**.
+## Prices and EXP
 
-The EXP overlay sits inside the game's bottom-left corner. **Settings → EXP rate display** chooses percentage (default), raw EXP, or both with percentage first. Its overlay can be disabled separately. Paused or unreadable stretches are excluded; standing still counts. Progress carries across level-ups; inferred raw EXP totals can be approximate.
+Shop labels show names, market references, colored comparisons and price ages. Shop listings take precedence over inventory hover cards. Labels overlapping the game's item-description tooltip become faint and return when it closes.
 
-## Everyday controls
+The full market refreshes in the background on launch and hourly. Missing items use individual lookups, cached for 15 minutes by default. Saved data remains visible during refreshes. Price-check time, market-report age and snapshot age are separate; old or thin data receive no deal rating. References are guides, not guaranteed sales.
 
-- Shop labels show item names, market references, colored comparisons and price ages. While a player shop is open, its listing prices take precedence over inventory hover cards.
-- **Pause / Resume:** hides or restores labels. Resume reuses the sharing session.
-- **Minimize:** puts the panel in the system tray by default and sends a notification. Click the tray icon to restore it. Right-click for reading controls, labels, Settings and Quit. If no tray is available, the panel minimizes to the taskbar.
-- **Close or Quit:** ends reading and screen sharing.
-- **Settings:** change the hotkey, hover prices, price update interval, automatic area detection or tray behavior.
+EXP gain and elapsed time appear immediately. Rates and ETA need **30 seconds of valid tracked time** to estimate a pace, then use a recent five-minute average. Pause excludes breaks; Stop saves the run and turns off EXP reading. Map segments save automatically. **Show tracker in game** controls the bottom-left overlay and is also available in Settings. Percentage is the default; Settings offers raw EXP or both. History stays local and exports to CSV.
 
-The **full market refreshes in the background on launch, then hourly**. Saved prices appear immediately. A compatible browser runs briefly for each update, then exits. This can be disabled in Settings. Missing items use individual lookups, cached for **15 minutes** by default.
+## Help
 
-**Price checked**, snapshot age and **latest market report** show separate ages. Expand **Details** for the source and more information. Failed updates keep the saved copy, and stale or thin data receive no deal rating. References are a guide, not guaranteed sale prices.
+- **Game not found:** uncover the bottom status bar or use **Settings → Limit the reading area…**.
+- **Sharing stopped or labels misaligned:** use **Reconnect display** and share the selected display or full workspace.
+- **No market reports:** the name was recognized, but the source has no usable price.
+- **Translation found nothing:** keep the bubble visible and press its shortcut nearby. Moving bubbles and expanded chat history are not supported yet.
 
-Individual lookups can refresh shortly before expiry. During a refresh, the previous value stays visible with its age and progress. Cached shop items do not need separate price requests.
+Connection details and capture preview are in Settings. Windows installers are checked under Wine; live native Windows capture and mixed-DPI alignment still need a Windows playtest.
 
-## If something isn't working
-
-- **Can't find the game:** uncover the bottom status bar and the game window. For a cropped, covered or unusual layout, use **Settings → Limit the reading area…** to select it yourself. Multiple visible game windows also need a manual area.
-- **Sharing stopped or labels don't line up:** use **Reconnect display** and share the selected display or full workspace.
-- **No market reports:** the item name was recognised, but the source has no price for it.
-- **Need more help:** open **Settings → Connection details / capture preview…**.
-
-Upgrades keep settings, cached prices and EXP history. **Reduce motion** pauses the header animation and removes transitions. Windows installation is checked under Wine; live native Windows capture and mixed-DPI alignment still need a Windows playtest.
-
-[Windows help](README-WINDOWS.md) · [Architecture](ARCHITECTURE.md) · [Technical details and source builds](docs/TECHNICAL.md) · [Building installers](packaging/README.md) · [Validation](VERIFICATION.md) · [Credits and licenses](THIRD_PARTY.md)
+[Windows help](README-WINDOWS.md) · [Translation](docs/KOREAN_CHAT.md) · [Architecture](ARCHITECTURE.md) · [Technical details](docs/TECHNICAL.md) · [Building installers](packaging/README.md) · [Validation](VERIFICATION.md) · [Credits](THIRD_PARTY.md)

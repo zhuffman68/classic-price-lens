@@ -138,7 +138,20 @@ impl Locator {
             };
             let ui_scale = (right - left) as f32 / 798.0;
             let bottom = ((lv.y as f32 + 38.0 * ui_scale).round() as u32).min(image.height());
-            let mut area = caption_bounds(image, left, right, bottom, ui_scale);
+            let mut area = previous
+                .as_ref()
+                .and_then(|last| {
+                    let r = last.area;
+                    if r.y > 0
+                        && bottom.abs_diff(r.y + r.height) <= 3
+                        && caption_still_present(image, r)
+                    {
+                        Some(r)
+                    } else {
+                        None
+                    }
+                })
+                .or_else(|| caption_bounds(image, left, right, bottom, ui_scale));
             // A borderless full-display view can be bootstrapped from the HUD at
             // the display edges. A movable minimap never sets windowed bounds.
             if area.is_none()
@@ -194,15 +207,13 @@ impl Locator {
             let Some(area) = area else {
                 continue;
             };
-            let guard = if area.y > 0 || area.x > 0 || area.width < image.width() {
-                Rect {
-                    x: area.x + area.width / 4,
-                    y: area.y + 1,
-                    width: 8,
-                    height: 1,
-                }
-            } else {
-                lv
+            // Focus changes recolour the OS caption. Only static game HUD pixels
+            // guard the current coordinates between locator reads.
+            let guard = Rect {
+                x: lv.x,
+                y: lv.y + lv.height.saturating_sub(3),
+                width: lv.width,
+                height: 3,
             };
             if !found
                 .iter()
@@ -220,6 +231,30 @@ impl Locator {
         }
         self.last.clone()
     }
+}
+
+fn caption_still_present(image: &RgbaImage, r: Rect) -> bool {
+    if r.x + r.width > image.width() || r.y + 1 >= image.height() {
+        return false;
+    }
+    let sample = image.get_pixel(r.x + r.width / 4, r.y + 1).0;
+    for x in [
+        r.x.checked_sub(1),
+        (r.x + r.width < image.width()).then_some(r.x + r.width),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        let outside = image.get_pixel(x, r.y + 1).0;
+        if (0..3).all(|c| outside[c].abs_diff(sample[c]) < 12) {
+            return false;
+        }
+    }
+    // Compare the caption with itself, allowing active/inactive colours.
+    (1..8).all(|i| {
+        let p = image.get_pixel(r.x + r.width * i / 9, r.y + 1).0;
+        (0..3).all(|c| p[c].abs_diff(sample[c]) < 12)
+    })
 }
 
 fn caption_bounds(

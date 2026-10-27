@@ -1,5 +1,5 @@
 #ifndef AppVersion
-  #define AppVersion "0.7.0"
+  #define AppVersion "0.9.0"
 #endif
 #ifndef StageDir
   #define StageDir "..\dist\Lupin-Windows-x64"
@@ -8,6 +8,8 @@
 [Setup]
 AppId={{1E77CC5D-AE19-4808-AD70-E009B578BA74}
 AppName=Lupin
+AppComments=Tools for MapleStory Classic World
+ChangesAssociations=yes
 AppVersion={#AppVersion}
 AppPublisher=zhuffman68
 AppPublisherURL=https://github.com/zhuffman68/lupin
@@ -24,7 +26,7 @@ MinVersion=10.0.17763
 OutputDir=..\dist
 OutputBaseFilename=Lupin-{#AppVersion}-Windows-x64-Setup
 SetupIconFile=icon.ico
-UninstallDisplayIcon={app}\classic-price-lens.ico
+UninstallDisplayIcon={app}\lupin.ico
 UninstallDisplayName=Lupin
 Compression=lzma2/fast
 SolidCompression=yes
@@ -41,10 +43,11 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 Source: "{#StageDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "__pycache__\*,*.pyc,*.sqlite*,build-manifest.json"
 
 [Icons]
-Name: "{group}\Lupin"; Filename: "{app}\runtime\pythonw.exe"; Parameters: "-B -m price_lens"; WorkingDir: "{app}"; IconFilename: "{app}\classic-price-lens.ico"; AppUserModelID: "io.github.zhuffman68.ClassicPriceLens"
-Name: "{autodesktop}\Lupin"; Filename: "{app}\runtime\pythonw.exe"; Parameters: "-B -m price_lens"; WorkingDir: "{app}"; IconFilename: "{app}\classic-price-lens.ico"; Tasks: desktopicon; AppUserModelID: "io.github.zhuffman68.ClassicPriceLens"
+Name: "{group}\Lupin"; Filename: "{app}\runtime\pythonw.exe"; Parameters: "-B -m price_lens"; WorkingDir: "{app}"; IconFilename: "{app}\lupin.ico"; AppUserModelID: "io.github.zhuffman68.ClassicPriceLens"
+Name: "{autodesktop}\Lupin"; Filename: "{app}\runtime\pythonw.exe"; Parameters: "-B -m price_lens"; WorkingDir: "{app}"; IconFilename: "{app}\lupin.ico"; Tasks: desktopicon; AppUserModelID: "io.github.zhuffman68.ClassicPriceLens"
 
 [InstallDelete]
+Type: files; Name: "{app}\classic-price-lens.ico"
 Type: files; Name: "{userprograms}\Classic Price Lens\Classic Price Lens.lnk"
 Type: dirifempty; Name: "{userprograms}\Classic Price Lens"
 Type: files; Name: "{autodesktop}\Classic Price Lens.lnk"

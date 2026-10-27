@@ -13,6 +13,7 @@ from .experience import ExperienceTracker, SessionHistory, duration_text
 class ExperiencePanel(QWidget):
     changed = Signal()
     enabled_changed = Signal(bool)
+    overlay_changed = Signal(bool)
 
     def __init__(self, history_path, *, enabled=True, window_minutes=5, parent=None):
         super().__init__(parent)
@@ -24,6 +25,8 @@ class ExperiencePanel(QWidget):
         except (OSError, sqlite3.Error) as error:
             self.storage_error = "Session storage unavailable: " + str(error)
         self.connected = False
+        self.requested = False
+        self.paused_window = None
         self.last_character = None
         self.overlay_enabled = True
         self.display_mode = "percent"
@@ -38,7 +41,7 @@ class ExperiencePanel(QWidget):
 
     @property
     def enabled(self):
-        return self.enabled_check.isChecked()
+        return self.requested
 
     def set_display(self, mode):
         self.display_mode = mode if mode in ("percent","raw","both") else "percent"
@@ -61,11 +64,7 @@ class ExperiencePanel(QWidget):
         self.changed.emit()
 
     def set_enabled(self, enabled):
-        self.tracker.interrupt()
-        if self.tracker.run:
-            self.tracker.pause(self.user_paused or not enabled)
-        self.enabled_changed.emit(enabled)
-        self.refresh()
+        self.start() if enabled else self.stop()
 
     def set_connected(self, connected):
         if self.connected and not connected:
@@ -94,19 +93,34 @@ class ExperiencePanel(QWidget):
             self.watch_approximate = False
             self.watch_epoch = time.time()
         if accepted and self.connected and not self.tracker.run and self.tracker.current.character:
-            self.start()
+            self.begin_run()
         self.refresh()
         self.changed.emit()
 
     def start(self):
-        if self.connected and self.enabled and self.tracker.fresh(time.monotonic()):
-            self.tracker.start(self.map_input.text().strip(), self.notes.text().strip())
+        if not self.connected:return
+        if not self.requested:
+            self.requested=True;self.user_paused=False;self.paused_window=None
+            self.watch_totals={"seconds":0.0,"progress":0.0,"exp":0.0}
+            self.watch_epoch=time.time();self.watch_approximate=False
+            self.tracker.interrupt();self.enabled_changed.emit(True)
+        if self.tracker.fresh(time.monotonic()):self.begin_run()
+        self.refresh();self.changed.emit()
+
+    def begin_run(self):
+        if self.requested and self.connected and self.tracker.fresh(time.monotonic()):
+            self.tracker.start(self.map_input.text().strip(),self.notes.text().strip())
             if self.user_paused:self.tracker.pause(True)
-        self.refresh()
-        self.changed.emit()
+
+    def stop(self):
+        self.tracker.finish("Stopped");self.persist_completed()
+        self.requested=False;self.user_paused=False;self.paused_window=None
+        self.enabled_changed.emit(False);self.refresh();self.changed.emit()
 
     def toggle_pause(self):
+        if not self.requested or not self.tracker.run:return
         self.user_paused = not self.user_paused
+        self.paused_window=self.tracker.window(300).copy() if self.user_paused else None
         self.tracker.pause(self.user_paused)
         self.refresh()
         self.changed.emit()
@@ -152,14 +166,18 @@ class ExperiencePanel(QWidget):
             self.bar.setValue(reading.percent)
             self.bar.setFormat(f"{reading.exp:,} EXP · {reading.percent/100:.2f}%" + (" · last reading" if not fresh else ""))
         self.pause_button.setEnabled(run is not None and self.enabled)
-        self.pause_button.setText("Resume watching" if self.user_paused else "Pause watching")
-        self.save_button.setEnabled(run is not None)
+        self.pause_button.setText("Resume" if self.user_paused else "Pause")
+        self.start_button.setVisible(not self.requested)
+        self.start_button.setEnabled(self.connected)
+        self.pause_button.setVisible(self.requested)
+        self.stop_button.setVisible(self.requested)
+        self.stop_button.setEnabled(self.requested)
         self.map_label.setText(run.map_name if run else self.map_input.text().strip() or tracker.map_name or "Map detected from the minimap · or add a label in Session options")
         self.minute_caption.setText("EXP / MIN" if self.display_mode=="raw" else "PROGRESS / MIN")
         self.hour_caption.setText("EXP / HOUR" if self.display_mode=="raw" else "PROGRESS / HOUR")
         totals = self.totals()
         if run:
-            window = tracker.window(300)
+            window = self.paused_window if self.user_paused and self.paused_window else tracker.window(300)
             rate,hour = window["rate"],window["exp_hour"]
             prefix = "≈" if run.approximate_exp else ""
             if self.display_mode=="raw":
@@ -170,35 +188,32 @@ class ExperiencePanel(QWidget):
                 self.hour_rate.setText(f"{rate*3600:+.1f}%" if rate is not None else "—")
             self.raw_hint.setText(f"{prefix}{hour/60:,.0f} EXP/min · {prefix}{hour:,.0f} EXP/hour" if hour is not None else "Raw EXP rates appear with the first stable estimate.")
             self.raw_hint.setVisible(self.display_mode=="both")
-            self.observation.setText(f"Smoothed over {duration_text(window['seconds'])} of recent training" if rate is not None else f"Measuring · {round(window['seconds'])} of 30 seconds")
+            self.observation.setText(f"Smoothed over {duration_text(window['seconds'])} of recent training" if rate is not None else f"Tracking · estimating your pace · {round(window['seconds'])}/30 seconds")
             approximate = self.watch_approximate or run.approximate_exp or any(r.approximate_exp for r in tracker.completed if r.started>=self.watch_epoch)
             total_prefix = "≈" if approximate else ""
             self.gain.setText(f"{total_prefix}{totals['exp']:+,.0f}" if self.display_mode=="raw" else f"{totals['progress']:+.2f}%")
             self.elapsed.setText(duration_text(totals["seconds"]))
             self.eta.setText(duration_text(window["eta"]) if rate is not None and rate>0 else "—")
-            self.details.setText(f"Session: {totals['progress']:+.2f}% level progress · {total_prefix}{totals['exp']:,.0f} EXP · {duration_text(totals['seconds'])}\n"+
-                                 (f"Recent raw pace: {prefix}{hour/60:,.0f} EXP/min · {prefix}{hour:,.0f} EXP/hour\n" if hour is not None else "")+
-                                 "Rates use readable, unpaused time; standing still counts. Missing stretches are excluded. Map changes save a history segment and watching continues."+
-                                 (f"\nEXP lost: {run.lost:.2f}%" if run.lost else "")+(f" · {run.gaps} unreadable/paused gap(s)" if run.gaps else ""))
         else:
             self.rate.setText("—");self.hour_rate.setText("—");self.raw_hint.hide()
-            self.observation.setText("Watching begins automatically with a readable EXP bar.")
+            self.observation.setText("Press Start tracking to begin a session." if not self.requested else "Waiting for a readable EXP bar…")
             self.gain.setText("—");self.elapsed.setText("0m 00s");self.eta.setText("—")
-            self.details.setText("Your last 500 history segments stay on this device. Percentage progress carries across level-ups; inferred raw EXP totals can be approximate.")
-        state = ("EXP watching is off." if not self.enabled else "Start screen reading to watch EXP automatically." if not self.connected else
-                 "Watching paused." if self.user_paused else "EXP bar is hidden or unreadable · timer held." if reading and not fresh else
-                 "Watching automatically · standing still counts toward your rate." if run else tracker.message)
+        state=("Ready · tracking has not started." if not self.requested and self.connected else
+               "Start screen reading above, then press Start tracking." if not self.connected else
+               "Paused · elapsed time and gains are held." if self.user_paused else
+               "EXP bar is hidden or unreadable · timer held." if reading and not fresh else
+               "Tracking · standing still counts toward your rate." if run else "Waiting for a readable EXP bar…")
         self.state.setText(self.storage_error or state)
 
     def overlay_row(self):
         tracker = self.tracker
         run = tracker.run
-        if not run or not tracker.fresh(time.monotonic()):return None
-        window = tracker.window(300)
+        if not self.requested or not run or not tracker.fresh(time.monotonic()):return None
+        window = self.paused_window if self.user_paused and self.paused_window else tracker.window(300)
         rate,hour = window["rate"],window["exp_hour"]
         eta = window["eta"]
-        title = "EXP watching paused" if self.user_paused else f"Lv. {tracker.current.level+1} in ≈ {duration_text(eta)}" if eta is not None else "Measuring level-up pace…"
-        percentage = f"{rate*60:+.2f}%/min · {rate*3600:+.1f}%/hour" if rate is not None else "Collecting 30 seconds of EXP readings"
+        title = "EXP tracking paused" if self.user_paused else f"Lv. {tracker.current.level+1} in ≈ {duration_text(eta)}" if eta is not None else "EXP tracking · estimating pace…"
+        percentage = f"{rate*60:+.2f}%/min · {rate*3600:+.1f}%/hour" if rate is not None else f"Estimating pace · {round(window['seconds'])}/30 seconds"
         prefix = "≈" if run.approximate_exp else ""
         raw = f"{prefix}{hour/60:,.0f} EXP/min · {prefix}{hour:,.0f} EXP/hour" if hour is not None else ""
         text = f"{duration_text(self.totals()['seconds'])} tracked" if self.user_paused else raw if self.display_mode=="raw" and raw else percentage

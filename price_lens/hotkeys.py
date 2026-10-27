@@ -8,7 +8,7 @@ import itertools
 from PySide6.QtCore import QAbstractNativeEventFilter, QObject, QSocketNotifier, Qt, Signal
 from PySide6.QtGui import QGuiApplication, QKeySequence
 
-DEFAULT_HOTKEY = "Ctrl+Alt+P"
+DEFAULT_HOTKEY = "F10"
 
 
 @dataclass(frozen=True)
@@ -27,7 +27,7 @@ def parse_shortcut(text):
     if key in (0, Qt.Key.Key_unknown.value, Qt.Key.Key_Control.value, Qt.Key.Key_Shift.value,
                Qt.Key.Key_Alt.value, Qt.Key.Key_Meta.value):
         raise ValueError("Include a key as well as any modifiers.")
-    if key == Qt.Key.Key_F12.value:
+    if key == Qt.Key.Key_F12.value and sys.platform=="win32":
         raise ValueError("F12 is reserved on Windows. Choose another key.")
     if not modifiers and not (Qt.Key.Key_F1.value <= key <= Qt.Key.Key_F35.value
                               or key in (Qt.Key.Key_Pause.value, Qt.Key.Key_ScrollLock.value)):
@@ -223,6 +223,7 @@ class HotkeyManager(QObject):
         self.backend = None
         self.text = None
         self.action = "toggle-reading"
+        self.actions=None
 
     def start(self, text=DEFAULT_HOTKEY):
         try:
@@ -233,7 +234,7 @@ class HotkeyManager(QObject):
                     self.backend = WindowsHotkey(self.activated.emit)
                 elif self.portal:
                     from .portal_hotkey import PortalHotkey
-                    self.backend = PortalHotkey(self.activated.emit, self.changed.emit, self.status.emit, action=self.action)
+                    self.backend = PortalHotkey(self.activated.emit, self.changed.emit, self.status.emit, action=self.action,actions=self.actions)
                 elif sys.platform == "linux":
                     self.backend = X11Hotkey(self.activated.emit)
                 else:

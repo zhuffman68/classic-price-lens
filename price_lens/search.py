@@ -7,10 +7,11 @@ from PySide6.QtWidgets import (QFrame,QHBoxLayout,QLabel,QLineEdit,QListWidget,
 
 from .domain import key
 from .ui_components import price_card, text_label
-from .motion import reveal, visibility
+from .motion import reveal, visibility, fade_away
 
 
 class PriceSearch(QWidget):
+    active_changed=Signal()
     item_selected = Signal(object)
     identity_selected = Signal(object, object)
     source_requested = Signal(str)
@@ -33,7 +34,6 @@ class PriceSearch(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0,12,0,0)
         layout.setSpacing(12)
-        layout.addWidget(text_label("Find a market price", "font-size: 18px; font-weight: 600"))
         self.query = QLineEdit()
         self.query.setPlaceholderText("Search an item or scroll…")
         self.query.setAccessibleName("Search Classic World items")
@@ -68,6 +68,7 @@ class PriceSearch(QWidget):
         self.detail_layout.setContentsMargins(0,0,0,0)
         self.detail_scroll.setWidget(self.detail)
         layout.addWidget(self.detail_scroll,1)
+        self.bottom_spacer=layout.count();layout.addStretch(1)
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
         self.timer.setInterval(180)
@@ -91,10 +92,14 @@ class PriceSearch(QWidget):
     def schedule_search(self):
         # Stop demand for the previous result immediately. Typing searches the
         # local catalog only; no suggestions trigger remote price requests.
+        if not self.query.text().strip():
+            fade_away(self.results)
+            if getattr(self,"price_view",None):fade_away(self.price_view)
         self.clear_selection()
         self.results.setEnabled(False)
         self.matches_button.hide()
         self.timer.start()
+        self.active_changed.emit()
 
     def clear_selection(self):
         if self.selected is not None or self.pending_identity is not None:
@@ -107,6 +112,7 @@ class PriceSearch(QWidget):
 
     def find_items(self):
         query = key(self.query.text())
+        if not query:fade_away(self.results)
         self.results.blockSignals(True)
         self.results.clear()
         found = []
@@ -203,6 +209,8 @@ class PriceSearch(QWidget):
         self.render()
 
     def render(self):
+        self.detail_scroll.setVisible(bool(self.selected or self.pending_identity))
+        self.layout().setStretch(self.bottom_spacer,0 if self.selected or self.pending_identity else 1)
         state = (self.selected,self.pending_identity,self.quote,self.error,self.lookup_state,self.expanded,self.ttl,int(time.time()//5))
         if state == self.card_key:return
         self.card_key = state

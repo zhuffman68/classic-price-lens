@@ -1,4 +1,4 @@
-# Application icon
+# Previous application icon (through v0.8.0)
 
 The approved icon keeps the original v3 orange maple leaf and magnifier artwork, with a revised silver rim, charcoal keyline and stepped corners. Its frame was checked against a classic skill-list screenshot and previewed against black at 32px and 48px before approval.
 
@@ -30,3 +30,9 @@ The wordmark now uses Pixelify Sans SemiBold (SIL OFL 1.1), outlined to local SV
 The complete classic GMS v83 Lupin exports are used instead of OSMS's shortened WebP previews. Public source: https://maplestory.io/api/GMS/83/mob/3210800/render/move and https://maplestory.io/api/GMS/83/mob/3210800/render/attack1 . No installed game files were read. Nexon owns the underlying character artwork.
 
 Walk delays: 120, 150, 150, 250 ms (670 ms). Attack delays: 200, 150, 300, 100, 100, 250, 300, 100, 100, 150, 500 ms (2250 ms). Qt plays the original files at 100% speed. After 18 complete walk cycles, the header plays one attack sequence. All frames are drawn at native pixel size without interpolation; the fixed canvas accommodates both animations. Both pause while hidden/minimized or with Reduce motion. The schedule is decorative, not an assertion about Classic World's combat AI cooldowns. Classic World timing has not been measured live; the reference is the complete original-game export.
+
+## Lupin skill icon (v0.9.0)
+
+The user approved proposal 1: a native 32×32 Lupin portrait with a bright skill-style frame, checked against the supplied classic skill-border reference and black dock backgrounds. Proposals 2 and 3 were rejected. The approved artwork is preserved unchanged in `artwork/lupin-icon-master.png`; PNG sizes and the seven Windows ICO frames use nearest-neighbor exports. The new icon is used by the panel, tray, Linux menu, Windows shortcuts/installers and README. Rejected proposals and private reference screenshots are excluded from releases.
+
+The portrait was created with the built-in image_gen tool using the public Lupin sprite as a character/style reference. Nexon owns the underlying character design. No installed game asset was accessed. The existing native-timed walk/attack header and Pixelify Sans wordmark remain unchanged in this release.

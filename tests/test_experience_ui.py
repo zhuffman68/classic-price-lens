@@ -1,4 +1,4 @@
-"""Automatic EXP watching, rate units and history; no OS capture or network."""
+"""Explicit EXP tracking, rate units and history; no OS capture or network."""
 import os
 from pathlib import Path
 import tempfile
@@ -36,21 +36,22 @@ class ExperienceUiTests(unittest.TestCase):
         self.now += seconds
         self.panel.feed({"atMs":int(self.now*1000),"experience":payload(exp)})
 
-    def test_readable_connected_exp_starts_automatically(self):
+    def test_startup_is_stopped_until_explicit_start(self):
+        self.panel.set_connected(True);self.feed(2000)
         self.assertIsNone(self.panel.tracker.run)
-        self.feed(2000)
-        self.assertIsNone(self.panel.tracker.run)
-        self.panel.set_connected(True)
-        self.feed(2010,1)
+        self.assertFalse(self.panel.enabled)
+        self.assertIsNone(self.panel.overlay_row())
+        self.assertTrue(hasattr(self.panel,'start_button'))
+        self.assertFalse(hasattr(self.panel,'enabled_check'))
+        self.assertFalse(hasattr(self.panel,'details_button'))
+        self.panel.start_button.click();self.feed(2010,1)
         self.assertIsNotNone(self.panel.tracker.run)
-        self.assertFalse(hasattr(self.panel,"window_picker"))
-        self.assertFalse(hasattr(self.panel,"start_button"))
-        self.assertTrue(self.panel.details.isHidden())
         self.assertEqual(self.panel.table.window(),self.panel.history_dialog)
         self.assertEqual(self.panel.notes.window(),self.panel.options_dialog)
 
     def train(self):
         self.panel.set_connected(True)
+        self.panel.start()
         self.feed(2000)
         for _ in range(31):self.feed(self.panel.tracker.current.exp+10,1)
 
@@ -74,36 +75,33 @@ class ExperienceUiTests(unittest.TestCase):
         self.assertIn("%/min",self.panel.overlay_row()["text"])
         self.assertIn("EXP/min",self.panel.overlay_row()["extra"])
 
-    def test_pause_excludes_unseen_gain_and_reset_saves_then_keeps_watching(self):
+    def test_pause_excludes_unseen_gain_and_stop_saves_without_restarting(self):
         self.train()
         self.panel.pause_button.click()
         self.assertTrue(self.panel.tracker.paused)
-        self.assertEqual(self.panel.pause_button.text(),"Resume watching")
+        self.assertEqual(self.panel.pause_button.text(),"Resume")
         before=self.panel.tracker.run.exp
         self.feed(3000,1)
         self.assertEqual(self.panel.tracker.run.exp,before)
         self.panel.save_button.click()
         self.assertEqual(len(self.panel.history.rows()),1)
-        self.assertIsNotNone(self.panel.tracker.run)
-        self.assertEqual(self.panel.tracker.run.exp,0)
+        self.assertIsNone(self.panel.tracker.run)
+        self.assertFalse(self.panel.enabled)
+        self.assertIsNone(self.panel.overlay_row())
         self.assertFalse(self.panel.user_paused)
-        self.assertEqual(self.panel.totals()["seconds"],0)
 
     def test_global_context_loss_does_not_count_hidden_gain(self):
-        self.panel.set_connected(True);self.feed(2000);self.feed(2010,1)
+        self.panel.set_connected(True);self.panel.start();self.feed(2000);self.feed(2010,1)
         self.panel.set_connected(False);self.panel.set_connected(True)
         self.feed(2500,1);self.feed(2510,1)
         self.assertEqual(self.panel.tracker.run.exp,20)
 
-    def test_exp_disable_pauses_and_enable_resumes_without_inventing_gain(self):
-        self.panel.set_connected(True);self.feed(2000);self.feed(2010,1)
-        self.panel.enabled_check.setChecked(False);self.feed(3000,1)
+    def test_stopped_reader_ignores_gain_and_new_session_starts_clean(self):
+        self.panel.set_connected(True);self.panel.start();self.feed(2000);self.feed(2010,1)
+        self.panel.stop();self.feed(3000,1)
+        self.assertFalse(self.panel.enabled);self.assertIsNone(self.panel.tracker.run)
+        self.now+=6;self.panel.start();self.feed(3010,1);self.feed(3020,1)
         self.assertEqual(self.panel.tracker.run.exp,10)
-        self.assertTrue(self.panel.tracker.paused)
-        self.panel.enabled_check.setChecked(True)
-        self.assertFalse(self.panel.tracker.paused)
-        self.feed(3010,1);self.feed(3020,1)
-        self.assertEqual(self.panel.tracker.run.exp,20)
 
     def test_stale_readings_hold_the_overlay_and_watch_timer(self):
         self.train();before=self.panel.tracker.run.seconds

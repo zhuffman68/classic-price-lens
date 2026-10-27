@@ -101,6 +101,12 @@ def main():
         # Bootstrap the distribution's own fakeroot to emulate ownership of
         # dependency files whose non-root UIDs are outside this user namespace.
         run(folder, ["sh", "-c", "cd /root && apt-get download fakeroot libfakeroot && for archive in ./*.deb; do dpkg-deb -x \"$archive\" /; done"], log)
+        previous=ROOT/'dist/lupin_0.8.0-1_amd64.deb'
+        if previous.exists():
+            run(folder,['apt-get','install','-y','--no-install-recommends','/mnt/packages/'+previous.name],log)
+        marker=folder/'root/.cache/LocalTools/Classic Price Lens/package-upgrade-check.txt'
+        marker.parent.mkdir(parents=True,exist_ok=True)
+        marker.write_text('Preserve user data during package migration.\n')
         run(folder, ["apt-get", "install", "-y", "--no-install-recommends", "/mnt/packages/" + package.name,
                      "xvfb", "xauth", "fonts-dejavu-core", "libxtst6"], log)
         run(folder, ["classic-price-lens", "--version"], log)
@@ -111,11 +117,12 @@ def main():
         run(folder, ["env", "QT_QPA_PLATFORM=xcb", "xvfb-run", "-a", "classic-price-lens", "--self-test"], log)
         run(folder, ["sh", "-c", "cd /opt/classic-price-lens && QT_QPA_PLATFORM=xcb CLASSIC_LENS_TEST_X11=1 xvfb-run -a runtime/bin/python3 -B -m unittest discover -s tests -p test_hotkeys.py -v"], log)
         run(folder, ["sh", "-c", "cd /opt/classic-price-lens && QT_QPA_PLATFORM=offscreen runtime/bin/python3 -m unittest discover -s tests -q"], log)
-        run(folder, ["dpkg", "--verify", "classic-price-lens"], log)
-        run(folder, ["md5sum", "--check", "--quiet", "/var/lib/dpkg/info/classic-price-lens.md5sums"], log)
-        run(folder, ["apt-get", "remove", "-y", "classic-price-lens"], log)
+        run(folder, ["dpkg", "--verify", "lupin"], log)
+        run(folder, ["md5sum", "--check", "--quiet", "/var/lib/dpkg/info/lupin.md5sums"], log)
+        run(folder, ["apt-get", "remove", "-y", "lupin"], log)
         run(folder, ["test", "!", "-e", "/usr/bin/classic-price-lens"], log)
         run(folder, ["test", "!", "-L", "/usr/bin/lupin"], log)
+        assert marker.is_file(),'Package migration/removal changed user data'
     print("PASS: install, offline OCR/overlay, X11 plugin, tests, package checksums and removal:", args.image, args.tag, flush=True)
     print("Log:", log_path, flush=True)
 

@@ -1,182 +1,113 @@
 # Lupin architecture
 
-Lupin is a desktop companion for MapleStory Classic World. It recognizes visible items and EXP from OS-shared pixels, looks up meso market references, and draws independent, click-through labels. This document describes the v0.7.0 architecture.
+Lupin provides market prices, EXP tracking and local Korean speech-bubble translation for MapleStory Classic World. This document describes v0.9.0.
 
 ## Boundaries
 
-The application does not discover or inspect game processes, acquire game window handles, read game memory/files/packets, hook rendering or input, send game input, or parent its windows to the game. Window location and item identity come from visible pixels. Ordinary OS pointer coordinates help position labels and prioritize a visible item.
+All game observations come from OS-shared screen pixels. The application never discovers or inspects game processes, acquires game window handles, reads game memory/files/packets, hooks rendering or input, sends game input, or parents its windows to the game. Ordinary OS pointer coordinates position labels and prioritize nearby items/messages. Global shortcuts use only OS registration: Windows RegisterHotKey, Wayland GlobalShortcuts, or an X11 passive grab for the chosen chord.
 
-Screenshots and OCR frames remain local. HTTP requests contain catalog/item information, never screenshots. Only Classic World data is accepted. Equipment references assume clean, unscrolled items; NX retail prices remain separate from meso resale references.
+Screenshots and chat remain local. Market HTTP requests contain catalog/item information, never screenshots. Only Classic World data is accepted. Equipment references assume unscrolled items; NX retail costs never substitute for meso resale references.
 
-## Data flow
+## Components and data flow
 
 ```mermaid
 flowchart LR
     OS[OS display sharing] --> Stream[Persistent capture helper]
-    Stream --> Capture[Python frame and area scheduler]
+    Stream --> Capture[Frame and area scheduler]
     Capture --> Reader[Rust OCR reader]
     Reader --> Identity[Classic World item catalog]
-    Identity --> Prices[Visible-item price scheduler]
+    Search[Local name search] --> Identity
+    Identity --> Prices[Shared price scheduler]
     Prices <--> Cache[(Local SQLite cache)]
-    Prices <-->|Item names and IDs over HTTPS| Provider[NiaMeowDB Classic World]
+    Prices <-->|Names and IDs over HTTPS| Provider[NiaMeowDB Classic World]
     Snapshot[Launch/hourly MesoWatch snapshot] --> Cache
-    Cache --> Prices
-    Catalog[OSMS item and cash catalogs] --> Identity
-    Prices --> UI[Main panel and label descriptions]
-    UI --> Overlay[Independent annotation helper]
-    Pointer[OS pointer coordinates] --> Overlay
-    Overlay --> Labels[Click-through price labels]
+    Reader --> EXP[EXP session tracker]
+    Capture --> Chat[On-demand local translation worker]
+    Prices --> UI[Main panel and annotation descriptions]
+    EXP --> UI
+    Chat --> UI
+    UI --> Overlay[Independent click-through annotation helper]
 ```
-
-## Processes and communication
 
 | Component | Responsibility | Communication |
 | --- | --- | --- |
-| Main Python/Qt process | Panel, settings, catalog identity, price scheduling and display state | Qt signals, worker results and local IPC |
-| Capture helper | Owns the OS-approved screen-sharing session | `QLocalSocket`, bounded frame delivery |
-| Rust reader | Detects the game area, shops, tooltips, names, quantities and shop prices | JSON requests/results over its own stdin/stdout; local RGBA frame files |
-| Annotation helper | Draws labels and follows the OS cursor | JSON descriptions and pointer reports over its own stdin/stdout |
-| Optional headless browser | Reads the public full-market list at launch and hourly, then exits | Dedicated local profile, ephemeral loopback browser endpoint; no game communication |
+| Main Python/Qt process | Panel, feature state, settings, scheduling and price cache | Qt signals, worker completions and local IPC |
+| Capture helper | Owns the OS-approved sharing session | QLocalSocket with bounded frame delivery |
+| Rust reader | Game-area, shop, tooltip and EXP recognition | JSON over its own stdin/stdout; local raw RGBA files |
+| Annotation helper | Independent labels and OS-cursor following | JSON descriptions and pointer reports over stdin/stdout |
+| Translation worker | Bubble detection, Korean OCR, glossary and local translation | Bounded in-memory frame pipe; no network or screenshot files |
+| Optional headless browser | Reads the public full-market list, then exits | Dedicated profile and ephemeral loopback browser endpoint |
 
-The local control endpoint also handles this app's second-launch activation, pause/resume, minimization and installer shutdown. It is unrelated to the game.
+`control.py` handles this app's second-launch activation, reader pause/resume, feature actions, minimization and installer shutdown. It has no game connection.
 
-### Capture and OCR
+## Capture and OCR
 
-`price_lens/stream.py` keeps the OS screen-sharing session in a persistent helper. On Wayland, sharing is approved through the desktop portal and delivered by PipeWire. A full-workspace share is cropped locally to the selected display. On Windows, Qt uses the OS screen-capture backend.
+`stream.py` retains the approved sharing session. Wayland capture uses the desktop ScreenCast portal and PipeWire. The app has one display dropdown; OS sharing consent remains a separate required dialog. A full-workspace share is cropped locally to that display. Windows uses Qt's OS capture backend.
 
-`price_lens/capture.py` schedules the Rust reader in `reader/src/main.rs`. The reader uses only Minerva's pinned headless OCR core. Raw RGBA avoids PNG compression on the live path. Backpressure drops obsolete frames, known shop regions reduce work, and pixel fingerprints skip unchanged reads. OCR worker concurrency is limited to two threads.
+`capture.py` schedules `reader/src/main.rs`, which uses the pinned Minerva headless core. Raw RGBA avoids live PNG compression. Bounded frame delivery, dropped obsolete frames, local shop regions and unchanged-pixel fingerprints reduce work. Fingerprints refer to the submitted frame even when a newer capture arrives during recognition. The complete known shop span remains the crop reference when a native tooltip hides some rows, so those rows can recover after it closes. The worker uses at most two OCR threads.
 
-Automatic game-area detection uses the bottom status bar and visible caption/frame evidence. It does not use the FPS counter as an anchor. Uncertain or ambiguous bounds wait for a manual area; they do not silently enable whole-display item OCR. Lost or stale screen context clears labels and pending visible-item demand.
+Automatic location uses visible caption/frame evidence and the bottom status bar, without the FPS counter. Static bottom-bar guards tolerate focus-color changes; the caption fast path compares static edges rather than requiring one active-title color. Known shop crops avoid resending the full display between periodic location checks. Ambiguous game bounds wait for a manual area. Lost/stale context clears labels and visible price demand immediately; a short badge hysteresis avoids status flicker without retaining labels at uncertain coordinates.
 
-### Item identity and provider data
+F10 disables price OCR/labels and their visible demand while retaining capture, game location and any explicitly running EXP session. A locator-only request maintains game position when prices are disabled. Pause reading suspends the shared reader; Resume reuses sharing. Linux UI upgrades can hand off the existing capture helper through the app's own SIGUSR1 handler. Normal Quit ends sharing.
 
-`price_lens/domain.py` defines catalog matching, quotes and comparison rules. `price_lens/data.py` loads the OSMS item and cash catalogs and implements the price provider.
+## Item identity and market references
 
-Game item IDs differ from NiaMeowDB row IDs. A provider match must agree on both the normalized full name and game ID (`iconKey`). Duplicate names remain unresolved until the provider identifies a single current candidate. Cash items use the same identity checks. OCR similarity never substitutes an arbitrary item or scroll tier.
+`domain.py` defines catalogs, quotes and comparison rules. `data.py` loads OSMS item/cash catalogs and the fallback provider. Provider database row IDs differ from game item IDs: both the full normalized name and game ID (`iconKey`) must match. Ambiguous variants remain unresolved until current provider data establish a single identity. OCR similarity never substitutes a random item or scroll tier.
 
-Provider discovery uses `items?search=...`; prices use `item-market-summary?itemId=...&condition=clean`. The price reference is the 24-hour median when at least five daily reports exist; otherwise the source's longer-window reference is used. Thin data can be displayed with an explicit qualification. These are reported asking/sold prices, not guaranteed completed sales.
+Fallback discovery uses `items?search=...`; pricing uses `item-market-summary?itemId=...&condition=clean`. The 24-hour median is used with at least five daily reports; otherwise the longer-window reference can be shown with qualification. Reported prices do not guarantee completed sales. Stars and bullets use per-set units.
 
-## Cache and refresh scheduling
-
-### EXP sessions
-
-`reader/src/experience.rs` uses the pinned core's public status-bar, EXP-bar and minimap-title readers. It shares their recognition model with item OCR. `PixelReader` schedules EXP-only work on its existing process at most once a second; the usual request contains only the bottom 256 pixels of the validated game area. Every five seconds it also checks the minimap title, wherever the minimap was moved. Identical status strips reuse the prior recognition result. EXP-only replies use a separate signal and never replace shop rows or create market demand. Disabling EXP stops these requests; no additional sharing helper or network traffic is introduced.
-
-`price_lens/experience.py` validates level, raw EXP and printed percentage against the interval of totals allowed by rounding. Level changes, large jumps and decreases require another consistent reading. Character changes end the prior run. Rates use observed, unpaused time; standing still counts. Intervals over five seconds without accepted evidence and explicit context/pause boundaries rebaseline without crediting unseen EXP. Percentage-point progress carries 100 points for each level-up; raw EXP spanning a level-up uses the inferred level total and is marked approximate where that total is not unique. No potentially obsolete EXP table is fetched or bundled.
-
-Watching starts automatically after reliable connected character/EXP readings arrive. There is no duration selector. Recent rates use a five-minute rolling average, filling from 30 seconds; the primary display is percentage per minute/hour, with raw EXP and both modes available in Settings. A session timer and gain totals span automatically saved map segments. Reset saves the current segment and begins a new watch; explicit pause excludes a break. Confirmed character changes begin a separate watch. Missing or paused intervals are excluded; standing still counts. Percentage progress carries across level-ups, and inferred raw totals retain an approximation marker.
-
-`experience_widgets.py` builds the persistent page. Optional map labels/notes and history live in dialogs; history rates are per minute. Saved segments remain in a separate per-user SQLite file, capped at 500. Comparisons use the same character/level, at least two minutes and no gaps. Closing saves the current segment. The independent EXP annotation is anchored four logical pixels inside the detected game's bottom-left corner; combined mode adds a third raw-rate line. Its overlay toggle is independent of price labels and EXP reading.
-
-
-### Manual price search
-
-`price_lens/search.py` searches the cached Classic World catalog locally with a short input debounce. Suggestions never request prices. A selected result adds one manual item or ambiguous name to `PriceService` demand, independent of capture. Manual and screen demand use the same quote/identity keys, worker bounds, TTLs and backoff. Duplicate names are matched to a current provider item before pricing. Leaving Search removes manual demand, cancels queued work and interrupts irrelevant active direct requests. Explicit searches work while automatic screen reading is paused. `price_widgets.py` updates persistent cards in place; a new quote or age does not replace the card or its controls.
-
-`http_json.py` reuses verified HTTPS connections per existing worker thread. It shares a default verifying TLS context, expires connections after 30 idle seconds, bounds hosts per thread, and retries a stale reused connection once after a disconnect. Request timeouts are not automatically repeated. Each worker job has a cancellation token; abandoned direct HTTPS sockets are shut down, waking the worker before the new page is scheduled. Cancellation does not create a retry cooldown or publish an obsolete result. Configured-proxy urllib calls retain their bounded timeout; interruption before their response headers is not guaranteed. Error bodies retain `HTTPError` behavior so coverage rejections remain cached. Configured proxies keep the urllib route. See [Price lookup timing](docs/PRICE_LOOKUP_LATENCY.md).
-
-### Stored data
-
-SQLite entries are keyed by world, record kind and identity. Catalogs and provider-ID/name mappings are cached for one day. Individual price checks default to 15 minutes, with 5/30/60-minute settings. These entries survive restarts, are capped at 6,000 records, and records older than seven days are removed at cache initialization. Separate snapshot tables retain the complete last-good market generation until replaced atomically.
-
-Quote timestamps have different meanings:
-
-- `fetched_at`: when this app successfully checked the source.
-- `observed_at`: when the source's latest underlying market report was recorded.
-- `published_at`: the whole-market snapshot's publication time, when applicable. Snapshot validity is at most one hour from both publication and check; another check cannot revive an old publication.
-
-A new lookup never changes an old market report's timestamp. Cache expiry, missing/old report times, uncertainty and insufficient samples restrict deal ratings independently. Current comparisons require a matching item, world, clean condition and unit basis. Stars and bullets use per-set pricing.
-
-### Demand and priorities
-
-`price_lens/service.py` owns scheduler state on its Qt thread. HTTP and SQLite provider work runs in a `ThreadPoolExecutor`; workers deliver completions back through an explicitly queued Qt signal.
-
-The UI submits one complete visible view through `observe()`, including the hovered item and ambiguous identities. Before starting requests, the scheduler:
-
-1. Removes queued jobs for items no longer visible. Canceling queued work creates no retry cooldown.
-2. Coalesces repeated observations of the same item or identity.
-3. Prioritizes a missing/expired hovered item, then other visible missing/expired references, then early background refreshes.
-4. Starts at most three simultaneous jobs and retains at most 64 queued jobs. The executor receives only jobs that can start, so a separate FIFO backlog cannot defeat priority changes.
-
-A queued item can be promoted when the cursor moves to it. Already-running requests are allowed to finish and cache their results; they cannot be preempted, so server latency still affects the next available slot. Pausing, losing the reading area or losing fresh screen context cancels queued item work while preserving the approved capture session where supported.
-
-### Expiry and early refresh
-
-The old cached quote is delivered immediately, including after expiry. It keeps its actual age and loses its deal rating when required. Labels distinguish queued refreshes, active refreshes, retry delays, and old market reports; `price_lens/price_status.py` shares these phrases between shop and inventory labels.
-
-Visible, well-supported references with recent market reports may refresh shortly before expiry. Each item's stable staggered lead is between half and all of `min(30 seconds, 5% of the selected TTL)`. A successful refresh starts a new cache cycle. Repeated frames or timer ticks do not cause additional requests within that cycle.
-
-Empty, source-unsupported, uncertain, thin-data and old-report responses keep the full selected TTL. There is no whole-market polling, hidden-inventory scan or background refresh of every cached item. Idle/paused views do not schedule price work.
-
-Normal lookup failures back off for two minutes while retaining the prior quote and timestamps. A failed early refresh can retry at expiry, with at least ten seconds between attempts; a subsequent ordinary failure uses the normal backoff. Ambiguous identity lookups retain their selected cooldown. Known provider coverage rejections become cached no-data results rather than guesses about game tradeability.
-
-## Panel, overlay and controls
-
-`price_lens/ui.py` turns recognized observations and price state into panel cards and annotation descriptions. `price_lens/ui_components.py` renders the cards. The panel's one-second housekeeping tick checks ages and current demand; changed OCR observations can request prices sooner.
-
-`price_lens/overlay.py` manages the independent annotation process in `price_lens/annotations.py`. The annotation helper samples ordinary OS pointer coordinates, repositions existing cards locally, and repaints only affected areas. Cursor movement and animation do not trigger HTTP requests. Linux labels use their own XWayland window for positioning; they are never game child windows.
-
-Shop-row recognition takes priority over generic inventory tooltips inside the shop. Native shop stat popups temporarily hide overlapping row labels. Hover pricing is enabled by default and configurable.
-
-`price_lens/tray.py` provides minimize-to-tray, notification and menu behavior. Hotkeys use Windows `RegisterHotKey`, the Wayland GlobalShortcuts portal, or an X11 passive grab for the selected chord. There are no keyboard listeners or input hooks.
-
-## Packaging and updates
-
-`scripts/package_common.py` stages application code, public fixtures, documentation and dependency notices. Linux and Windows staging scripts add pinned, SHA-256-verified runtimes and the appropriate OCR executable. Generated packages exclude private evidence, live screenshots, settings and SQLite databases.
-
-- Windows: per-user Inno Setup installer and portable ZIP.
-- Linux: pacman package for Arch/Manjaro and a DEB for Debian/Ubuntu.
-- Shared: bundled Python, Qt, OCR reader, approved icon, offline self-test and checksums.
-
-Installed application directories stay read-only during normal use. Settings, caches and bounded capture diagnostics use per-user locations. Linux UI handoff can preserve the existing capture helper; normal Quit ends sharing. No system-wide Qt configuration is changed.
-
-Build commands and prerequisites are in [packaging/README.md](packaging/README.md). Native Windows capture, mixed-DPI alignment and physical shortcut acceptance remain separate from Wine binary/installer tests; macOS is not a validated distribution target.
-
-`scripts/publish_itch.py` validates the released artifact checksums and every portable build file before uploading through the official Butler CLI. It uses stable platform channels and the application version, checks the anonymous project's password gate before and after publishing, and never changes the shared password or visibility. Butler owns local authorization outside the repository. Native installer/package channels include extraction instructions because Butler's browser downloads are ZIPs. Publisher-only tests live under `scripts/tests` and are separate from the application's packaged test suite.
-
-## Verification and extension points
-
-The tests combine real upstream OCR fixtures and local IPC with isolated UI, clock and network fixtures. Scheduling tests block controlled workers to prove priority, queue bounds, visibility cancellation, thread ownership, stale-reference delivery, retry behavior and request counts across repeated observations. They never drive a game or start OS sharing.
-
-When adding a provider, preserve world/item/condition/unit validation and both timestamps. When changing scheduling, retain per-item deduplication, bounded concurrency, the full TTL for no-data results and immediate cancellation of obsolete queued demand. Changes to OCR or capture must preserve the screen-only boundary and the existing sharing workflow.
-
-See [VERIFICATION.md](VERIFICATION.md) for measured coverage and platform limits, and [docs/TECHNICAL.md](docs/TECHNICAL.md) for runtime details.
-
-## Lupin naming compatibility
-
-Lupin is the public app, menu, tray and release name. The Python module, internal package-manager identity, installation directories, Qt application/settings identity, capture/control sockets, desktop-file ID and Windows AppId retain their existing Classic Price Lens identifiers. This preserves upgrades, hotkeys, sharing, price caches and EXP history. Linux also supplies a `lupin` launcher; download filenames use Lupin/lupin. Windows upgrades remove only the old app-owned shortcut names and create Lupin shortcuts. The public repository/project name and new URLs are `zhuffman68/lupin`; platform redirects preserve earlier links. Private GitHub visibility and the itch.io password gate are verified independently of the source build.
-
-The EXP page uses `experience_widgets.py` for its visual hierarchy and separate history/options dialogs; `experience_ui.py` retains session behavior. Optional details are collapsed, and session buttons change with recording state.
-
-## Stable layout, motion and shop priority in v0.7.0
-
-The brand and display/status controls sit above a fixed tab bar. Initial setup instructions, the first-use success message and shop counts are inside Prices, so they cannot move navigation. All tabs retain the selected display. Automatic detection distinguishes a recognised Classic World area from a manually selected area.
-
-`motion.py` supplies interruptible tab snapshots, short section transitions and text reveals. Reduce motion removes transitions and pauses the header sprite. `branding.py` plays an unchanged three-frame local Lupin WebP and renders a font-outline SVG wordmark; hidden/minimised headers stop playback. Body text retains a normal readable font. No runtime asset downloads are needed.
-
-While any shop is open, inventory tooltip pricing is suppressed. Native shop tooltips no longer hide all listing labels. `shop_rows.py` can retain a covered row only while the independently captured shop header and scrollbar fingerprints remain identical. A visible listing change, movement or changed guard discards that page's memory. After three seconds of occlusion the listing amount is withdrawn and no deal rating is shown, while a verified market reference can remain. If the list itself is unreadable, matching header/scrollbar pixels can still establish an open shop.
-
-A cropped read that still finds names but loses prices is immediately retried on the full captured area. This handles a shop moved partly outside the prior crop. A genuinely incomplete full read disables the crop until clean listings return. New item work can precede the periodic EXP read; the usual one-second EXP cadence can defer by roughly 0.6 seconds while item pixels change.
-
-## Provider identity index
-
-A low-priority, once-daily job reads MesoWatch's published JSON ID assignment without evaluating JavaScript. Its 1,608-entry sample agreed with 153 existing verified mappings and disagreed with none of the covered entries. It never establishes a new identity. A mapping must first be checked against the provider's exact full name and game ID. If its saved proof, name, provider ID and a fresh index fingerprint agree, it can be reused for up to seven days. An index version change or missing/mismatched entry falls back to source validation. Adding index proof preserves the original provider-check timestamp. The index is independent of price freshness, report ages, the selected quote TTL and coverage/error caching. Its background request can yield to visible price work.
-
+A once-daily public MesoWatch ID index can extend an already verified mapping only when its saved proof, exact name, provider ID and fresh index fingerprint agree. It never establishes an unverified identity. Mismatches fall back to source validation. Identity freshness is separate from price and report freshness.
 
 ### Whole-market cache
 
-`snapshot.py` validates the live MesoWatch v2 Classic World list, exact IDs/names, units, publication time and each row's market sample count (`priceSales`, never lifetime `sold`). Prices are meso values, including cash items; NX retail fields are ignored. A complete generation replaces separate local SQLite snapshot tables atomically. A failed, invalid or older generation preserves the previous copy and its ages. The cache is never included in source or release assets.
+`snapshot.py` validates the MesoWatch v2 Classic World list: exact IDs/names, units, publication time and per-row `priceSales` count, never lifetime `sold`. Cash values are mesos; NX retail fields are ignored. Complete generations atomically replace separate SQLite snapshot tables. Invalid, failed or older updates preserve the last-good copy and its real ages. Price caches are never shipped.
 
-`SnapshotStore.quote()` checks the catalog ID, full name and per-item/set basis before exposing a reference. The scheduler uses valid snapshot prices immediately without item requests. Unpriced/missing/mismatched entries use the ordinary fallback cache and provider. A fresh snapshot can also resolve duplicate catalog names only when exactly one candidate's ID/full name is present. Unknown/low-volume/scrolled-only data remain neutral. Check time, publication time and latest sale time are separate. A new download never makes an old publication fresh.
+`SnapshotStore.quote()` checks catalog identity and per-item/set basis before exposing a price. Valid snapshot entries bypass per-item requests. Unpriced, missing or mismatched entries use the normal fallback scheduler. Duplicate names resolve only when exactly one candidate ID/full name is supported. Thin, old or uncertain data remain neutral.
 
-`snapshot_updater.py` refreshes asynchronously on every launch/enable, even when saved data is recent, then at most an hour after success, slightly earlier when needed to avoid expiry of an already-aged publication. Already-old publications still wait an hour rather than repeatedly opening a browser. Simultaneous triggers coalesce. Failures retry after 5/15/60 minutes; disabling stops the timer and the owned browser while leaving saved data.
+`snapshot_updater.py` refreshes asynchronously on launch/enable, then hourly, slightly earlier if needed for an already-aged publication. An old publication still waits an hour instead of repeatedly opening browsers. Triggers coalesce; failures retry after 5/15/60 minutes. Disabling stops the timer and owned browser, preserving saved data. `snapshot_browser.py` uses an installed Edge/Chrome/Chromium or compatible existing Playwright browser, an app-owned profile and a 25-second attempt cap. It never uses the personal browser profile, downloads a browser, solves challenges, adds a resident service or accesses a game.
 
-`snapshot_browser.py` reuses an installed Edge/Chrome/Chromium (or an existing compatible Playwright browser) in headless mode, with a dedicated app-cache profile. It uses an ephemeral loopback browser endpoint to read the public page's loaded list, then closes that browser. It does not discover/use the user's personal browser session, solve challenges, download a browser, add a resident service, or communicate with a game. Each attempt is capped at 25 seconds. Chrome/Edge/Chromium is optional: individual fallback pricing remains available without it.
+### Per-item cache and scheduling
 
-## Local Korean speech bubbles
+SQLite entries are keyed by world, record kind and identity. Catalog/provider mappings last one day. Individual prices default to 15 minutes, with 5/30/60-minute choices. Records survive restarts, are capped at 6,000 and are pruned after seven days. Snapshot generations are separate and retained until replaced.
 
-`chat.py` owns a demand-driven `chat_worker` QProcess. The existing approved capture supplies a fresh, game-cropped RGB snapshot through a bounded local pipe, with OS cursor coordinates only for prioritization. `chat_ocr.py` finds neutral Classic speech-bubble interiors and recognizes their text lines using a local Korean model; a bounded crop cache avoids repeated recognition. `chat_text.py` provides context-sensitive phrase glosses and explicit numeric-unit validation. Uncovered ordinary text uses the local int8 translator; unknown game shorthand remains visible in partial glosses. No text or images go to an HTTP service or disk.
+`fetched_at` means a successful source check; `observed_at` is the latest market report; `published_at` is a snapshot publication. Snapshot validity is capped at one hour from both publication and check. A new check cannot revive an old report or publication. Expiry, missing report time, uncertainty and low sample counts independently restrict deal ratings.
 
-Worker startup is separate from the price scheduler. It has two passive compute threads, one in-flight snapshot, a scan-time budget and bounded text/crop caches. Disabling the feature unloads the process. Shared frames remain under the capture helper's existing consent; no new chooser or game access is introduced.
+`service.py` owns state on the Qt thread and bounds workers to three active/64 queued jobs. Each observation replaces the complete visible demand. Jobs coalesce; obsolete queued work is removed. Manual selection and hovered missing/expired items precede other visible prices, followed by early refreshes. Cached values are delivered immediately, including expired values with their actual ages and no unsupported deal rating.
 
-Translation annotations join the existing independent click-through renderer alongside price and EXP annotations. They wrap English and the original, stay within game bounds, and retire on timeout or changed source pixels. They do not continuously track moving messages. Global shortcut actions have independent Windows IDs or portal session/action identities; they never listen to game keyboard input. `--translate` uses the app's own control socket for desktop-shortcut fallback. See docs/KOREAN_CHAT.md for measurements and limitations.
+Well-supported visible references can refresh before expiry using a stable staggered lead of half to all of `min(30 seconds, 5% of TTL)`. Empty, unsupported, uncertain, thin and old-report results retain the full TTL. Failures back off for two minutes; an early failure may retry at expiry with a ten-second minimum gap. Stationary frames never create repeated requests within a cache cycle. The hourly full-market job is separate; there is no hidden-inventory scan or per-item refresh of every saved record.
+
+`http_json.py` reuses verifying TLS connections per worker with a 30-second idle limit. A stale disconnected connection retries once; timeouts are not automatically repeated. Cancelled direct requests close their sockets and cannot publish obsolete results or create cooldowns. Configured proxies retain the bounded urllib path; cancellation before response headers is not guaranteed. Coverage rejections become cached no-data results. See [price lookup timing](docs/PRICE_LOOKUP_LATENCY.md).
+
+## Panel and overlays
+
+The brand, display/status controls, Pause/Resume and Hotkeys remain above three fixed tabs: Prices, EXP Tracking and Translation. `search.py` searches the local catalog with a short debounce; typing/suggestions never request prices. Selecting an item adds one manual demand to the shared scheduler. Clearing it removes demand and retires results. Search has layout priority over collapsible on-screen results and works without capture. `price_widgets.py` updates cards in place.
+
+`motion.py` implements interruptible horizontal page slides, brief section transitions and rolling EXP digits. Reduce motion removes animations and pauses the header. `branding.py` plays complete local original-game walk/attack GIFs at native delay values and outlines a local Pixelify Sans wordmark. Hidden/minimized headers stop playback. The approved Lupin skill icon is local and exported with nearest-neighbor scaling.
+
+`overlay.py` owns `annotations.py` in an independent click-through window. Cursor-following cards repaint locally without OCR or HTTP work. Shops always suppress generic inventory price cards. `shop_rows.py` stabilizes small geometry noise and retains known identities across verified occlusion. Changed visible listings or unoccluded guards invalidate hidden-page data; old covered listing amounts lose their deal rating.
+
+`tooltip_geometry.py` measures a native description panel only around an OCR-recognized tooltip name. Overlapping shop labels stay in place and fade to 15% opacity; unaffected labels stay opaque. A hidden row can retain its known market reference only while unaffected page guards agree, without assuming a current listing/deal. Labels recover when the panel disappears. Translation and EXP overlays are unaffected by this opacity rule.
+
+## EXP tracking
+
+`reader/src/experience.rs` uses Minerva's status-bar, EXP-bar and minimap-title readers, sharing the existing model/process. Sampling is at most once a second, usually the bottom 256 pixels of the verified game area. A map-title read runs every five seconds, wherever the minimap was moved. Unchanged strips reuse recognition. EXP replies never replace shop rows or create market requests; changing item pixels can briefly defer sampling.
+
+`experience.py` validates level/raw EXP/printed percentage against rounding intervals. Large jumps, level changes and decreases need consistent confirmation. Character changes segment the run. Missing intervals over five seconds rebaseline instead of crediting unseen gain. Explicit pauses exclude breaks; standing still counts. Percentage points carry across level-ups. Raw gain across levels uses inferred totals and retains approximation markers; no obsolete EXP table is fetched.
+
+Every launch begins stopped. Start or F11 explicitly enables sampling; F11 then pauses/resumes. Stop saves and disables sampling. Gain/time are available immediately; rates and ETA require 30 valid tracked seconds and use a five-minute window. A paused session keeps its pace snapshot. Percentage is default, with raw and both modes. The optional overlay sits four logical pixels inside the game's bottom-left and exists only for a started, fresh running/paused session. Its page and Settings toggles share one value.
+
+History/options are separate dialogs. Map segments save automatically; a session timer spans them. A separate local SQLite file stores at most 500 segments and supports CSV export. Comparisons use the same character/level, at least two minutes and no gaps. Closing saves the current segment but never restores automatic tracking next launch.
+
+## Local Korean translation
+
+`chat.py` owns a demand-driven local QProcess. F12 (F9 Windows) enables/preloads it if needed and requests a fresh game-cropped shared frame. `chat_ocr.py` detects neutral speech bubbles and recognizes lines using CPU-only Korean PP-OCRv5 mobile. `chat_text.py` provides conservative phrase glosses and explicit numeric-unit checks; ordinary uncovered text uses int8 OPUS-MT. Bare numbers never receive an assumed multiplier or currency. Unknown jamo/slang stay original or partial rather than invented English.
+
+One no-result scan can retry a fresh frame after 120 ms with slightly wider bubble-color tolerance. There is no continuous chat OCR. One in-flight request, two passive compute threads, a 1.5-second between-bubble budget and bounded in-memory text/crop caches constrain resources. Disabling unloads the worker/models. Startup and price scheduling are independent. Translation never uploads/stores chat or screenshots.
+
+Cards prioritize English, retain the original/speaker and mark uncertainty only when relevant. They expire after eight seconds or when source pixels move/change. Recent results remain on the Translation page. Moving bubbles, expanded chat history, dark bubbles and arbitrary desktop Korean are not supported. [Model/license/performance details](docs/KOREAN_CHAT.md).
+
+## Distribution and compatibility
+
+Windows provides a per-user Inno Setup installer and portable ZIP. Linux provides `lupin` pacman/DEB packages replacing `classic-price-lens`. Bundled Python/Qt/readers/models have pinned inputs and notices. Install trees stay read-only in normal use; settings, history, caches and bounded diagnostics use per-user paths. Linux package metadata changes, while legacy module/install/settings/socket/desktop/portal identifiers and Windows AppId stay stable for migration. The new icon resource name refreshes old app-owned launchers without replacing the desktop identity.
+
+`scripts/publish_itch.py` verifies artifacts/portable manifests, uploads five stable Butler channels and checks the existing anonymous password gate before/after. Authorization stays outside source. GitHub remains private. [Build prerequisites](packaging/README.md) and [validation evidence](VERIFICATION.md) distinguish source/fixture/installer checks from physical Windows capture. macOS is not a validated release target.

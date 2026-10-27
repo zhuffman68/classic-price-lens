@@ -30,7 +30,7 @@ def stage_application(out):
     shutil.copy2(ROOT / "docs/PRICE_LOOKUP_LATENCY.md", documentation / "PRICE_LOOKUP_LATENCY.md")
     shutil.copy2(ROOT / "docs/KOREAN_CHAT.md", documentation / "KOREAN_CHAT.md")
     fixtures = ROOT / "vendor/minerva/samples"
-    categories = {"player-shop": ["gems-and-ores", "live-greater-chaos-and-intermediate-scrolls", "equips-two-sold-out"],
+    categories = {"player-shop": ["gems-and-ores", "live-greater-chaos-and-intermediate-scrolls", "equips-two-sold-out", "equips-under-the-pointer-and-its-tooltip"],
                   "item-tooltip": ["screw@60,20"],
                   "exp-bar": ["100300__64.49--ideal-ratio-1366x768-strip"]}
     for category, names in categories.items():

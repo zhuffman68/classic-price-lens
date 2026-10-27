@@ -1,7 +1,7 @@
 """Short, interruptible QWidget motion; idle and hidden widgets do no animation work."""
-from PySide6.QtCore import QEasingCurve,QPoint,Qt,QVariantAnimation
+from PySide6.QtCore import QEasingCurve,QPoint,Qt,QVariantAnimation,QSize,QRect
 from PySide6.QtGui import QPainter, QPalette
-from PySide6.QtWidgets import QApplication, QGraphicsOpacityEffect, QLabel, QTabWidget
+from PySide6.QtWidgets import QApplication, QGraphicsOpacityEffect, QLabel, QTabWidget, QWidget
 
 
 def enabled(widget):
@@ -26,7 +26,7 @@ class MotionLabel(QLabel):
 
     def setText(self, value):
         if value == self.text():return
-        animate = bool(self.text()) and enabled(self)
+        animate = bool(self.text()) and enabled(self) and not self.property("quietUpdates")
         self.animation.stop()
         super().setText(value)
         if animate:
@@ -59,8 +59,8 @@ def reveal(widget):
     widget.setGraphicsEffect(effect)
     animation = QVariantAnimation(widget)
     widget._reveal = animation
-    animation.setDuration(135)
-    animation.setStartValue(.35)
+    animation.setDuration(85)
+    animation.setStartValue(.80)
     animation.setEndValue(1.0)
     animation.setEasingCurve(QEasingCurve.Type.OutCubic)
     animation.valueChanged.connect(effect.setOpacity)
@@ -71,6 +71,19 @@ def reveal(widget):
         animation.deleteLater()
     animation.finished.connect(finish)
     animation.start()
+
+
+def fade_away(widget):
+    """Keep outgoing pixels visible while their source layout is cleared."""
+    if not enabled(widget) or widget.size().isEmpty():return
+    host=widget.parentWidget()
+    snapshot=QLabel(host);snapshot.setPixmap(widget.grab());snapshot.setGeometry(widget.geometry())
+    snapshot.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+    effect=QGraphicsOpacityEffect(snapshot);snapshot.setGraphicsEffect(effect)
+    animation=QVariantAnimation(snapshot);animation.setDuration(100)
+    animation.setStartValue(1.0);animation.setEndValue(0.0);animation.valueChanged.connect(effect.setOpacity)
+    animation.finished.connect(snapshot.deleteLater)
+    snapshot.show();snapshot.raise_();animation.start()
 
 
 def visibility(widget, shown):
@@ -112,26 +125,75 @@ class AnimatedTabs(QTabWidget):
         super().__init__(parent)
         self.previous_page=None
         self.snapshot=None
+        self.previous_index=0
         self.currentChanged.connect(self.transition)
 
     def transition(self,index):
         page=self.currentWidget()
         previous=self.previous_page
         self.previous_page=page
+        direction=1 if index>=self.previous_index else -1
+        self.previous_index=index
         if self.snapshot:
             self.snapshot.hide();self.snapshot.deleteLater();self.snapshot=None
         if not page or not previous or not enabled(self):return
-        snapshot=QLabel(self)
+        snapshot=QWidget(self)
         snapshot.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        snapshot.setPixmap(previous.grab())
-        snapshot.setGeometry(page.mapTo(self,QPoint(0,0)).x(),page.mapTo(self,QPoint(0,0)).y(),page.width(),page.height())
-        effect=QGraphicsOpacityEffect(snapshot);snapshot.setGraphicsEffect(effect)
+        snapshot.setGeometry(QRect(page.mapTo(self,QPoint()),page.size()))
+        old=QLabel(snapshot);old.setPixmap(previous.grab());old.resize(page.size())
+        new=QLabel(snapshot);new.setPixmap(page.grab());new.resize(page.size())
+        width=page.width();new.move(direction*width,0)
         animation=QVariantAnimation(snapshot)
-        animation.setDuration(135);animation.setStartValue(1.0);animation.setEndValue(0.0)
-        animation.valueChanged.connect(effect.setOpacity)
+        animation.setDuration(350);animation.setStartValue(0.0);animation.setEndValue(1.0)
+        animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        def move(value):
+            offset=round(value*width)*direction
+            old.move(-offset,0);new.move(direction*width-offset,0)
+        animation.valueChanged.connect(move)
         self.snapshot=snapshot
         def finish():
             if self.snapshot is snapshot:self.snapshot=None
             snapshot.hide();snapshot.deleteLater()
         animation.finished.connect(finish)
-        snapshot.show();snapshot.raise_();reveal(page);animation.start()
+        snapshot.show();snapshot.raise_();animation.start()
+
+
+class RollingLabel(QLabel):
+    """Clip and roll changed digits only; semantic text updates immediately."""
+    def __init__(self,text="",parent=None):
+        super().__init__(text,parent)
+        self.old_text=text;self.progress=1.0
+        self.animation=QVariantAnimation(self);self.animation.setDuration(160)
+        self.animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self.animation.valueChanged.connect(self.advance)
+        self.setMinimumWidth(90)
+
+    def advance(self,value):self.progress=float(value);self.update()
+
+    def setText(self,text):
+        if text==self.text():return
+        self.animation.stop();self.old_text=self.text()
+        super().setText(text)
+        if enabled(self) and any(c.isdigit() for c in text) and any(c.isdigit() for c in self.old_text):
+            self.animation.setStartValue(0.0);self.animation.setEndValue(1.0);self.animation.start()
+        else:self.progress=1.0
+
+    def paintEvent(self,event):
+        painter=QPainter(self);painter.setFont(self.font());painter.setPen(self.palette().color(QPalette.ColorRole.WindowText))
+        metrics=painter.fontMetrics();height=metrics.height();cell=metrics.horizontalAdvance('0')
+        old=self.old_text.rjust(len(self.text()));new=self.text().rjust(len(old));old=old.rjust(len(new))
+        widths=[cell if c.isdigit() else metrics.horizontalAdvance(c) for c in new]
+        width=sum(widths);left=self.width()-width if self.alignment()&Qt.AlignmentFlag.AlignRight else (self.width()-width)//2 if self.alignment()&Qt.AlignmentFlag.AlignHCenter else 0
+        y=(self.height()-height)//2
+        painter.setClipRect(self.rect())
+        for before,after,w in zip(old,new,widths):
+            rect=QRect(left,y,w,height);left+=w
+            if self.progress>=.999 or before==after or not(after.isdigit() or before.isdigit()):
+                painter.drawText(rect,Qt.AlignmentFlag.AlignCenter,after);continue
+            painter.save();painter.setClipRect(rect)
+            painter.drawText(rect.translated(0,-round(height*self.progress)),Qt.AlignmentFlag.AlignCenter,before)
+            painter.drawText(rect.translated(0,round(height*(1-self.progress))),Qt.AlignmentFlag.AlignCenter,after)
+            painter.restore()
+
+    def hideEvent(self,event):
+        self.animation.stop();self.progress=1.0;super().hideEvent(event)

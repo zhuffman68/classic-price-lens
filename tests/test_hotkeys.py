@@ -19,11 +19,14 @@ class ShortcutTests(unittest.TestCase):
     def test_function_key_and_modifier_combo_are_portable(self):
         self.assertEqual(parse_shortcut("Alt+Ctrl+P").text, "Ctrl+Alt+P")
         self.assertEqual(parse_shortcut("F8").text, "F8")
+        if sys.platform=="win32":
+            with self.assertRaises(ValueError):parse_shortcut("F12")
+        else:self.assertEqual(parse_shortcut("F12").text,"F12")
         self.assertEqual(portal_trigger("Ctrl+Alt+P"), "CTRL+ALT+p")
         self.assertEqual(portal_trigger("Ctrl+Shift+F10"), "CTRL+SHIFT+F10")
 
     def test_unmodified_typing_modifier_only_multistep_and_reserved_keys_are_rejected(self):
-        for text in ("", "P", "Ctrl", "F12", "Ctrl+K, Ctrl+C"):
+        for text in ("", "P", "Ctrl", "Ctrl+K, Ctrl+C"):
             with self.subTest(text=text), self.assertRaises(ValueError):
                 parse_shortcut(text)
 
@@ -157,6 +160,39 @@ class PortalShortcutTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(instance.descriptions, ["Ctrl+Alt+P"])
         self.assertFalse(instance.starting)
         self.assertFalse(instance.pending)
+
+    async def test_three_features_bind_in_one_session_and_dispatch_independently(self):
+        from dbus_next import Message,MessageType,Variant
+        instance=self.portal();calls=[];fired=[];session='/test/three'
+        instance.actions={identity:dict(key=key,description=identity,
+            activate=lambda identity=identity:fired.append(identity),changed=lambda value:None)
+            for identity,key in [('toggle-prices','F10'),('toggle-exp','F11'),('translate-text','F12')]}
+        class Bus:
+            unique_name=':1.99'
+            async def connect(self):return self
+            def add_message_handler(self,callback):self.callback=callback
+            async def call(self,message):
+                message._marshall();calls.append(message)
+                if message.member in ('AddMatch','Register'):
+                    return Message(message_type=MessageType.METHOD_RETURN,reply_serial=1)
+                token=message.body[-1]['handle_token'].value
+                path='/org/freedesktop/portal/desktop/request/1_99/'+token
+                values=({'session_handle':Variant('s',session)} if message.member=='CreateSession' else
+                        {'shortcuts':Variant('a(sa{sv})',[] if message.member=='ListShortcuts' else
+                            [[k,{'trigger_description':Variant('s',v['key'])}] for k,v in instance.actions.items()])})
+                self.callback(Message(message_type=MessageType.SIGNAL,path=path,interface='org.freedesktop.portal.Request',
+                                      member='Response',signature='ua{sv}',body=[0,values]))
+                return Message(message_type=MessageType.METHOD_RETURN,reply_serial=1,signature='o',body=[path])
+        with patch('dbus_next.aio.MessageBus',return_value=Bus()):await instance._start('F10')
+        self.assertEqual(sum(c.member=='CreateSession' for c in calls),1)
+        bindings=next(c.body[1] for c in calls if c.member=='BindShortcuts')
+        self.assertEqual([(identity,options['preferred_trigger'].value) for identity,options in bindings],
+                         [('toggle-prices','F10'),('toggle-exp','F11'),('translate-text','F12')])
+        for action in instance.actions:
+            for target in ('/other',session):
+                instance._message(Message(message_type=MessageType.SIGNAL,path='/org/freedesktop/portal/desktop',
+                    interface='org.freedesktop.portal.GlobalShortcuts',member='Activated',signature='osta{sv}',body=[target,action,1,{}]))
+        self.assertEqual(fired,list(instance.actions))
 
     async def test_only_the_registered_session_and_action_can_activate(self):
         from dbus_next import Message, MessageType

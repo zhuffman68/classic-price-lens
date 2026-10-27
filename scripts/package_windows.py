@@ -39,7 +39,7 @@ def main():
     stage_application(OUT)
     for name in ("run-windows.bat", "selftest-windows.bat", "windows-selftest.py"):
         shutil.copy2(ROOT / name, OUT / name)
-    shutil.copy2(ROOT / "packaging/icon.ico", OUT / "classic-price-lens.ico")
+    shutil.copy2(ROOT / "packaging/icon.ico", OUT / "lupin.ico")
     (OUT / "bin").mkdir(exist_ok=True)
     if READER.is_file():
         shutil.copy2(READER, OUT / "bin/classic-screen-reader.exe")

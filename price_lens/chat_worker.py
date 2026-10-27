@@ -33,6 +33,8 @@ class Translator:
             output=glossary(text,partial=True)
             note="Partial · unknown Korean kept"
         if output is None:
+            if re.fullmatch(r"[\u3130-\u318f\u1100-\u11ff ?!]+",text):
+                return "Unrecognized shorthand · see the original", "Partial · unknown Korean kept"
             tokens=self.source.encode(text,out_type=str)
             result=self.model.translate_batch([tokens],beam_size=1,max_decoding_length=72,repetition_penalty=1.15)[0]
             output=self.target.decode(result.hypotheses[0]);note="Approximate local translation"
@@ -44,13 +46,13 @@ class Translator:
         return output,note
 
 
-def scan(image, cursor, recognizer, translator, emit, budget=1.5):
+def scan(image, cursor, recognizer, translator, emit, budget=1.5, relaxed=False):
     from .chat_ocr import bubbles, lines
     from .chat_text import HANGUL, normalize
-    start=time.perf_counter();candidates=bubbles(image)
+    start=time.perf_counter();candidates=bubbles(image,relaxed=relaxed)
     # Nearby speech bubbles arrive first. The hotkey does not track player names.
     candidates.sort(key=lambda b:(b[0]+b[2]/2-cursor[0])**2+(b[1]+b[3]/2-cursor[1])**2)
-    found=0
+    found=0;readable=0;korean_candidates=0
     for box in candidates:
         if found>=4 or time.perf_counter()-start>budget:break
         x,y,w,h=box;crop=image.copy(x+2,y+2,w-4,h-4)
@@ -58,6 +60,7 @@ def scan(image, cursor, recognizer, translator, emit, budget=1.5):
         for line,height in lines(crop):
             text,confidence=recognizer.read(line)
             if confidence<.80:continue
+            readable+=1
             read.append(text)
         if not read:continue
         sender="";first=re.match(r"^([^:]{1,24})\s*:\s*(.*)$",read[0])
@@ -66,12 +69,14 @@ def scan(image, cursor, recognizer, translator, emit, budget=1.5):
         if not HANGUL.search(text):continue
         # A lone Korean character amongst Latin advertising is a common OCR error.
         korean=len(HANGUL.findall(text))
-        if korean<2 and not re.fullmatch(r"[\u3130-\u318f]{1,8}",text):continue
+        if korean<2 and not re.fullmatch(r"[\u3130-\u318f\uac00-\ud7a3]{1,8}",text):continue
+        korean_candidates+=1
         english,note=translator.translate(text)
         emit({"box":box,"speaker":sender,"original":text,"text":english,"note":note,
               "elapsed_ms":round((time.perf_counter()-start)*1000,1)})
         found+=1
-    return {"count":found,"elapsed_ms":round((time.perf_counter()-start)*1000,1)}
+    return {"count":found,"bubbles":len(candidates),"readable":readable,"korean":korean_candidates,
+            "elapsed_ms":round((time.perf_counter()-start)*1000,1)}
 
 
 def send(message):
@@ -107,7 +112,7 @@ def main():
             image=QImage(data,w,h,stride,QImage.Format.Format_RGB888).copy()
             identity=request["id"]
             result=scan(image,request.get("cursor",[w//2,h//2]),recognizer,translator,
-                        lambda row:send({"id":identity,"row":row}))
+                        lambda row:send({"id":identity,"row":row}),relaxed=bool(request.get('relaxed')))
             send({"id":identity,"done":result})
         except Exception as error:
             send({"error":"Korean scan failed: "+str(error)});return 1

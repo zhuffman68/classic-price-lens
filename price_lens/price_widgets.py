@@ -17,6 +17,7 @@ class PriceCard(QFrame):
         self.fields={}
         def field(name,parent,style="font-size: 11px; color: #98a3b1",wrap=True):
             widget=text_label("",style,wrap)
+            widget.setProperty("quietUpdates",True)
             self.fields[name]=widget
             parent.addWidget(widget)
             return widget

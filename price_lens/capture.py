@@ -7,7 +7,7 @@ import tempfile
 import time
 import sys
 
-from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer, Signal, QRect, QPoint
+from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer, Signal, QRect, QPoint, Qt
 from PySide6.QtGui import QImage
 import json
 from .stream import StreamClient, screen_pixels
@@ -31,6 +31,8 @@ class PixelReader(QObject):
         self.submitted_sequence = -1
         self.latest_latency_ms = None
         self.experience_enabled = False
+        self.prices_enabled = True
+        self.pending_locate_only = False
         self.last_experience = 0.0
         self.last_map_read = 0.0
         self.pending_experience = False
@@ -54,6 +56,8 @@ class PixelReader(QObject):
         self.submitted_image = QImage()
         self.next_area_search = 0.0
         self.last_geometry_check = 0.0
+        self.last_locator_check = 0.0
+        self.pending_local_roi = False
         self.pending = False
         self.paused = False
         self.generation = 0
@@ -210,10 +214,25 @@ class PixelReader(QObject):
 
     def validate_area(self):
         if self.auto_active and self.game_area and any(
-                self.fingerprint(self.image, area) != digest for area, digest in self.game_guards):
+                not self.guard_matches(self.image, area, digest) for area, digest in self.game_guards):
             # Discard results from the old position before drawing another label.
             self.generation += 1
             self.reset_area()
+
+    @staticmethod
+    def guard_signature(image, area):
+        if image.isNull() or not image.rect().contains(area):return None
+        patch=image.copy(area).scaled(16,16,Qt.AspectRatioMode.IgnoreAspectRatio,
+             Qt.TransformationMode.SmoothTransformation).convertToFormat(QImage.Format.Format_Grayscale8)
+        return bytes(patch.constBits())
+
+    @classmethod
+    def guard_matches(cls,image,area,reference):
+        current=cls.guard_signature(image,area)
+        if current is None or reference is None:return False
+        gain=sum(current)/max(1,sum(reference))
+        if not .80<=gain<=1.20:return False
+        return sum(abs(a-b*gain) for a,b in zip(current,reference))/len(current)<8
 
     def scan(self):
         if self.paused:
@@ -234,6 +253,12 @@ class PixelReader(QObject):
             return
         if self.auto_active and self.game_area is None and time.monotonic() < self.next_area_search:
             return
+        if not self.prices_enabled:
+            if self.auto_active and (self.game_area is None or now-self.last_locator_check>=1):
+                self.scan_location(now)
+            elif exp_due:self.scan_experience(now)
+            else:self.submitted_sequence=self.image_sequence
+            return
         image = self.image.copy(self.crop) if self.crop else self.image
         pointer = self.pointer
         if pointer and self.crop:
@@ -246,11 +271,11 @@ class PixelReader(QObject):
         if hover_check and self.tooltip_rect and self.tooltip_fingerprint is not None and self.pointer == self.last_pointer:
             tooltip_same = self.fingerprint(image, self.tooltip_rect) == self.tooltip_fingerprint
         if self.shop_rect and self.shop_fingerprint is not None:
-            patch = image.copy(self.shop_rect)
+            patch = image.copy(self.shop_context or self.shop_rect)
             fingerprint = hashlib.blake2b(patch.constBits(), digest_size=8).digest()
             shop_hover_due = in_shop and (self.pointer != self.last_pointer or time.monotonic() - self.last_geometry_check >= 0.2)
             if (fingerprint == self.shop_fingerprint and not shop_hover_due and (not hover_check or tooltip_same)
-                    and (not self.auto_active or time.monotonic()-self.last_geometry_check<0.4)):
+                    and (not self.auto_active or now-self.last_locator_check<1.0)):
                 self.submitted_sequence = self.image_sequence
                 if exp_due:self.scan_experience(now)
                 return
@@ -264,16 +289,20 @@ class PixelReader(QObject):
             self.scan_experience(now)
             return
         origin = {"x": 0, "y": 0}
-        self.using_roi = bool(self.shop_rect and self.roi_clean and not hover_check and not in_shop)
+        self.using_roi = bool(self.shop_rect and self.roi_clean and not hover_check)
+        self.pending_local_roi=bool(self.auto_active and self.using_roi and self.game_area
+                                   and now-self.last_locator_check<1.0)
         if self.using_roi:
-            region = self.shop_rect.adjusted(-8, -8, 8, 8).intersected(image.rect())
-            if not self.auto_active:
+            region = (self.shop_context or self.shop_rect).adjusted(-16, -16, 16, 16).intersected(image.rect())
+            if not self.auto_active or self.pending_local_roi:
                 origin = {"x": region.x(), "y": region.y()}
                 image = image.copy(region)
+        if self.auto_active and not self.pending_local_roi:self.last_locator_check=now
         image = image.convertToFormat(QImage.Format.Format_RGBA8888)
         path = Path(self.temp.name) / "frame.rgba"
         path.write_bytes(image.constBits())
         self.pending = True
+        self.pending_locate_only=False
         self.pending_experience = False
         self.pending_generation = self.generation
         self.pending_since = time.monotonic()
@@ -285,10 +314,20 @@ class PixelReader(QObject):
                    "pointer": {"x": pointer[0], "y": pointer[1]} if pointer is not None else None,
                    "tooltip": bool(hover_check),
                    "origin": origin,
-                   "auto_game": self.auto_active,
-                   "roi": {"x": region.x(), "y": region.y(), "width": region.width(), "height": region.height()} if self.auto_active and self.using_roi else None,
+                   "auto_game": self.auto_active and not self.pending_local_roi,
+                   "roi": {"x": region.x(), "y": region.y(), "width": region.width(), "height": region.height()} if self.auto_active and self.using_roi and not self.pending_local_roi else None,
                    "width": image.width(), "height": image.height()}
         self.process.write((json.dumps(request) + "\n").encode())
+
+    def scan_location(self,now):
+        image=self.image.convertToFormat(QImage.Format.Format_RGBA8888)
+        path=Path(self.temp.name)/'location.rgba';path.write_bytes(image.constBits())
+        self.pending=True;self.pending_experience=False;self.pending_locate_only=True
+        self.pending_local_roi=False;self.pending_generation=self.generation
+        self.pending_since=self.last_locator_check=now
+        self.submitted_sequence=self.image_sequence;self.submitted_image=self.image
+        self.process.write((json.dumps({'path':str(path),'at_ms':int(self.last_frame*1000),
+             'auto_game':True,'locate_only':True,'width':image.width(),'height':image.height()})+'\n').encode())
 
     def scan_experience(self, now):
         # Reuse this capture and this OCR process. Map search is infrequent;
@@ -331,11 +370,11 @@ class PixelReader(QObject):
                         if self.experience_enabled and time.monotonic()*1000-result.get("atMs",0) < 3000:
                             self.experience.emit(result)
                         continue
-                    if self.auto_active:
+                    if self.auto_active and not self.pending_local_roi:
                         area = result.get("gameArea")
                         guards = [QRect(r["x"], r["y"], r["width"], r["height"]) for r in result.get("gameGuards") or []]
-                        fingerprints = [(r, self.fingerprint(self.submitted_image, r)) for r in guards]
-                        if area and (not fingerprints or any(self.fingerprint(self.image, r) != digest for r, digest in fingerprints)):
+                        fingerprints = [(r, self.guard_signature(self.submitted_image, r)) for r in guards]
+                        if area and (not fingerprints or any(not self.guard_matches(self.image, r, digest) for r, digest in fingerprints)):
                             self.reset_area()
                             continue
                         selected = QRect(area["x"], area["y"], area["width"], area["height"]) if area else None
@@ -345,6 +384,7 @@ class PixelReader(QObject):
                             self.next_area_search = time.monotonic() + 0.4
                         if changed:
                             self.area_changed.emit()
+                    if self.pending_locate_only:continue
                     area = (result.get("shop") or {}).get("area")
                     rows = (result.get("shop") or {}).get("rows") or []
                     clean = all(row.get("covered") or row.get("name") and row.get("price") for row in rows)
@@ -371,10 +411,10 @@ class PixelReader(QObject):
                     else:
                         self.shop_context = None
                     if self.shop_rect:
-                        source = self.image.copy(self.crop) if self.crop else self.image
-                        # Only bind a fingerprint to the exact frame that was read.
-                        self.shop_fingerprint = (self.fingerprint(source, self.shop_rect)
-                                                 if self.image_sequence == self.submitted_sequence else None)
+                        source = self.submitted_image.copy(self.crop) if self.crop else self.submitted_image
+                        # Compare later frames with the frame actually recognised.
+                        # New captures arriving during OCR must not disable caching.
+                        self.shop_fingerprint = self.fingerprint(source, self.shop_context or self.shop_rect)
                     else:
                         self.shop_fingerprint = None
                     tooltip = (result.get("tooltip") or {})

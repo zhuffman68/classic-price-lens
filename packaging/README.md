@@ -74,7 +74,7 @@ Butler serves browser downloads as ZIPs. The portable channel contains the appli
 
 Existing files uploaded manually through the browser are separate from Butler channels. The publisher leaves them in place; remove superseded manual entries from Edit project once the new channels are verified. Page descriptions, screenshots and password settings remain managed through the itch.io dashboard.
 
-The app is now named Lupin. Internal package and installation identities stay unchanged for seamless upgrades; public archives use Lupin/lupin names.
+The app and native Linux packages are named Lupin/lupin. Pacman and DEB metadata explicitly replace `classic-price-lens`; test the migration from the previous package before release. Internal installation/settings/desktop/portal IDs stay stable to preserve user data and sharing. Windows shortcuts use a fresh `lupin.ico` resource path. Public archives use Lupin/lupin names.
 
 ## Local Korean model bundle
 

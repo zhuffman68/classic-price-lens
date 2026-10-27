@@ -32,6 +32,8 @@ class AppControl(QObject):
     toggle = Signal()
     minimize = Signal()
     translate = Signal()
+    prices = Signal()
+    exp = Signal()
 
     def __init__(self, parent=None, name=None, lock_path=None):
         super().__init__(parent)
@@ -80,7 +82,7 @@ class AppControl(QObject):
         if b"\n" not in data:
             return
         command = data.split(b"\n", 1)[0]
-        if command not in (b"activate", b"quit", b"toggle", b"minimize", b"translate"):
+        if command not in (b"activate", b"quit", b"toggle", b"minimize", b"translate",b"prices",b"exp"):
             socket.write(b"error\n")
             socket.disconnectFromServer()
             return
@@ -90,7 +92,7 @@ class AppControl(QObject):
             # Keep the client connected until aboutToQuit closes this server.
             QTimer.singleShot(0, self.quit.emit)
         else:
-            action = {b"activate": self.activate, b"toggle": self.toggle, b"minimize": self.minimize, b"translate":self.translate}[command]
+            action = {b"activate": self.activate, b"toggle": self.toggle, b"minimize": self.minimize, b"translate":self.translate,b"prices":self.prices,b"exp":self.exp}[command]
             QTimer.singleShot(0, action.emit)
             socket.disconnectFromServer()
 

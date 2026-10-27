@@ -54,13 +54,13 @@ def main():
     destinations = {
         "packaging/classic-price-lens": "usr/bin/classic-price-lens",
         "packaging/classic-price-lens.desktop": "usr/share/applications/io.github.zhuffman68.ClassicPriceLens.desktop",
-        "price_lens/resources/icon.png": "usr/share/icons/hicolor/256x256/apps/io.github.zhuffman68.ClassicPriceLens.png",
+        "price_lens/resources/icon.png": "usr/share/icons/hicolor/256x256/apps/io.github.zhuffman68.Lupin.png",
         "README.md": "usr/share/doc/classic-price-lens/README.md",
         "THIRD_PARTY.md": "usr/share/doc/classic-price-lens/copyright",
     }
     for size in (16, 24, 32, 48, 64, 128):
         destinations[f"price_lens/resources/icon-{size}.png"] = (
-            f"usr/share/icons/hicolor/{size}x{size}/apps/io.github.zhuffman68.ClassicPriceLens.png")
+            f"usr/share/icons/hicolor/{size}x{size}/apps/io.github.zhuffman68.Lupin.png")
     for source, relative in destinations.items():
         target = STAGE / relative
         target.parent.mkdir(parents=True, exist_ok=True)

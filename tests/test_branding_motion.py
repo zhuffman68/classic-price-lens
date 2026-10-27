@@ -64,7 +64,7 @@ class BrandingMotionTests(unittest.TestCase):
             self.app.setProperty("reduceMotion",False)
             tabs.show();self.app.processEvents()
             for index in (1,2,0,2):tabs.setCurrentIndex(index);self.app.processEvents()
-            QTest.qWait(180)
+            QTest.qWait(390)
             self.assertEqual(tabs.currentWidget().text(),"EXP")
             self.assertIsNone(tabs.snapshot)
             self.app.setProperty("reduceMotion",True);tabs.setCurrentIndex(0)

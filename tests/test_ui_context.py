@@ -386,13 +386,16 @@ class ContextUiTests(unittest.TestCase):
             fresh.deleteLater()
             QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
 
-    def test_hotkey_and_button_share_the_same_toggle(self):
+    def test_price_hotkey_is_independent_of_screen_reading_and_exp(self):
         self.window.hotkeys.activated.emit()
-        self.assertEqual(self.window.mode, "paused")
-        self.assertEqual(self.window.share.text(), "Resume reading")
+        self.assertEqual(self.window.mode,'live')
+        self.assertFalse(self.window.prices_enabled)
+        self.assertFalse(self.window.reader.prices_enabled)
         self.window.hotkeys.activated.emit()
-        self.assertEqual(self.window.mode, "live")
-        self.assertEqual(self.window.reader.starts, 1)
+        self.assertTrue(self.window.prices_enabled)
+        self.window.share.click()
+        self.assertEqual(self.window.mode,'paused')
+
 
     def test_pause_ignores_pending_readings_and_does_not_refresh_prices(self):
         self.window.on_reading(self.reading(shop_hover=True))
@@ -514,8 +517,8 @@ class ContextUiTests(unittest.TestCase):
         now = time.time()
         self.window.on_quote(1, Quote(1, 1000, now, now, 20, "Test", "", "24h"))
         self.assertTrue(self.window.settings.values["first-price-seen"])
-        self.assertFalse(self.window.success_frame.isHidden())
-        self.assertTrue(any(button.text() == "Minimize panel" for button in self.window.success_frame.findChildren(QPushButton)))
+        self.assertTrue(self.window.success_frame.isHidden())
+        self.assertFalse(self.window.shortcuts_button.isHidden())
         self.window.dismiss_setup()
         self.assertTrue(self.window.success_frame.isHidden())
 
@@ -604,35 +607,13 @@ class ContextUiTests(unittest.TestCase):
                 self.assertNotIn("987,654", "\n".join(row["text"] for row in self.window.overlay.rows))
                 self.assertIn("0 market references ready", self.window.summary.text())
 
-    def test_display_diagram_selects_friendly_display_without_starting_capture(self):
-        class Screen:
-            def __init__(self, number):
-                self.number = number
-
-            def name(self):
-                return f"DEVICE-{self.number}"
-
-            def geometry(self):
-                return QRect(self.number * 1280, 0, 1280, 720)
-
-            def devicePixelRatio(self):
-                return 1.5
-
-        with patch("price_lens.ui.QApplication.screens", return_value=[Screen(i) for i in range(3)]):
-            fresh = LensWindow(Path.cwd(), Path("unused-cache"))
-            try:
-                self.assertEqual(fresh.monitor.itemText(2), "Display 2 · Centre · 1920 × 1080")
-                fresh.display_map.resize(400, 78)
-                fresh.display_map.grab()
-                point = fresh.display_map.boxes[1].center()
-                event = QMouseEvent(QEvent.Type.MouseButtonPress, point, point,
-                                    Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton,
-                                    Qt.KeyboardModifier.NoModifier)
-                fresh.display_map.mousePressEvent(event)
-                self.assertEqual(fresh.screen_index, 1)
-                self.assertEqual(fresh.reader.starts, 0)
-                self.assertEqual(fresh.settings.values["monitor-name"], "DEVICE-1")
-            finally:
-                fresh.close()
-                fresh.deleteLater()
-                QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    def test_single_display_dropdown_and_three_feature_tabs(self):
+        self.assertFalse(hasattr(self.window,'display_map'))
+        self.window.monitor.setCurrentIndex(1)
+        self.assertIsNotNone(self.window.screen_index)
+        self.assertEqual([self.window.tabs.tabText(i) for i in range(3)],['Prices','EXP Tracking','Translation'])
+        self.assertEqual(self.window.search_panel.parentWidget(),self.window.prices_page)
+        self.assertFalse(self.window.exp_enabled)
+        for i in range(3):
+            self.window.tabs.setCurrentIndex(i);self.app.processEvents()
+            self.assertFalse(self.window.shortcuts_button.isHidden())

@@ -38,16 +38,16 @@ def main():
     control.mkdir()
     size = sum(p.stat().st_size for p in deb.rglob("*") if p.is_file() and not p.is_symlink()) // 1024
     (control / "control").write_text(
-        f"Package: classic-price-lens\nVersion: {__version__}-1\nArchitecture: amd64\n"
+        f"Package: lupin\nVersion: {__version__}-1\nArchitecture: amd64\n"
         "Maintainer: zhuffman68 <99307526+zhuffman68@users.noreply.github.com>\n"
-        "Section: games\nPriority: optional\n"
+        "Section: games\nPriority: optional\nProvides: classic-price-lens\nConflicts: classic-price-lens\nReplaces: classic-price-lens\n"
         f"Installed-Size: {size}\nDepends: {DEB_DEPENDS}\n"
         "Recommends: xdg-desktop-portal-gtk | xdg-desktop-portal-kde | xdg-desktop-portal-gnome, fonts-dejavu-core\n"
         "Suggests: spectacle\nHomepage: https://github.com/zhuffman68/lupin\n"
-        "Description: Lupin - Classic World market and EXP companion\n"
-        " Shows item names and cached meso market references beside visible shop\n"
-        " items and inventory tooltips. Uses ordinary OS screen sharing and\n"
-        " independent click-through windows. Includes Python, Qt and offline OCR.\n")
+        "Description: Tools for MapleStory Classic World\n"
+        " Shows cached meso market references, tracks EXP and translates Korean\n"
+        " speech bubbles locally. Uses OS screen sharing and independent\n"
+        " click-through windows. Includes Python, Qt, OCR and translation models.\n")
     checksums = []
     for path in sorted(deb.rglob("*")):
         if path.is_file() and not path.is_symlink() and control not in path.parents:
@@ -72,9 +72,7 @@ def main():
     config.write_text("source /etc/makepkg.conf\nCOMPRESSZST=(zstd -c -T2 -10 -)\n"
                       "PACKAGER='zhuffman68 <99307526+zhuffman68@users.noreply.github.com>'\n")
     subprocess.run(["makepkg", "--force", "--nodeps", "--cleanbuild", "--config", str(config)], cwd=arch, env=env, check=True)
-    native = ROOT / f"dist/classic-price-lens-{__version__}-1-x86_64.pkg.tar.zst"
     renamed = ROOT / f"dist/lupin-{__version__}-1-x86_64.pkg.tar.zst"
-    native.replace(renamed)
     print("Built:", output.name, renamed.name, flush=True)
 
 

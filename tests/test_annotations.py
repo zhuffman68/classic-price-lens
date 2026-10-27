@@ -100,3 +100,29 @@ class AnnotationMotionTests(unittest.TestCase):
         self.window.read_command(json.dumps({**self.command, "rows": [], "hover_enabled": False}))
         self.assertEqual(self.window.retiring, [])
         self.assertTrue(self.window.isHidden())
+
+    def test_only_shop_labels_overlapping_the_description_fade_and_return_in_place(self):
+        rows=[{'x':120,'y':90,'name':'Hat','key':'shop:0','kind':'shop','text':'FM 1,000'},
+              {'x':120,'y':150,'name':'Shoes','key':'shop:1','kind':'shop','text':'FM 2,000'}]
+        state={**self.command,'rows':rows}
+        self.window.read_command(json.dumps(state))
+        for row in self.window.rows:row['_fade'].setCurrentTime(110)
+        before=[self.window.label_rect(row,QPoint()) for row in self.window.rows]
+        for row in rows:row['occlusion']=[250,80,300,50]
+        self.window.read_command(json.dumps(state))
+        affected,clear=self.window.rows
+        affected['_fade'].setCurrentTime(110)
+        self.assertAlmostEqual(affected['_alpha'],.15)
+        self.assertAlmostEqual(clear['_alpha'],1)
+        self.assertEqual(before,[self.window.label_rect(row,QPoint()) for row in self.window.rows])
+        for row in rows:row['occlusion']=None
+        self.window.read_command(json.dumps(state))
+        affected['_fade'].setCurrentTime(110)
+        self.assertAlmostEqual(affected['_alpha'],1)
+        self.assertEqual(before,[self.window.label_rect(row,QPoint()) for row in self.window.rows])
+
+    def test_reduce_motion_keeps_overlap_transparency_without_an_animation(self):
+        self.window.read_command(json.dumps({**self.command,'reduce_motion':True,'rows':[
+            {'x':120,'y':90,'name':'Hat','key':'shop:0','kind':'shop','text':'FM 1,000','occlusion':[200,80,300,100]}]}))
+        self.assertAlmostEqual(self.window.rows[0]['_alpha'],.15)
+        self.assertIsNone(self.window.rows[0].get('_fade'))

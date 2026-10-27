@@ -17,12 +17,14 @@ def stamp(image, box):
 class ChatTranslation(QObject):
     changed=Signal()
     status=Signal(str)
+    retry_requested=Signal()
 
     def __init__(self,root,parent=None):
         super().__init__(parent)
         self.root=Path(root);self.process=None;self.ready=False;self.busy=False;self.identity=0
         self.buffer=b"";self.cards=[];self.frame=QImage();self.region=QRect();self.started=0
         self.enabled=False
+        self.is_retry=False
 
     def enable(self,enabled):
         self.enabled=enabled
@@ -72,9 +74,16 @@ class ChatTranslation(QObject):
                 self.cards.append(row);self.changed.emit()
             if message.get("done"):
                 self.busy=False;self.frame=QImage();result=message["done"]
-                self.status.emit(f"{result['count']} Korean message(s) · {result['elapsed_ms']:.0f} ms" if result["count"] else "No readable Korean speech bubbles found. Move near a message and try again.")
+                if result['count']:
+                    self.status.emit(f"{result['count']} message(s) translated · {result['elapsed_ms']:.0f} ms")
+                elif not self.is_retry:
+                    identity=self.identity
+                    self.status.emit("Checking one fresh frame…")
+                    QTimer.singleShot(120,lambda:self.retry_requested.emit() if self.enabled and self.identity==identity and not self.busy else None)
+                else:
+                    self.status.emit("Speech bubbles found, but their text is unclear. Try an uncovered message." if result.get('bubbles') and not result.get('readable') else "No Korean text found in visible speech bubbles.")
 
-    def request(self,image,region,cursor):
+    def request(self,image,region,cursor,retry=False):
         if not self.ready:
             self.status.emit("Local translation is warming up. Try again when Ready appears.");return False
         if self.busy:
@@ -85,9 +94,10 @@ class ChatTranslation(QObject):
             self.status.emit("The translation area is too large. Limit the reading area in Settings.");return False
         self.frame=image.copy(region);self.region=QRect(region);crop=self.frame.convertToFormat(QImage.Format.Format_RGB888)
         data=bytes(crop.constBits());self.identity+=1;self.cards=[];self.changed.emit()
-        request={"id":self.identity,"width":crop.width(),"height":crop.height(),"stride":crop.bytesPerLine(),
+        request={"id":self.identity,"width":crop.width(),"height":crop.height(),"stride":crop.bytesPerLine(),"relaxed":retry,
                  "cursor":[cursor[0]-region.x(),cursor[1]-region.y()]}
         self.started=time.monotonic();self.busy=True
+        self.is_retry=retry
         self.process.write((json.dumps(request)+"\n").encode());self.process.write(data)
         identity=self.identity
         QTimer.singleShot(4000,lambda:self.timeout(identity))
@@ -107,7 +117,8 @@ class ChatTranslation(QObject):
             if now>card["until"] or different:continue
             keep.append(card)
             rows.append({"kind":"translation","key":f"chat:{self.identity}:{index}","x":round((box[0]+box[2])*sx)+8,
-                         "y":round(box[1]*sy),"bounds":bounds,"name":(card["speaker"]+" · " if card["speaker"] else "")+card["note"],
+                         "y":round(box[1]*sy),"bounds":bounds,"name":card['speaker'] or 'Korean message',
+                         "note":'Partial translation · check original' if 'Partial' in card['note'] else 'Numbers uncertain · original retained' if 'uncertain' in card['note'] else '',
                          "text":card["text"],"original":card["original"],"color":"#e3e9f2"})
         self.cards=keep
         return rows

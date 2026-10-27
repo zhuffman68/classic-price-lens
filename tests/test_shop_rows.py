@@ -1,5 +1,6 @@
 from copy import deepcopy
 import unittest
+from PySide6.QtCore import QRect
 from PySide6.QtGui import QColor,QImage
 from price_lens.shop_rows import ShopRows
 
@@ -53,3 +54,32 @@ class ShopRowsTests(unittest.TestCase):
         self.shop["rows"].append(other);self.memory.observe(self.shop,self.image,1)
         changed=self.covered();changed["rows"][1]["name"]="New page"
         self.assertIsNone(self.memory.observe(changed,self.image,2)[0]["name"])
+
+    def test_small_row_geometry_noise_keeps_the_same_anchor(self):
+        for delta in (1,-1,2,-2):
+            noisy=deepcopy(self.shop)
+            noisy['area']['y']+=delta
+            noisy['rows'][0]['area']['y']+=delta
+            result=self.memory.observe(noisy,self.image,1)[0]
+            self.assertEqual(result['area'],self.row['area'])
+
+    def test_guard_occlusion_does_not_destroy_recovery_data(self):
+        original=self.image.copy()
+        self.image.setPixelColor(363,160,QColor('white'))
+        self.assertIsNone(self.memory.observe(self.covered(),self.image,1)[0]['name'])
+        result=self.memory.observe(self.covered(),original,2)[0]
+        self.assertEqual(result['name'],'Work Gloves')
+        self.assertEqual(result['price']['mesos'],100)
+
+    def test_native_tooltip_can_keep_a_hidden_reference_but_never_an_assumed_deal(self):
+        tip=QRect(200,150,220,300)
+        self.image.setPixelColor(363,160,QColor('white'))
+        row=self.memory.observe(self.covered(),self.image,10,tooltip=tip)[0]
+        self.assertTrue(row['reference_only']);self.assertTrue(row['covered'])
+        self.assertEqual(row['name'],'Work Gloves');self.assertIsNone(row['price'])
+        self.assertEqual(row['area'],self.row['area'])
+
+    def test_guard_changed_outside_tooltip_cannot_reuse_a_hidden_reference(self):
+        self.image.setPixelColor(110,120,QColor('white'))
+        row=self.memory.observe(self.covered(),self.image,10,tooltip=QRect(200,150,220,300))[0]
+        self.assertFalse(row.get('reference_only'));self.assertIsNone(row['name'])

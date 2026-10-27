@@ -1,10 +1,10 @@
 [Desktop Entry]
 Type=Application
 Name=Lupin
-GenericName=Classic World market and EXP companion
-Comment=Show Classic World market prices beside visible items
+GenericName=Tools for MapleStory Classic World
+Comment=Prices, EXP tracking and Korean translation for Classic World
 Exec=lupin
-Icon=io.github.zhuffman68.ClassicPriceLens
+Icon=io.github.zhuffman68.Lupin
 Terminal=false
 Categories=Game;
 StartupNotify=true
