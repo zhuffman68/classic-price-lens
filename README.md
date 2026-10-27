@@ -4,12 +4,91 @@
 
 **Tools for MapleStory Classic World.**
 
-- Market prices beside shop, inventory and equipment items, including cash/NX resale prices.
-- Item search with item images, a shared local price cache and clear price ages.
-- EXP and meso tracking with live rates, a session timer, level-up ETA and saved history.
-- Local Korean translation: read Korean messages in English, or write a Korean reply and copy it to paste yourself.
+Market prices, EXP and meso tracking, and local Korean translation beside the game.
+Lupin reads shared screen pixels and draws independent overlays. It never hooks into MapleStory or sends game input.
 
-Lupin reads OS-shared screen pixels and draws separate, click-through labels. It never hooks into the game. Screenshots and translations stay on your device. Equipment prices assume unscrolled items.
+[Download and install](#download-and-install) · [Getting started](#getting-started) · [Help](#help)
+
+<!-- HERO MEDIA: docs/media/lupin-overview.png — real game and app side by side. -->
+
+## Market prices
+
+See market references beside player-shop listings, with item names and colors that make lower, similar and higher asking prices easy to compare. Hover inventory or equipped items for their market reference, including while a shop is open.
+
+- Supports equipment, scrolls, materials, consumables and cash/NX resale prices when market reports exist.
+- Keeps shop references visible when an item description overlaps them.
+- Shows when a price was checked and how old its market reports are. Thin or stale data receive no deal rating.
+- Compares equipment as unscrolled. Individual stat rolls are not priced.
+
+<!-- DEMO: docs/media/shop-prices.gif — open a populated shop and hover a listing. -->
+<!-- SCREENSHOT: docs/media/inventory-equipment.png — a recognized item and its market card. -->
+
+## Item search
+
+Look up an item without opening a shop or sharing a screen. Type its name, browse matching items with thumbnails, and select one for its market reference. Search gets priority over on-screen results, with those results still available when needed.
+
+Prices share a local cache with the overlay. Saved references appear while updates run; missing market reports are shown separately from an unreadable item name. The full market refreshes on launch and hourly, with cached individual lookups as a fallback.
+
+<!-- DEMO: docs/media/item-search.gif — type, select an item, inspect its reference, clear the search. -->
+
+## EXP and meso tracking
+
+Start a session and watch gain, per-minute and per-hour figures in matching columns.
+
+- **EXP:** percentage progress by default, with raw EXP or both available in Settings.
+- **Pace:** a session timer, recent average rates and an estimated time to the next level.
+- **Mesos:** wallet balance, net change and live rates while the item inventory's wallet is visible.
+- **In-game tracker:** an optional bottom-left overlay for pace, level-up ETA and meso change.
+- **Session controls:** Start, Pause and Stop; tracking always begins stopped when Lupin opens.
+
+EXP rates and ETA use 30 seconds of valid tracking to establish a pace. Hidden wallet readings show their age; reopening the inventory updates the balance. Net meso change includes purchases, sales and trades. Carried potions and unsold loot are not valued as farming profit.
+
+### Training history
+
+Add a map label and notes directly on the tracking page. Save sessions, compare runs by character and map, and export history to CSV. Map changes save segments automatically; history stays local.
+
+<!-- DEMO: docs/media/tracking.mp4 — real training, visible wallet and the in-game tracker. -->
+<!-- SCREENSHOT: docs/media/training-history.png — labeled runs and CSV export. -->
+
+## Korean translation
+
+### Read Korean
+
+Press the scan shortcut to translate visible Korean text into English. Lupin checks the full detected game window, including speech bubbles and chat, independently of the mouse position.
+
+Results appear as soon as they are ready, with the Korean original kept alongside the translation. Popups follow matching text through modest movement and linger briefly after it disappears. Scan duration and popup delay are adjustable; recent results stay in the Translation tab.
+
+<!-- DEMO: docs/media/read-korean.gif — activate a scan and show English with the original Korean. -->
+
+### Write Korean
+
+Open the writer, type an English message and review the Korean preview. Press **Enter** or **Translate & Copy** to copy it; a notification confirms the copy. Choose where to paste with **Ctrl+V** and when to send.
+
+Common trade and party shorthand is recognized. Known item names stay in English, and explicit numbers, prices and percentages are checked: `250` stays `250`, `250k` stays `250k`, and `2.5m` stays `2.5m`.
+
+Both translation directions run locally with the included models. Writing works without screen sharing. Lupin never pastes or sends a message for you.
+
+<!-- DEMO: docs/media/write-korean.gif — draft, preview, Translate & Copy and copied notification. -->
+
+## Desktop controls
+
+Choose a display and Lupin finds the Classic World area automatically. A manual area selection is available in Settings. The window remembers its size; its default and minimum width are 460 pixels so it can fit beside a 1366-wide game on a 1080p display.
+
+- Configurable shortcuts for prices, tracking, reading Korean and opening the writer.
+- The current tool's shortcut shown at the bottom of each tab.
+- Minimize to the tray by default, with a notification and right-click controls.
+- Optional always-on-top control panel, reduced motion and independent overlay toggles.
+
+| Default shortcut | Action |
+| --- | --- |
+| **Super/Win + F8** | Open the Korean writer. |
+| **Super/Win + F9** | Pause or resume prices. Tracking continues. |
+| **Super/Win + F10** | Start tracking, then pause or resume it. |
+| **Super/Win + F11** | Scan Korean text. |
+
+Use **Hotkeys…** below Settings to change assignments. **Pause reading** pauses the shared reader; **Close / Quit** ends sharing.
+
+<!-- DEMO: docs/media/desktop-controls.mp4 — display selection, tabs, hotkeys and tray controls. -->
 
 ## Download and install
 
@@ -21,54 +100,28 @@ Download from **[itch.io](https://zhuffman68.itch.io/lupin)**. Repository collab
 | Arch / Manjaro | `.pkg.tar.zst` | `sudo pacman -U ./lupin-0.12.0-1-x86_64.pkg.tar.zst` |
 | Debian 12+ / Ubuntu 22.04+ | `.deb` | `sudo apt install ./lupin_0.12.0-1_amd64.deb` |
 
-Extract itch.io downloads before running an installer or package command. A Windows portable ZIP is also available: extract it fully and open `run-windows.bat`.
+Extract downloaded ZIPs before running an installer or package command. For the Windows portable build, extract the full folder and open `run-windows.bat`. Updates preserve settings, prices and history; Linux packages replace the former `classic-price-lens` package.
 
-Requirements: a supported 64-bit desktop, about **3 GB free space** for installation, and internet for market updates and uncached item images. Python, Qt, OCR and local translation models are included. **Chrome, Edge or Chromium** enables the full-market cache; individual lookups work without it. Linux screen sharing needs PipeWire and a working desktop sharing portal, normally provided by KDE or GNOME.
+Requirements: a supported 64-bit desktop, about **3 GB free space** for installation, and internet for market updates or uncached item images. Python, Qt, OCR and both translation models are bundled. **Chrome, Edge or Chromium** enables the full-market cache; individual lookups work without it. Linux sharing needs PipeWire and a working desktop sharing portal, normally supplied by KDE or GNOME.
 
-Updates preserve settings, prices and history. Linux packages are now named `lupin` and replace `classic-price-lens`.
+## Getting started
 
-## Get started
+1. Choose the display containing Classic World, click **Start reading**, and approve OS sharing if prompted.
+2. Keep the game's bottom status bar visible for automatic game-area detection.
+3. Open a shop, hover an item or use **Prices** to search by name.
+4. Open **EXP/Meso Tracking** and press **Start tracking**. Open the item inventory to read the wallet.
+5. Use **Translation → Read Korean** for incoming text, or **Write Korean** for a reply to copy.
 
-1. Choose the display containing Classic World and click **Start reading**. Approve OS screen sharing if prompted.
-2. Keep the game's bottom status bar visible. Lupin finds the game area automatically.
-3. Open a shop or hover an inventory/equipment item to see market references. Search by name at the top of **Prices**; search works without sharing.
-4. Open **EXP/Meso Tracking** and press **Start tracking** when ready. Tracking always begins stopped when the app opens.
-5. Open **Translation → Read Korean** to scan the game window, or **Write Korean** to translate an English draft and copy it. Writing needs no screen sharing.
-
-| Shortcut | Action |
-| --- | --- |
-| **Super/Win + F8** | Open the Korean writer. Enter translates and copies; paste and send yourself. |
-| **Super/Win + F9** | Toggle prices. Tracking continues. |
-| **Super/Win + F10** | Start EXP/meso tracking, then pause/resume it. |
-| **Super/Win + F11** | Scan the game window for Korean text. Press again to restart the scan. |
-
-Change shortcuts with **Hotkeys…** below Settings, or Settings. The active shortcut is also shown at the bottom of each tab. Wayland uses the desktop's shortcut chooser. **Pause reading** pauses the shared reader; **Minimize** sends the panel to the tray by default. Right-click the tray icon for controls. **Close / Quit** ends sharing.
-
-## Prices and tracking
-
-Shop labels show names, market references, colored comparisons and price ages. Inventory cards also work while a shop is open; hovering a shop listing uses its row label. Labels overlapping the game's item-description tooltip become faint and return when it closes.
-
-The full market refreshes in the background on launch and hourly. Missing items use individual lookups, cached for 15 minutes by default. Saved data remains visible during refreshes. Price-check time, market-report age and snapshot age are separate; old or thin data receive no deal rating. References are guides, not guaranteed sales.
-
-EXP gain and the shared session timer appear immediately. Rates and ETA need **30 seconds of valid tracked time** to estimate a pace, then use a recent five-minute average. Pause excludes breaks; Stop saves the run and turns off tracking. Map segments save automatically. **Show tracker in game** controls the bottom-left overlay and is also available in Settings. Percentage is the default; Settings offers raw EXP or both. History stays local and exports to CSV.
-
-Meso tracking reads the **wallet in the item inventory**. Keep it visible for live rates, or reopen it periodically to update net change; hidden readings show their age. New balances need two matching screen reads. Purchases, sales and trades count toward net change. Potions already carried and unsold loot are not valued as profit. Pause excludes wallet changes during the break.
-
-The window remembers its last size; the default and minimum width are both 460 pixels. The first-launch layout fits normal controls on a standard desktop; long results and history can scroll.
-
-## Korean replies
-
-Press **Super/Win + F8**, type an English message, then press **Enter** or **Translate & Copy**. A notification confirms the copy. Open chat and paste with **Ctrl+V** when ready; Lupin never pastes, sends or controls the game. Both translation directions work offline with the included models. Incoming scans last four seconds by default; popups stay while their source is visible, then for another 1.5 seconds. Both timings are adjustable in Translation.
-
-Common trade and party shorthand such as `WTS`, `WTB`, `pmo`, `ea` and `LF1M` is recognized. Known item names stay in English. Explicit prices and percentages are checked before copying: `250` stays `250`, `250k` stays `250k`, and `2.5m` stays `2.5m`. Review the preview, especially for unusual slang or freeform sentences.
+Screenshots, translations and session history stay on the device. Market requests contain item information, never screenshots. Cached references guide comparisons and do not guarantee a sale.
 
 ## Help
 
-- **Game not found:** uncover the bottom status bar or use **Settings → Limit the reading area…**.
-- **Sharing stopped or labels misaligned:** use **Reconnect display** and share the selected display or full workspace.
-- **No market reports:** the name was recognized, but the source has no usable price.
-- **Translation found nothing:** keep the game text visible and try another scan. The pointer position does not limit scanning. Scan duration and the delay after text disappears are configurable under Translation.
+- **Game not found:** uncover the bottom status bar, or use **Settings → Limit the reading area…**.
+- **Sharing stopped or labels misaligned:** reconnect the display and share that display or the full workspace.
+- **No market reports:** the item was recognized, but the source has no usable price.
+- **Meso balance is old:** reopen the item inventory while tracking.
+- **Translation found nothing:** keep the text visible and scan again. The pointer does not limit the scan.
 
-Connection details and capture preview are in Settings. Windows installers are checked under Wine; live native Windows capture and mixed-DPI alignment still need a Windows playtest.
+Connection details and capture preview are in Settings. Windows installer behavior is checked under Wine; native Windows capture and mixed-DPI alignment still need a Windows playtest.
 
-[Windows help](README-WINDOWS.md) · [Translation](docs/KOREAN_CHAT.md) · [Architecture](ARCHITECTURE.md) · [Technical details](docs/TECHNICAL.md) · [Building installers](packaging/README.md) · [Validation](VERIFICATION.md) · [Credits](THIRD_PARTY.md)
+[Windows help](README-WINDOWS.md) · [Translation](docs/KOREAN_CHAT.md) · [Architecture](ARCHITECTURE.md) · [Technical details](docs/TECHNICAL.md) · [Validation](VERIFICATION.md) · [Credits](THIRD_PARTY.md)
