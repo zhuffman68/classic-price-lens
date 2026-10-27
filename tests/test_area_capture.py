@@ -16,6 +16,30 @@ ROOT=Path(__file__).resolve().parents[1]
 
 
 class AreaCaptureTests(unittest.TestCase):
+    def test_inventory_hover_reads_alongside_an_open_shop_without_roi_clipping(self):
+        reader=PixelReader(ROOT);reader.live_source=True;reader.tooltip_enabled=True
+        readings=[];reader.reading.connect(readings.append)
+        def wait_for(predicate):
+            deadline=time.monotonic()+10
+            while not predicate():
+                self.assertLess(time.monotonic(),deadline,'Inventory/shop fixture did not finish')
+                self.app.processEvents();time.sleep(.005)
+        frame=game_frame(width=1200,height=800,desktop=(1600,1000));painter=QPainter(frame)
+        painter.drawImage(650,180,QImage(str(ROOT/'vendor/minerva/samples/player-shop/gems-and-ores.png')))
+        painter.drawImage(140,180,QImage(str(ROOT/'vendor/minerva/samples/item-tooltip/screw@60,20.png')));painter.end()
+        try:
+            wait_for(lambda:reader.process.state()==reader.process.ProcessState.Running)
+            reader.on_stream_frame(frame,time.monotonic());wait_for(lambda:bool(readings) and not reader.pending)
+            self.assertEqual(len(readings[-1]['shop']['rows']),5)
+            count=len(readings);reader.pointer=(200,200)
+            reader.on_stream_frame(frame,time.monotonic());wait_for(lambda:len(readings)>count and not reader.pending)
+            self.assertEqual(readings[-1]['tooltip']['found']['name'],'Screw')
+            self.assertEqual(len(readings[-1]['shop']['rows']),5)
+            self.assertFalse(reader.using_roi)
+        finally:
+            reader.close();reader.deleteLater()
+            QCoreApplication.sendPostedEvents(None,QEvent.Type.DeferredDelete);self.app.processEvents()
+
     @classmethod
     def setUpClass(cls):
         os.environ.setdefault("QT_QPA_PLATFORM","offscreen")

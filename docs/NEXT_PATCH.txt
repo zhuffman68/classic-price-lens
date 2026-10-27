@@ -1,0 +1,9 @@
+Next patch: remember the main window size
+
+Requested during the v0.11.0 final build; the user allowed this to wait.
+
+Restore the last normal window size on reopen. Clamp it to the current display's
+available area so a display or scaling change cannot leave the window oversized.
+Retain the first-launch default that fits all normal page controls without scrolling.
+Preserve the existing display-selection and capture-sharing behavior. Do not
+implicitly start EXP tracking while restoring window state.

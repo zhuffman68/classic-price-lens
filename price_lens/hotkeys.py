@@ -8,7 +8,7 @@ import itertools
 from PySide6.QtCore import QAbstractNativeEventFilter, QObject, QSocketNotifier, Qt, Signal
 from PySide6.QtGui import QGuiApplication, QKeySequence
 
-DEFAULT_HOTKEY = "F10"
+DEFAULT_HOTKEY = "Meta+F9"
 
 
 @dataclass(frozen=True)
@@ -223,7 +223,7 @@ class HotkeyManager(QObject):
         self.portal = sys.platform == "linux" and bool(os.environ.get("WAYLAND_DISPLAY") or os.environ.get("XDG_SESSION_TYPE") == "wayland")
         self.backend = None
         self.text = None
-        self.action = "toggle-reading"
+        self.action = "toggle-prices"
         self.actions=None
 
     def start(self, text=DEFAULT_HOTKEY):

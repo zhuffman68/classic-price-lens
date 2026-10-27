@@ -8,8 +8,8 @@ import unittest
 from unittest.mock import patch
 
 from PySide6.QtCore import QCoreApplication, QEvent, QObject, QRect, Qt, QTimer, Signal
-from PySide6.QtGui import QImage, QKeySequence, QMouseEvent
-from PySide6.QtWidgets import QApplication, QDialog, QKeySequenceEdit, QLabel, QPushButton
+from PySide6.QtGui import QColor, QImage, QKeySequence, QMouseEvent
+from PySide6.QtWidgets import QApplication, QDialog, QDialogButtonBox, QKeySequenceEdit, QLabel, QPushButton
 
 from price_lens.domain import Catalog, Quote
 from price_lens.ui import LensWindow
@@ -271,11 +271,36 @@ class ContextUiTests(unittest.TestCase):
         self.assertIsNone(self.window.tooltip_result)
         self.assertEqual(len(self.window.overlay.rows), 1)
 
+    def test_description_disappearance_restores_market_labels_without_waiting_for_ocr(self):
+        self.window.on_reading(self.reading(shop_hover=True))
+        self.window.rows=[{**r,'covered':True,'reference_only':True,'price':None} for r in self.window.rows]
+        self.window.shop_tooltip_rect=QRect(300,200,220,200)
+        self.window.reader.image.fill(QColor('#171c25'))
+        count=len(self.window.service.requests)
+        self.window.on_image(self.window.reader.image)
+        self.assertFalse(self.window.overlay.rows[0]['obscured'])
+        self.assertIsNone(self.window.overlay.rows[0]['occlusion'])
+        self.assertEqual(len(self.window.service.requests),count)
+
     def test_inventory_hover_outside_store_list_can_show_its_price(self):
         self.window.reader.pointer = (100, 100)
         self.window.on_reading(self.reading(shop_hover=False))
         self.assertEqual(self.window.tooltip_result["name"], "Example Hat")
         self.assertEqual(len(self.window.overlay.rows), 1)
+
+    def test_absent_tooltip_enums_do_not_interrupt_shop_close_or_next_inventory_read(self):
+        reading = self.reading(shop_hover=True)
+        reading['tooltip'] = 'not_found'
+        reading['hover']['tooltip'] = 'not_found'
+        self.window.on_reading(reading)
+        self.assertTrue(self.window.shop_open)
+        closed = self.reading(shop_hover=False)
+        closed['tooltip'] = 'not_found'
+        self.window.on_reading(closed)
+        self.assertFalse(self.window.shop_open)
+        self.window.reader.pointer = (100, 100)
+        self.window.on_reading(self.reading(shop_hover=False))
+        self.assertEqual(self.window.tooltip_result['name'], 'Example Hat')
 
     def test_disabling_setting_stops_tooltip_processing_and_clears_label(self):
         self.window.reader.pointer = (100, 100)
@@ -419,12 +444,11 @@ class ContextUiTests(unittest.TestCase):
     def test_key_combination_is_configurable_and_saved(self):
         def edit():
             dialog = self.window.findChild(QDialog, "hotkeyDialog")
-            editor = dialog.findChild(QKeySequenceEdit)
+            editor = dialog.findChild(QKeySequenceEdit, "shortcut-prices")
             editor.setKeySequence(QKeySequence("Ctrl+Shift+F10"))
-            next(button for button in dialog.findChildren(QPushButton) if button.text() == "Set hotkey").click()
-            dialog.reject()
+            dialog.findChild(QDialogButtonBox).button(QDialogButtonBox.StandardButton.Apply).click()
         QTimer.singleShot(0, edit)
-        self.window.configure_hotkey()
+        self.window.configure_shortcuts()
         self.assertEqual(self.window.settings.values["hotkey-sequence"], "Ctrl+Shift+F10")
         self.assertTrue(self.window.settings.values["hotkey-enabled"])
 
@@ -479,22 +503,6 @@ class ContextUiTests(unittest.TestCase):
         self.assertEqual(self.window.service.catalog_starts, 2)
         self.assertTrue(self.window.catalog_loading)
 
-    def test_example_preview_needs_neither_capture_nor_price_requests(self):
-        self.window.mode = "idle"
-        self.window.rows = []
-        snapshot = []
-        def inspect():
-            dialog = self.window.findChild(QDialog, "exampleDialog")
-            try:
-                snapshot.extend(widget.text() for widget in dialog.findChildren(QLabel))
-            finally:
-                dialog.reject()
-        QTimer.singleShot(0, inspect)
-        self.window.preview_examples()
-        self.assertIn("EXAMPLE PRICES", snapshot)
-        self.assertTrue(any("made-up" in value for value in snapshot))
-        self.assertEqual(self.window.reader.starts, 0)
-        self.assertEqual(self.window.service.requests, [])
 
     def test_recognised_item_without_reports_is_not_called_unreadable(self):
         self.window.on_reading(self.reading(shop_hover=True))
@@ -521,15 +529,6 @@ class ContextUiTests(unittest.TestCase):
         self.assertIn("saved image", self.window.capture_info.text())
         self.assertEqual(self.window.overlay.rows, [])
 
-    def test_first_real_price_offers_optional_hotkey_and_minimize(self):
-        self.window.on_reading(self.reading(shop_hover=True))
-        now = time.time()
-        self.window.on_quote(1, Quote(1, 1000, now, now, 20, "Test", "", "24h"))
-        self.assertTrue(self.window.settings.values["first-price-seen"])
-        self.assertTrue(self.window.success_frame.isHidden())
-        self.assertFalse(self.window.shortcuts_button.isHidden())
-        self.window.dismiss_setup()
-        self.assertTrue(self.window.success_frame.isHidden())
 
     def test_details_remain_open_across_price_card_updates(self):
         self.window.on_reading(self.reading(shop_hover=True))
@@ -555,15 +554,18 @@ class ContextUiTests(unittest.TestCase):
             self.assertNotIn("below reference", content)
             self.assertTrue(any("refresh needed" in row["text"] for row in self.window.overlay.rows))
 
-    def test_shop_rows_take_precedence_over_inventory_hover_anywhere(self):
+    def test_inventory_hover_outside_open_shop_keeps_both_references_visible(self):
         self.window.on_catalog(Catalog({"items": [{"id": 1, "name": "Example Hat"},
                                                   {"id": 2, "name": "Other Hat"}], "scrolls": []}))
         self.window.reader.pointer = (100, 100)
         reading = self.reading(shop_hover=False,store=True)
         reading["tooltip"]["found"]["name"] = "Other Hat"
         self.window.on_reading(reading)
+        self.assertEqual(self.window.tooltip_result['name'], 'Other Hat')
+        self.assertEqual(set(self.window.service.visible), {1,2})
+        self.assertEqual(len(self.window.overlay.rows), 2)
+        self.window.on_pointer(340, 240)
         self.assertIsNone(self.window.tooltip_result)
-        self.assertNotIn(2,self.window.service.visible)
         self.assertEqual(self.window.service.visible, [1])
 
     def test_refresh_progress_updates_cards_and_both_overlay_contexts(self):

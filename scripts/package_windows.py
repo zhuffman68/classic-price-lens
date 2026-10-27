@@ -6,6 +6,7 @@ import shutil
 import zipfile
 
 from package_common import stage_application, stage_notices, assert_public_tree
+from trim_runtime import trim
 
 ROOT = Path(__file__).resolve().parents[1]
 DOWNLOADS = ROOT / ".build-tools/windows-downloads"
@@ -39,7 +40,7 @@ def main():
     stage_application(OUT)
     for name in ("run-windows.bat", "selftest-windows.bat", "windows-selftest.py"):
         shutil.copy2(ROOT / name, OUT / name)
-    shutil.copy2(ROOT / "packaging/icon.ico", OUT / "lupin.ico")
+    shutil.copy2(ROOT / "packaging/icon.ico", OUT / "lupin-scaled.ico")
     (OUT / "bin").mkdir(exist_ok=True)
     if READER.is_file():
         shutil.copy2(READER, OUT / "bin/classic-screen-reader.exe")
@@ -54,6 +55,7 @@ def main():
     (OUT / "runtime-sources.json").write_text(json.dumps(manifest, indent=2) + "\n")
     for path in list(OUT.rglob("__pycache__")):
         shutil.rmtree(path)
+    trim(OUT,'windows')
     assert_public_tree(OUT)
     print("Portable folder:", OUT)
     print("Files:", sum(1 for path in OUT.rglob("*") if path.is_file()))

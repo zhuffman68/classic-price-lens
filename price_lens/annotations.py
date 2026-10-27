@@ -97,6 +97,7 @@ class AnnotationWindow(QWidget):
                 old = previous.pop(key, None)
                 old_target = (old["x"], old["y"]) if old else None
                 old_text = old.get("text") if old else None
+                old_content=old.get('content_id',old_text) if old else None
                 old_alpha_target=old.get('_target_alpha',1.0) if old else None
                 row = old if old is not None else supplied
                 row.update(supplied)
@@ -111,6 +112,20 @@ class AnnotationWindow(QWidget):
                     row["_english_height"]=min(120,QFontMetrics(self.translation_font).boundingRect(inner,int(wrap),row["text"]).height())
                     row["_original_height"]=min(84,QFontMetrics(self.original_font).boundingRect(inner,int(wrap),row.get("original","")).height())
                     row["_height"]=row["_english_height"]+row["_original_height"]+46+(16 if row.get('note') else 0)
+                    if row.get('source_box'):
+                        source=QRect(*row['source_box']);bounds=QRect(*row['bounds'])
+                        width=min(row['_width'],bounds.width()-4);height=min(row['_height'],bounds.height()-4)
+                        positions=[(source.right()+8,source.top()),(source.left()-width-8,source.top()),
+                                   (source.left(),source.bottom()+8),(source.left(),source.top()-height-8)]
+                        choices=[QRect(max(bounds.left()+2,min(x,bounds.right()-width-2)),
+                                       max(bounds.top()+2,min(y,bounds.bottom()-height-2)),width,height) for x,y in positions]
+                        def overlap(rect):
+                            total=0
+                            for supplied in incoming:
+                                if supplied.get('source_box'):
+                                    hit=rect.intersected(QRect(*supplied['source_box']));total+=hit.width()*hit.height()
+                            return total
+                        target=min(choices,key=overlap);row['x'],row['y']=target.x(),target.y()
                 if self.reduce_motion:
                     self.dispose_row(row)
                     row["_text_alpha"] = 1.0
@@ -126,10 +141,11 @@ class AnnotationWindow(QWidget):
                 self.rows.append(row)
                 box=self.label_rect(row,QCursor.pos())
                 occlusion=row.get('occlusion')
-                target=.15 if row.get('kind')=='shop' and occlusion and box and box.intersects(QRect(*occlusion)) else 1.0
+                covered=row.get('obscured') or bool(occlusion and box and box.intersects(QRect(*occlusion)))
+                target=.25 if row.get('kind')=='shop' and covered else 1.0
                 row['_target_alpha']=target
                 if self.reduce_motion:row['_alpha']=target
-                if old_text is not None and old_text != row["text"] and not self.reduce_motion:
+                if old_text is not None and old_text != row["text"] and old_content!=row.get('content_id',row['text']) and not self.reduce_motion:
                     self.fade_text(row)
                 if old is None and not self.reduce_motion:
                     row["_alpha"] = 0.0
@@ -154,6 +170,17 @@ class AnnotationWindow(QWidget):
             else:
                 self.hide()
             self.update()
+            if hasattr(self,'listener'):
+                boxes=[]
+                for row in self.rows+self.retiring:
+                    rect=self.label_rect(row,QCursor.pos())
+                    if rect is None:continue
+                    if row.get('_draw_pos') is not None:
+                        target=dict(row);target.pop('_draw_pos',None)
+                        endpoint=self.label_rect(target,QCursor.pos())
+                        if endpoint is not None:rect=rect.united(endpoint)
+                    boxes.append(rect.adjusted(-2,-2,2,2).getRect())
+                sys.stdout.buffer.write((json.dumps({'layout':boxes})+'\n').encode());sys.stdout.buffer.flush()
         except (ValueError, TypeError):
             self.rows = []
             self.hide()

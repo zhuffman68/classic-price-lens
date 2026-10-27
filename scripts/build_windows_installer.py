@@ -1,5 +1,6 @@
 """Compile a per-user Inno Setup installer, natively or in an explicit Wine prefix."""
 import argparse
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -18,6 +19,16 @@ def main():
     compiler = args.iscc.resolve()
     if not compiler.is_file():
         raise FileNotFoundError(compiler)
+    # Upgrade cleanup is limited to paths this release verified as unused.
+    # Inno normally leaves files omitted from the new archive in place.
+    report=json.loads((ROOT/'dist/Lupin-Windows-x64/runtime-trim.json').read_text())
+    cleanup=[]
+    for entry in report['removed']:
+        relative=Path(entry['path'])
+        if relative.is_absolute() or '..' in relative.parts or relative.parts[:4]!=('runtime','Lib','site-packages','PySide6'):
+            raise ValueError('Unexpected runtime cleanup path: '+str(relative))
+        cleanup.append('Type: filesandordirs; Name: "{app}\\'+str(relative).replace('/','\\')+'"')
+    (ROOT/'dist/windows-trim-delete.iss').write_text('\n'.join(cleanup)+'\n')
     command = [str(compiler), "/Qp", "/DAppVersion=" + __version__, str(ROOT / "packaging/windows.iss")]
     env = os.environ.copy()
     if sys.platform != "win32":

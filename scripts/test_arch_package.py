@@ -36,7 +36,7 @@ def main():
             subprocess.run(command, cwd=cwd or ROOT, env=env, stdout=log, stderr=subprocess.STDOUT, check=True)
         # Only dependency checks are skipped: dependencies come from the host,
         # while all package/database writes are confined to this disposable root.
-        for version in ("0.8.0", "0.9.0"):
+        for version in ("0.8.0", "0.9.0", "0.10.0"):
             previous = ROOT / f"dist/lupin-{version}-1-x86_64.pkg.tar.zst"
             if previous.exists() and previous != package:
                 run([*pacman, "-Udd", str(previous)])

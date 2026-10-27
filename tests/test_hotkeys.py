@@ -150,7 +150,7 @@ class PortalShortcutTests(unittest.IsolatedAsyncioTestCase):
                 path = "/org/freedesktop/portal/desktop/request/1_99/" + token
                 values = ({"session_handle": Variant("s", session)} if message.member == "CreateSession" else
                           {"shortcuts": Variant("a(sa{sv})", [])} if message.member == "ListShortcuts" else
-                          {"shortcuts": Variant("a(sa{sv})", [["toggle-reading", {"trigger_description": Variant("s", "Ctrl+Alt+P")} ]])})
+                          {"shortcuts": Variant("a(sa{sv})", [["toggle-prices", {"trigger_description": Variant("s", "Ctrl+Alt+P")} ]])})
                 self.callback(Message(message_type=MessageType.SIGNAL, path=path, interface="org.freedesktop.portal.Request",
                                       member="Response", signature="ua{sv}", body=[0, values]))
                 return Message(message_type=MessageType.METHOD_RETURN, reply_serial=1, signature="o", body=[path])
@@ -208,8 +208,8 @@ class PortalShortcutTests(unittest.IsolatedAsyncioTestCase):
         from dbus_next import Message, MessageType
         instance = self.portal()
         instance.session = "/test/session"
-        for session, action in (("/other/session", "toggle-reading"), ("/test/session", "other"),
-                                ("/test/session", "toggle-reading")):
+        for session, action in (("/other/session", "toggle-prices"), ("/test/session", "other"),
+                                ("/test/session", "toggle-prices")):
             instance._message(Message(message_type=MessageType.SIGNAL, path="/org/freedesktop/portal/desktop",
                                       interface="org.freedesktop.portal.GlobalShortcuts", member="Activated",
                                       signature="osta{sv}", body=[session, action, 1, {}]))

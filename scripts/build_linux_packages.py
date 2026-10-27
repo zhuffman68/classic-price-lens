@@ -46,7 +46,7 @@ def main():
         "Suggests: spectacle\nHomepage: https://github.com/zhuffman68/lupin\n"
         "Description: Tools for MapleStory Classic World\n"
         " Shows cached meso market references, tracks EXP and translates Korean\n"
-        " speech bubbles locally. Uses OS screen sharing and independent\n"
+        " messages locally. Uses OS screen sharing and independent\n"
         " click-through windows. Includes Python, Qt, OCR and translation models.\n")
     checksums = []
     for path in sorted(deb.rglob("*")):

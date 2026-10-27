@@ -13,7 +13,7 @@ def main():
     control_options.add_argument("--quit", action="store_true", help="Close the running Lupin instance")
     control_options.add_argument("--toggle", action="store_true", help="Toggle reading/overlay in the running instance")
     control_options.add_argument("--minimize", action="store_true", help="Minimize the running panel using its tray preference")
-    control_options.add_argument("--translate", action="store_true", help="Translate Korean speech bubbles using the running instance's shared screen")
+    control_options.add_argument("--translate", action="store_true", help="Scan Korean text using the running instance's shared screen")
     control_options.add_argument("--prices",action="store_true",help="Toggle price reading without pausing EXP")
     control_options.add_argument("--exp",action="store_true",help="Start, pause or resume EXP tracking")
     control_options.add_argument('--compose',action='store_true',help='Open the English to Korean clipboard composer')

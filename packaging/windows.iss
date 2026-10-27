@@ -1,5 +1,5 @@
 #ifndef AppVersion
-  #define AppVersion "0.10.0"
+  #define AppVersion "0.11.0"
 #endif
 #ifndef StageDir
   #define StageDir "..\dist\Lupin-Windows-x64"
@@ -26,7 +26,7 @@ MinVersion=10.0.17763
 OutputDir=..\dist
 OutputBaseFilename=Lupin-{#AppVersion}-Windows-x64-Setup
 SetupIconFile=icon.ico
-UninstallDisplayIcon={app}\lupin.ico
+UninstallDisplayIcon={app}\lupin-scaled.ico
 UninstallDisplayName=Lupin
 Compression=lzma2/fast
 SolidCompression=yes
@@ -43,11 +43,13 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 Source: "{#StageDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "__pycache__\*,*.pyc,*.sqlite*,build-manifest.json"
 
 [Icons]
-Name: "{group}\Lupin"; Filename: "{app}\runtime\pythonw.exe"; Parameters: "-B -m price_lens"; WorkingDir: "{app}"; IconFilename: "{app}\lupin.ico"; AppUserModelID: "io.github.zhuffman68.ClassicPriceLens"
-Name: "{autodesktop}\Lupin"; Filename: "{app}\runtime\pythonw.exe"; Parameters: "-B -m price_lens"; WorkingDir: "{app}"; IconFilename: "{app}\lupin.ico"; Tasks: desktopicon; AppUserModelID: "io.github.zhuffman68.ClassicPriceLens"
+Name: "{group}\Lupin"; Filename: "{app}\runtime\pythonw.exe"; Parameters: "-B -m price_lens"; WorkingDir: "{app}"; IconFilename: "{app}\lupin-scaled.ico"; AppUserModelID: "io.github.zhuffman68.ClassicPriceLens"
+Name: "{autodesktop}\Lupin"; Filename: "{app}\runtime\pythonw.exe"; Parameters: "-B -m price_lens"; WorkingDir: "{app}"; IconFilename: "{app}\lupin-scaled.ico"; Tasks: desktopicon; AppUserModelID: "io.github.zhuffman68.ClassicPriceLens"
 
 [InstallDelete]
+#include "..\dist\windows-trim-delete.iss"
 Type: files; Name: "{app}\classic-price-lens.ico"
+Type: files; Name: "{app}\lupin.ico"
 Type: files; Name: "{userprograms}\Classic Price Lens\Classic Price Lens.lnk"
 Type: dirifempty; Name: "{userprograms}\Classic Price Lens"
 Type: files; Name: "{autodesktop}\Classic Price Lens.lnk"

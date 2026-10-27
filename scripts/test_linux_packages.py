@@ -101,7 +101,7 @@ def main():
         # Bootstrap the distribution's own fakeroot to emulate ownership of
         # dependency files whose non-root UIDs are outside this user namespace.
         run(folder, ["sh", "-c", "cd /root && apt-get download fakeroot libfakeroot && for archive in ./*.deb; do dpkg-deb -x \"$archive\" /; done"], log)
-        for version in ('0.8.0','0.9.0'):
+        for version in ('0.8.0','0.9.0','0.10.0'):
             previous=ROOT/f'dist/lupin_{version}-1_amd64.deb'
             if previous.exists() and previous!=package:
                 run(folder,['apt-get','install','-y','--no-install-recommends','/mnt/packages/'+previous.name],log)

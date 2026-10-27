@@ -13,18 +13,7 @@ def pixels(image):
     return np.frombuffer(bytes(image.constBits()), np.uint8).reshape(image.height(), image.bytesPerLine())[:, :image.width()*3].reshape(image.height(),image.width(),3)
 
 
-def bubbles(image,relaxed=False):
-    """Connected runs of Classic's neutral bubble fill; no full-scene OCR.
-
-    A one-level tolerance permits normal capture rounding. Exclude large UI
-    panels and scenery by component size, fill ratio and subsequent text checks.
-    """
-    a = pixels(image)
-    if relaxed:
-        high=a.max(2);low=a.min(2)
-        mask=(low>=224)&(high<=247)&(high-low<=3)
-    else:
-        mask = (a[:,:,0]>=237)&(a[:,:,0]<=239)&(a[:,:,1]==a[:,:,0])&(a[:,:,2]==a[:,:,0])
+def components(mask):
     parents, boxes, areas, previous = [], [], [], []
     def find(i):
         while parents[i]!=i:
@@ -50,13 +39,61 @@ def bubbles(image,relaxed=False):
             b=boxes[i];b[:]=[min(b[0],int(x)),min(b[1],y),max(b[2],int(right)),y+1]
             areas[i]+=right-x;runs.append((x,right,i))
         previous=runs
+    return [(box,areas[i]) for i,box in enumerate(boxes) if find(i)==i]
+
+
+def bubbles(image):
+    """Connected runs of Classic's neutral bubble fill; no full-scene OCR.
+
+    A one-level tolerance permits normal capture rounding. Exclude large UI
+    panels and scenery by component size, fill ratio and subsequent text checks.
+    """
+    a = pixels(image)
+    mask = (a[:,:,0]>=237)&(a[:,:,0]<=239)&(a[:,:,1]==a[:,:,0])&(a[:,:,2]==a[:,:,0])
     result=[]
     scale=max(1,image.width()/1366)
-    for i,(x,y,right,bottom) in enumerate(boxes):
+    for (x,y,right,bottom),area in components(mask):
         w,h=right-x,bottom-y
-        if find(i)==i and 55<=w<=420*scale and 22<=h<=360*scale and areas[i]/(w*h)>.60:
+        if 55<=w<=420*scale and 22<=h<=360*scale and area/(w*h)>.60:
             result.append([x,y,w,h])
     return result[:32]
+
+
+def text_regions(image,exclude=()):
+    """Contrast/geometry candidates throughout the game, including chat panels.
+
+    Existing Korean OCR confirms language and confidence; no detector model or
+    whole-desktop read is introduced. Our own overlay rectangles are excluded.
+    """
+    rgb=pixels(image);a=rgb.mean(2).astype('int16')
+    neighbours=[np.roll(a,d,axis=axis) for d in (-3,3) for axis in (0,1)]
+    low=np.minimum.reduce(neighbours);high=np.maximum.reduce(neighbours)
+    neutral=rgb.max(2).astype('int16')-rgb.min(2)<45
+    masks=[neutral&(rgb.min(2)>185)&(a-low>50),neutral&(a<110)&(high-a>75)]
+    result=[]
+    for ink in masks:
+        ink[:4]=False;ink[-4:]=False;ink[:,:4]=False;ink[:,-4:]=False
+        for x,y,w,h in exclude:
+            ink[max(0,y):min(image.height(),y+h),max(0,x):min(image.width(),x+w)]=False
+        expanded=ink.copy()
+        for delta in range(1,4):
+            expanded[:,delta:]|=ink[:,:-delta];expanded[:,:-delta]|=ink[:,delta:]
+        # Vertical dilation joins text to nearby sprites and panel frames.
+        # Keep the native baselines so crowded banners remain separate lines.
+        for (x,y,right,bottom),_ in components(expanded):
+            w,h=right-x,bottom-y
+            if 24<=w<=1000 and 7<=h<=44 and w/h>=1.7:
+                density=ink[y:bottom,x:right].mean()
+                if .07<=density<=.7:result.append([max(0,x-1),max(0,y-1),min(image.width()-x+1,w+2),min(image.height()-y+1,h+2)])
+    merged=[]
+    for box in sorted(result,key=lambda b:(round((b[1]+b[3]/2)/4),b[0])):
+        x,y,w,h=box
+        if merged:
+            old=merged[-1];ox,oy,ow,oh=old
+            if abs((y+h/2)-(oy+oh/2))<=3 and -6<=x-(ox+ow)<=12 and x+w-ox<=1000:
+                old[:]=[ox,min(y,oy),max(x+w,ox+ow)-ox,max(y+h,oy+oh)-min(y,oy)];continue
+        merged.append(box)
+    return sorted(merged,key=lambda b:(not (b[2]>=160 and b[3]<=30),b[1],b[0]))[:96]
 
 
 def lines(image):

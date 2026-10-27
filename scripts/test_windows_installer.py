@@ -1,5 +1,6 @@
 """Install, upgrade and remove the Windows build in an explicit isolated Wine prefix."""
 import argparse
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -60,6 +61,9 @@ def main():
             legacy_marker = None
         run([installer, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-"])
         assert (app / "unins000.exe").is_file(), "Uninstall entry point missing"
+        trim=json.loads((app/'runtime-trim.json').read_text())
+        assert not any((app/entry['path']).exists() for entry in trim['removed']),'Upgrade left unused runtime files behind'
+        assert (app/'lupin-scaled.ico').is_file() and not (app/'lupin.ico').exists(),'Icon resource path was not migrated'
         run(["reg", "query", key, "/v", "DisplayVersion"])
         display_name = subprocess.check_output(["wine", "reg", "query", key, "/v", "DisplayName"], env=env, text=True)
         assert "REG_SZ    Lupin" in display_name, "Installed application name is stale"

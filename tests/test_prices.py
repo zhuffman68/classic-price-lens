@@ -59,6 +59,24 @@ class ComparisonTests(unittest.TestCase):
 
 
 class IdentityTests(unittest.TestCase):
+    def test_observed_scroll_ocr_error_preserves_stat_and_tier(self):
+        catalog=Catalog({'scrolls':[{'id':1,'name':'Overall Armor DEX Scroll: Greater','tier':'Greater'},
+                                    {'id':2,'name':'Overall Armor DEX Scroll: Chaos','tier':'Chaos'},
+                                    {'id':3,'name':'Overall Armor LUK Scroll: Greater','tier':'Greater'}]})
+        for word in ('Soroll','Seroll','ScroIl','ScroII','Scr0ll'):
+            self.assertEqual(catalog.resolve('Overall Armor DEX '+word+': Greater').game_id,1)
+        self.assertEqual(catalog.resolve('Overall Arrnor DEX Scroll: Greater').game_id,1)
+        self.assertEqual(catalog.resolve('Overall Armor LUK Soroll: Greater').game_id,3)
+        self.assertIsNone(catalog.resolve('Overall Armor DEX Soroll'))
+        self.assertIsNone(catalog.resolve('Overall Armor STR Soroll: Greater'))
+    def test_clipped_name_tag_ring_requires_a_unique_full_item(self):
+        catalog=Catalog({'items':[{'id':1112223,'name':'Ink-and-Wash Painting Name Tag Ring'},
+                                 {'id':1112227,'name':'Ink-and-Wash Thought Bubble Ring'}]})
+        for visible in ('Ink-and-Wash Painting N...','Ink-and-Wash Painting N…','Ink-and-Wash Painting N.',
+                        'Ink and Wash Painting N…','Ink-and-Wash Painting Nametag Ring'):
+            self.assertEqual(catalog.resolve(visible).game_id,1112223)
+        self.assertIsNone(catalog.resolve('Ink-and-Wash...'))
+
     def test_small_font_y_v_confusion_needs_one_unique_catalog_name(self):
         catalog = Catalog({"items": [{"id": 1, "name": "Blue Hawkeye"}, {"id": 2, "name": "Horny Mushroom Cap"}]})
         self.assertEqual(catalog.resolve("Blue Hawkeve").game_id, 1)

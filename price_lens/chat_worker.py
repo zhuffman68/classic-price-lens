@@ -46,36 +46,58 @@ class Translator:
         return output,note
 
 
-def scan(image, cursor, recognizer, translator, emit, budget=1.5, relaxed=False):
-    from .chat_ocr import bubbles, lines
+def scan(image, recognizer, translator, emit, budget=.75, cancelled=lambda:False, exclude=(), offset=0):
+    from .chat_ocr import bubbles, lines, text_regions
+    from PySide6.QtCore import QRect
     from .chat_text import HANGUL, normalize
-    start=time.perf_counter();candidates=bubbles(image,relaxed=relaxed)
-    # Nearby speech bubbles arrive first. The hotkey does not track player names.
-    candidates.sort(key=lambda b:(b[0]+b[2]/2-cursor[0])**2+(b[1]+b[3]/2-cursor[1])**2)
-    found=0;readable=0;korean_candidates=0
-    for box in candidates:
-        if found>=4 or time.perf_counter()-start>budget:break
-        x,y,w,h=box;crop=image.copy(x+2,y+2,w-4,h-4)
+    start=time.perf_counter();bubble_boxes=bubbles(image)
+    def excluded(box):return any(QRect(*box).intersects(QRect(*other)) for other in exclude)
+    candidates=[(box,True) for box in bubble_boxes if not excluded(box)]
+    # Speech bubbles are the inexpensive first pass; broad chat/banner lines
+    # follow before isolated scenery labels. Cursor proximity never filters it.
+    generic_loaded=False;index=max(0,offset)
+    def load_generic():
+        candidates.extend((box,False) for box in text_regions(image,exclude=(*exclude,*bubble_boxes)) if not excluded(box))
+    if index>=len(candidates):
+        load_generic();generic_loaded=True
+        if index>=len(candidates):index=0
+    found=0;readable=0;korean_candidates=0;processed=0
+    while True:
+        if cancelled() or found>=4 or (processed and time.perf_counter()-start>budget):break
+        if index>=len(candidates):
+            if generic_loaded:break
+            load_generic();generic_loaded=True
+            if index>=len(candidates):break
+        box,is_bubble=candidates[index];index+=1
+        processed+=1;x,y,w,h=box
+        crop=image.copy(x+1,y+1,w-2,h-2) if is_bubble else image.copy(x,y,w,h)
         read=[]
-        for line,height in lines(crop):
+        candidates_lines=lines(crop) if is_bubble else [(crop,h)]
+        for line,height in candidates_lines:
+            if cancelled():break
             text,confidence=recognizer.read(line)
-            if confidence<.80:continue
-            readable+=1
-            read.append(text)
+            if confidence<(.80 if is_bubble else .92):continue
+            readable+=1;read.append(text)
         if not read:continue
-        sender="";first=re.match(r"^([^:]{1,24})\s*:\s*(.*)$",read[0])
+        sender=""
+        pattern=r"^([^:]{1,24})\s*:\s*(.*)$" if is_bubble else r"^([A-Za-z0-9_\uac00-\ud7a3]{1,16})\s*:\s*(.+)$"
+        first=re.match(pattern,read[0])
         if first:sender=first[1].strip();read[0]=first[2]
         text=normalize(" ".join(read))
         if not HANGUL.search(text):continue
         # A lone Korean character amongst Latin advertising is a common OCR error.
         korean=len(HANGUL.findall(text))
         if korean<2 and not re.fullmatch(r"[\u3130-\u318f\uac00-\ud7a3]{1,8}",text):continue
+        if not is_bubble and korean/max(1,len(re.findall(r"[A-Za-z\u3130-\u318f\uac00-\ud7a3]",text)))<.20:continue
         korean_candidates+=1
+        if cancelled():break
         english,note=translator.translate(text)
+        if cancelled():break
         emit({"box":box,"speaker":sender,"original":text,"text":english,"note":note,
               "elapsed_ms":round((time.perf_counter()-start)*1000,1)})
         found+=1
-    return {"count":found,"bubbles":len(candidates),"readable":readable,"korean":korean_candidates,
+    next_offset=0 if generic_loaded and index>=len(candidates) else index
+    return {"count":found,"bubbles":len(bubble_boxes),"regions":len(candidates),"next_offset":next_offset,"readable":readable,"korean":korean_candidates,
             "elapsed_ms":round((time.perf_counter()-start)*1000,1)}
 
 
@@ -99,23 +121,45 @@ def main():
         send({"ready":True})
     except Exception as error:
         send({"error":"Local Korean models could not load: "+str(error)});return 1
-    while True:
-        header=sys.stdin.buffer.readline(8193)
-        if not header:break
+    import threading
+    condition=threading.Condition();state={'latest':None,'minimum':0,'closed':False,'error':None}
+    def receive():
         try:
-            if len(header)>8192:raise ValueError("Header too large")
-            request=json.loads(header);w,h,stride=(int(request[k]) for k in ("width","height","stride"))
-            size=stride*h
-            if not (16<=w<=7680 and 16<=h<=4320 and w*3<=stride<=w*3+4 and size<=32*1024*1024):raise ValueError("Invalid frame size")
-            data=sys.stdin.buffer.read(size)
-            if len(data)!=size:break
-            image=QImage(data,w,h,stride,QImage.Format.Format_RGB888).copy()
-            identity=request["id"]
-            result=scan(image,request.get("cursor",[w//2,h//2]),recognizer,translator,
-                        lambda row:send({"id":identity,"row":row}),relaxed=bool(request.get('relaxed')))
-            send({"id":identity,"done":result})
+            while True:
+                header=sys.stdin.buffer.readline(8193)
+                if not header:break
+                if len(header)>8192:raise ValueError('Header too large')
+                request=json.loads(header)
+                if 'cancel_before' in request:
+                    with condition:
+                        state['minimum']=max(state['minimum'],int(request['cancel_before']))
+                        if state['latest'] and state['latest'][0]['id']<state['minimum']:state['latest']=None
+                    continue
+                w,h,stride=(int(request[k]) for k in ('width','height','stride'));size=stride*h
+                if not(16<=w<=7680 and 16<=h<=4320 and w*3<=stride<=w*3+4 and size<=32*1024*1024):raise ValueError('Invalid frame size')
+                data=sys.stdin.buffer.read(size)
+                if len(data)!=size:break
+                image=QImage(data,w,h,stride,QImage.Format.Format_RGB888).copy()
+                with condition:state['latest']=(request,image);condition.notify()
         except Exception as error:
-            send({"error":"Korean scan failed: "+str(error)});return 1
+            with condition:state['error']=str(error)
+        finally:
+            with condition:state['closed']=True;condition.notify()
+    threading.Thread(target=receive,name='local-frame-input',daemon=True).start()
+    generation=None;offset=0
+    while True:
+        with condition:
+            condition.wait_for(lambda:state['latest'] is not None or state['closed'])
+            if state['latest'] is None:
+                if state['error']:send({'error':'Korean scan failed: '+state['error']});return 1
+                break
+            request,image=state['latest'];state['latest']=None
+        identity=request['id']
+        if request.get('generation')!=generation:generation=request.get('generation');offset=0
+        result=scan(image,recognizer,translator,lambda row:send({'id':identity,'row':row}),
+                    cancelled=lambda:identity<state['minimum'],exclude=request.get('exclude',[])[:64],offset=offset)
+        offset=result.pop('next_offset')
+        send({'id':identity,'done':result})
     return 0
 
 

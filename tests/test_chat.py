@@ -4,8 +4,9 @@ import os
 from pathlib import Path
 import time
 import unittest
+from unittest.mock import patch
 
-from PySide6.QtCore import QRect,QProcess
+from PySide6.QtCore import QRect,QProcess,QCoreApplication,QEvent
 from PySide6.QtGui import QImage,QPainter,QFontDatabase,QFont,QColor
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
@@ -18,6 +19,18 @@ ROOT=Path(__file__).resolve().parents[1]
 
 
 class ChatTextTests(unittest.TestCase):
+    def test_korean_banner_heading_is_not_discarded_as_a_speaker_name(self):
+        from price_lens.chat_worker import scan
+        image=QImage(500,200,QImage.Format.Format_RGB888);image.fill(QColor('#202030'))
+        class Reader:
+            def read(self,_):return 'TRUMP2024님의 꽃바람 메시지:',.96
+        class Translator:
+            def translate(self,_):return 'Message from TRUMP2024','Local'
+        rows=[]
+        with patch('price_lens.chat_ocr.bubbles',return_value=[]),patch('price_lens.chat_ocr.text_regions',return_value=[[50,40,200,14]]):
+            result=scan(image,Reader(),Translator(),rows.append)
+        self.assertEqual(result['count'],1);self.assertEqual(rows[0]['speaker'],'')
+        self.assertIn('메시지',rows[0]['original'])
     def test_explicit_units_and_unitless_numbers_remain_distinct(self):
         for original,expected in (("25만","250k"),("250만","2.5m"),("250k","250k"),("2.5m","2.5m"),("1억","100m")):
             with self.subTest(original=original):
@@ -52,18 +65,61 @@ class ChatSnapshotTests(unittest.TestCase):
         os.environ.setdefault("QT_QPA_PLATFORM","offscreen")
         cls.app=QApplication.instance() or QApplication([])
 
-    def test_cards_retire_on_pixel_change_and_expiry_and_keep_game_bounds(self):
+    def test_restarting_a_busy_scan_drops_late_results_and_requests_only_latest_frame(self):
+        class Pipe:
+            def __init__(self):self.writes=[];self.output=b''
+            def write(self,data):self.writes.append(data)
+            def readAllStandardOutput(self):data=self.output;self.output=b'';return data
+        chat=ChatTranslation(ROOT);pipe=Pipe();chat.process=pipe;chat.enabled=chat.ready=True
+        image=QImage(400,240,QImage.Format.Format_RGB888);image.fill(QColor('#eeeeee'))
+        requests=[]
+        def submit():requests.append(chat.request(image,image.rect()))
+        chat.frame_requested.connect(submit)
+        try:
+            chat.start_scan();old=chat.identity
+            self.assertTrue(chat.busy);self.assertEqual(requests,[True])
+            chat.start_scan();self.assertGreater(chat.identity,old)
+            self.assertEqual(json.loads(pipe.writes[-1]),{'cancel_before':chat.identity})
+            row={'box':[50,40,90,50],'speaker':'Player','original':'안녕하세요','text':'hello','note':'Local'}
+            pipe.output=(json.dumps({'id':old,'row':row})+'\n'+json.dumps({'id':old,'done':{'count':1}})+'\n').encode()
+            chat.receive();self.assertEqual(chat.cards,[]);QTest.qWait(20)
+            self.assertEqual(requests,[True,True]);self.assertTrue(chat.busy)
+            pipe.output=(json.dumps({'id':chat.identity,'row':row})+'\n'+json.dumps({'id':chat.identity,'done':{'count':1}})+'\n').encode()
+            chat.receive();self.assertEqual(len(chat.cards),1);self.assertEqual(len(chat.history),1)
+            self.assertTrue(chat.watching);self.assertTrue(chat.cadence.isActive())
+            previous_until=chat.until;chat.start_scan();self.assertEqual(len(chat.cards),1)
+            self.assertGreaterEqual(chat.until,previous_until);self.assertTrue(chat.window_timer.isActive())
+        finally:
+            chat.process=None;chat.close();chat.deleteLater()
+            QCoreApplication.sendPostedEvents(None,QEvent.Type.DeferredDelete);self.app.processEvents()
+
+    def test_no_result_notice_expires_without_another_frame(self):
+        chat=ChatTranslation(ROOT);chat.enabled=chat.ready=True;messages=[];chat.status.connect(messages.append)
+        try:
+            chat.announce('No readable Korean found');self.assertTrue(chat.has_overlay)
+            chat.notice_timer.start(10);QTest.qWait(30)
+            self.assertFalse(chat.has_overlay);self.assertEqual(messages[-1],'Ready · local Korean translation')
+        finally:
+            chat.close();chat.deleteLater()
+            QCoreApplication.sendPostedEvents(None,QEvent.Type.DeferredDelete);self.app.processEvents()
+
+    def test_cards_linger_after_disappearance_and_history_stays(self):
         chat=ChatTranslation(ROOT)
         image=QImage(500,300,QImage.Format.Format_RGB888);image.fill(QColor("#eeeeee"))
         box=[50,40,90,50]
-        card={"box":box,"stamp":stamp(image,box),"until":time.monotonic()+3,"text":"hello","original":"안녕하세요","speaker":"Player","note":"Local"}
-        chat.cards=[card]
-        self.assertEqual(len(chat.annotations(image,1,1,[20,20,400,200])),1)
-        changed=image.copy();p=QPainter(changed);p.fillRect(QRect(*box),QColor("#111111"));p.end()
-        self.assertEqual(chat.annotations(changed,1,1,[20,20,400,200]),[])
-        card["until"]=time.monotonic()-1;chat.cards=[card]
-        self.assertEqual(chat.annotations(image,1,1,[20,20,400,200]),[])
-        chat.close()
+        card={"id":1,"box":box,"stamp":stamp(image,box),"gone_at":None,"text":"hello","original":"안녕하세요","speaker":"Player","note":"Local"}
+        chat.cards=[card];chat.history=[{k:card[k] for k in ('text','original','speaker','note')}]
+        try:
+            with patch('price_lens.chat.time.monotonic',return_value=10):
+                self.assertEqual(len(chat.annotations(image,1,1,[20,20,400,200])),1)
+            changed=image.copy();p=QPainter(changed);p.fillRect(QRect(*box),QColor("#111111"));p.end()
+            with patch('price_lens.chat.time.monotonic',return_value=11):
+                self.assertEqual(len(chat.annotations(changed,1,1,[20,20,400,200])),1)
+            with patch('price_lens.chat.time.monotonic',return_value=12.6):
+                self.assertEqual(chat.annotations(changed,1,1,[20,20,400,200]),[])
+            self.assertEqual(len(chat.history),1)
+        finally:
+            chat.close();chat.deleteLater();QCoreApplication.sendPostedEvents(None,QEvent.Type.DeferredDelete);self.app.processEvents()
 
     def test_translation_card_wraps_and_fits_inside_game_without_changing_price_rows(self):
         window=AnnotationWindow(start_listener=False)
@@ -82,22 +138,24 @@ class ChatSnapshotTests(unittest.TestCase):
     def test_real_worker_reads_synthetic_korean_bubble_and_unloads(self):
         fid=QFontDatabase.addApplicationFont(str(ROOT/"price_lens/resources/fonts/Maplestory-Bold.ttf"))
         font=QFont(QFontDatabase.applicationFontFamilies(fid)[0]);font.setPixelSize(14)
-        image=QImage(320,180,QImage.Format.Format_RGB888);image.fill(QColor("#202020"))
+        image=QImage(900,400,QImage.Format.Format_RGB888);image.fill(QColor("#202020"))
         painter=QPainter(image);painter.fillRect(40,30,160,70,QColor("#eeeeee"));painter.setPen(QColor("#000000"));painter.setFont(font)
-        painter.drawText(55,55,"Player:");painter.drawText(55,80,"안녕하세요");painter.end()
+        painter.drawText(55,55,"Player:");painter.drawText(55,80,"안녕하세요")
+        painter.fillRect(650,250,160,70,QColor('#eeeeee'));painter.drawText(665,275,'Other:');painter.drawText(665,300,'감사합니다');painter.end()
         chat=ChatTranslation(ROOT);messages=[];chat.status.connect(messages.append)
         try:
             chat.enable(True)
             limit=time.monotonic()+15
             while not chat.ready and time.monotonic()<limit:QTest.qWait(10)
             self.assertTrue(chat.ready,messages)
-            self.assertTrue(chat.request(image,image.rect(),[100,65]))
-            self.assertFalse(chat.request(image,image.rect(),[100,65]))
+            self.assertTrue(chat.request(image,image.rect()))
+            self.assertFalse(chat.request(image,image.rect()))
             while chat.busy and time.monotonic()<limit:QTest.qWait(10)
             self.assertFalse(chat.busy,messages)
-            self.assertEqual(len(chat.cards),1,messages)
+            self.assertEqual(len(chat.cards),2,messages)
             self.assertIn("hello",chat.cards[0]["text"].lower())
             process=chat.process;chat.enable(False)
             self.assertIsNone(chat.process)
             self.assertEqual(process.state(),QProcess.ProcessState.NotRunning)
-        finally:chat.close()
+        finally:
+            chat.close();chat.deleteLater();QCoreApplication.sendPostedEvents(None,QEvent.Type.DeferredDelete);self.app.processEvents()

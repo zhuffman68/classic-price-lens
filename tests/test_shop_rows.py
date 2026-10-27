@@ -1,7 +1,7 @@
 from copy import deepcopy
 import unittest
 from PySide6.QtCore import QRect
-from PySide6.QtGui import QColor,QImage
+from PySide6.QtGui import QColor,QImage,QPainter
 from price_lens.shop_rows import ShopRows
 
 
@@ -17,10 +17,10 @@ class ShopRowsTests(unittest.TestCase):
         result["rows"][0].update(name=None,price=None,covered=True)
         return result
 
-    def test_occluded_row_keeps_verified_identity_and_short_lived_listing(self):
+    def test_occluded_row_keeps_reference_without_an_assumed_listing(self):
         result=self.memory.observe(self.covered(),self.image,1)[0]
         self.assertEqual(result["name"],"Work Gloves")
-        self.assertEqual(result["price"]["mesos"],100)
+        self.assertIsNone(result["price"])
         self.assertTrue(result["retained"])
 
     def test_long_occlusion_keeps_reference_identity_without_a_deal_rating(self):
@@ -69,7 +69,9 @@ class ShopRowsTests(unittest.TestCase):
         self.assertIsNone(self.memory.observe(self.covered(),self.image,1)[0]['name'])
         result=self.memory.observe(self.covered(),original,2)[0]
         self.assertEqual(result['name'],'Work Gloves')
-        self.assertEqual(result['price']['mesos'],100)
+        self.assertIsNone(result['price'])
+        visible=self.memory.observe(self.shop,original,3)[0]
+        self.assertEqual(visible['price']['mesos'],100)
 
     def test_native_tooltip_can_keep_a_hidden_reference_but_never_an_assumed_deal(self):
         tip=QRect(200,150,220,300)
@@ -80,6 +82,27 @@ class ShopRowsTests(unittest.TestCase):
         self.assertEqual(row['area'],self.row['area'])
 
     def test_guard_changed_outside_tooltip_cannot_reuse_a_hidden_reference(self):
-        self.image.setPixelColor(110,120,QColor('white'))
+        self.image.setPixelColor(110,146,QColor('white'))
         row=self.memory.observe(self.covered(),self.image,10,tooltip=QRect(200,150,220,300))[0]
         self.assertFalse(row.get('reference_only'));self.assertIsNone(row['name'])
+
+    def test_animated_owner_portrait_is_not_a_page_guard(self):
+        self.image.setPixelColor(110,120,QColor('white'))
+        self.assertEqual(self.memory.observe(self.covered(),self.image,1)[0]['name'],'Work Gloves')
+
+    def test_own_overlay_pixels_do_not_invalidate_a_page_but_visible_scrollbar_changes_do(self):
+        mask=QRect(360,170,230,36)
+        original=self.image.copy();painter=QPainter(self.image);painter.fillRect(mask,QColor('white'));painter.end()
+        self.assertEqual(self.memory.observe(self.covered(),self.image,1,exclude=[mask])[0]['name'],'Work Gloves')
+        self.memory.observe(self.shop,self.image,2,exclude=[mask])
+        self.assertEqual(self.memory.observe(self.covered(),original,3)[0]['name'],'Work Gloves')
+        original.setPixelColor(363,160,QColor('white'))
+        self.assertIsNone(self.memory.observe(self.covered(),original,4)[0]['name'])
+
+    def test_small_ocr_punctuation_changes_do_not_invalidate_other_covered_rows(self):
+        shop=deepcopy(self.shop);other=deepcopy(self.row);other['area']['y']+=50;shop['rows'].append(other)
+        shop['rows'][0]['name']='Overall Armor LUK Scroll:...';shop['rows'][0]['tier']='greater'
+        self.memory.observe(shop,self.image,1)
+        changed=deepcopy(shop);changed['rows'][0]['name']='Overall Armor LUK Soroll....'
+        changed['rows'][1].update(name=None,price=None,covered=True)
+        self.assertEqual(self.memory.observe(changed,self.image,2)[1]['name'],'Work Gloves')

@@ -6,7 +6,7 @@ from PySide6.QtGui import QIcon,QPixmap,QPainter
 from PySide6.QtWidgets import (QFrame,QHBoxLayout,QLabel,QLineEdit,QListWidget,
     QListWidgetItem,QPushButton,QScrollArea,QVBoxLayout,QWidget)
 
-from .domain import key
+from .domain import key, item_words, unclipped_name
 from .ui_components import price_card, text_label
 from .motion import reveal, visibility, fade_away
 
@@ -145,15 +145,15 @@ class PriceSearch(QWidget):
             self.render()
 
     def find_items(self):
-        query = key(self.query.text())
+        query = item_words(unclipped_name(self.query.text()))
         if not query:fade_away(self.results)
         self.results.blockSignals(True)
         self.results.clear()
         found = []
         if self.catalog and len(query) >= 2:
             terms = query.split()
-            found = [item for item in self.catalog.items if all(term in key(item.name) for term in terms) or str(item.game_id)==query]
-            found.sort(key=lambda item:(key(item.name)!=query,not key(item.name).startswith(query),item.name.casefold(),item.game_id))
+            found = [item for item in self.catalog.items if all(term in item_words(item.name) for term in terms) or str(item.game_id)==query]
+            found.sort(key=lambda item:(item_words(item.name)!=query,not item_words(item.name).startswith(query),item.name.casefold(),item.game_id))
             groups = {}
             for item in found:groups.setdefault(key(item.name),[]).append(item)
             found = list(groups.values())

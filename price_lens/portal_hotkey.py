@@ -51,10 +51,10 @@ def portal_trigger(text):
 
 
 class PortalHotkey:
-    action = "toggle-reading"
+    action = "toggle-prices"
     actions=None
 
-    def __init__(self, activated, changed, status, action="toggle-reading",actions=None):
+    def __init__(self, activated, changed, status, action="toggle-prices",actions=None):
         self.action = action
         self.actions=actions
         self.application_id = application_identity()
@@ -85,7 +85,7 @@ class PortalHotkey:
                 pass
             except Exception as error:
                 if not self.closed:
-                    command={'toggle-prices':'--prices','toggle-exp':'--exp','translate-text':'--translate','translate-chat':'--translate','compose-korean':'--compose'}.get(self.action,'--toggle')
+                    command={'toggle-prices':'--prices','toggle-exp':'--exp','translate-text':'--translate','compose-korean':'--compose'}.get(self.action,'--toggle')
                     self.status("Global shortcut: " + str(error) + ". Desktop fallback: lupin "+command)
         future.add_done_callback(done)
 
@@ -168,6 +168,7 @@ class PortalHotkey:
             except PortalError as error:
                 if error.name not in ("org.freedesktop.DBus.Error.UnknownMethod", "org.freedesktop.DBus.Error.UnknownInterface"):
                     raise
+            await self._retire_legacy()
             token = "lens_" + uuid.uuid4().hex
             result = await self._request("CreateSession", "a{sv}",
                                          [{"handle_token": Variant("s", token), "session_handle_token": Variant("s", "lens_" + uuid.uuid4().hex)}], token)
@@ -180,7 +181,7 @@ class PortalHotkey:
                 # Bind the existing action to this session, reusing stored consent.
                 preferred = None
             token = "lens_" + uuid.uuid4().hex
-            options = {"description": Variant("s", "Translate visible Korean speech bubbles" if self.action == "translate-chat" else "Pause or resume Lupin")}
+            options = {"description": Variant("s", "Translate Korean text in Classic World" if self.action == "translate-text" else "Pause or resume Lupin")}
             if preferred:
                 options["preferred_trigger"] = Variant("s", preferred)
             bindings=[[self.action,options]]
@@ -198,11 +199,26 @@ class PortalHotkey:
         finally:
             self.starting = False
 
+    async def _retire_legacy(self):
+        from dbus_next import Message
+        app='io.github.zhuffman68.ClassicPriceLens'
+        if self.application_id not in (app,app+'.Development'):return
+        obsolete=[(self.application_id,'toggle-reading'),(self.application_id,'translate-chat')]
+        if self.application_id==app:obsolete += [(app+'.Development','toggle-reading'),(app+'.Development','translate-chat')]
+        # KDE remembers removed portal actions. Retire only our obsolete IDs;
+        # other desktops simply lack this optional app-owned cleanup endpoint.
+        for component,action in obsolete:
+            try:
+                await asyncio.wait_for(self.bus.call(Message(destination='org.kde.kglobalaccel',path='/kglobalaccel',
+                    interface='org.kde.KGlobalAccel',member='unregister',signature='ss',body=[component,action])),timeout=2)
+            except Exception:break
+
     def configure(self):
         if self.session:
             self._submit(self._call(INTERFACE, "ConfigureShortcuts", "osa{sv}", [self.session, "", {}]))
         else:
-            self.register("F11" if self.action == "translate-chat" else "Ctrl+Alt+P")
+            from .hotkeys import DEFAULT_HOTKEY
+            self.register(DEFAULT_HOTKEY)
 
     def close(self):
         self.closed = True

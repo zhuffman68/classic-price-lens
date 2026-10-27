@@ -48,6 +48,15 @@ class PriceSearchTests(unittest.TestCase):
         self.panel.results.setCurrentRow(0)
         self.assertEqual([item.game_id for item in self.requests],[1])
 
+    def test_visible_ellipsis_and_hyphens_can_be_used_in_manual_search(self):
+        self.panel.set_catalog(Catalog({'items':[{'id':1112223,'name':'Ink-and-Wash Painting Name Tag Ring'},
+                                                {'id':1112227,'name':'Ink-and-Wash Thought Bubble Ring'}]}))
+        self.search('Ink and Wash Painting N...')
+        self.assertEqual(self.panel.results.count(),1)
+        self.panel.results.setCurrentRow(0)
+        self.assertEqual(self.requests[-1].game_id,1112223)
+
+
     def test_new_query_cancels_selection_and_late_quote_cannot_replace_it(self):
         self.search("work")
         self.panel.results.setCurrentRow(0)

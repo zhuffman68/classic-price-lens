@@ -18,11 +18,17 @@ class LupinUiTests(unittest.TestCase):
     def tearDown(self):
         self.fixture.tearDown();self.fixture.doCleanups()
 
-    def test_three_shortcuts_have_independent_defaults(self):
-        self.assertEqual(self.window.hotkey_sequence,'F10')
-        self.assertEqual(self.window.exp_sequence,'F11')
-        self.assertEqual(self.window.chat_sequence,'F9' if sys.platform=='win32' else 'F12')
-        self.assertEqual(self.window.write_sequence,'F8')
+    def test_four_shortcuts_share_cross_platform_super_defaults(self):
+        self.assertEqual(self.window.hotkey_sequence,'Meta+F9')
+        self.assertEqual(self.window.exp_sequence,'Meta+F10')
+        self.assertEqual(self.window.chat_sequence,'Meta+F11')
+        self.assertEqual(self.window.write_sequence,'Meta+F8')
+
+    def test_all_shortcut_buttons_use_one_editor(self):
+        w=self.window
+        with patch('price_lens.shortcut_ui.edit_shortcuts') as editor:
+            for button in (w.shortcuts_button,w.hotkey_button,w.translation_panel.shortcut_button,w.translation_panel.writer.shortcut):button.click()
+        self.assertEqual([call.args[1] for call in editor.call_args_list],['prices','prices','chat','write'])
 
     def test_composer_hotkey_needs_no_capture_and_notifies_after_explicit_copy(self):
         w=self.window;w.mode='idle';w.reader.image=w.reader.image.__class__()

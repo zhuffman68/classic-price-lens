@@ -112,7 +112,7 @@ class AnnotationMotionTests(unittest.TestCase):
         self.window.read_command(json.dumps(state))
         affected,clear=self.window.rows
         affected['_fade'].setCurrentTime(110)
-        self.assertAlmostEqual(affected['_alpha'],.15)
+        self.assertAlmostEqual(affected['_alpha'],.25)
         self.assertAlmostEqual(clear['_alpha'],1)
         self.assertEqual(before,[self.window.label_rect(row,QPoint()) for row in self.window.rows])
         for row in rows:row['occlusion']=None
@@ -124,5 +124,14 @@ class AnnotationMotionTests(unittest.TestCase):
     def test_reduce_motion_keeps_overlap_transparency_without_an_animation(self):
         self.window.read_command(json.dumps({**self.command,'reduce_motion':True,'rows':[
             {'x':120,'y':90,'name':'Hat','key':'shop:0','kind':'shop','text':'FM 1,000','occlusion':[200,80,300,100]}]}))
-        self.assertAlmostEqual(self.window.rows[0]['_alpha'],.15)
+        self.assertAlmostEqual(self.window.rows[0]['_alpha'],.25)
         self.assertIsNone(self.window.rows[0].get('_fade'))
+
+    def test_age_updates_do_not_pulse_a_stable_market_price(self):
+        row={'x':120,'y':90,'name':'Hat','key':'shop:0','kind':'shop','text':'FM 1,000 · 1s',
+             'content_id':[1,1000]}
+        state={**self.command,'rows':[row]};self.window.read_command(json.dumps(state))
+        self.window.rows[0]['_fade'].setCurrentTime(110)
+        self.window.read_command(json.dumps({**state,'rows':[{**row,'text':'FM 1,000 · 2s'}]}))
+        self.assertIsNone(self.window.rows[0].get('_text_fade'))
+        self.assertAlmostEqual(self.window.rows[0].get('_text_alpha',1),1)

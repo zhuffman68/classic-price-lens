@@ -264,7 +264,7 @@ class PixelReader(QObject):
         if pointer and self.crop:
             pointer = (pointer[0] - self.crop.x(), pointer[1] - self.crop.y())
         in_shop = pointer_in_shop(pointer, self.shop_context)
-        hover_check = self.tooltip_enabled and pointer is not None and self.shop_rect is None and self.shop_context is None
+        hover_check = self.tooltip_enabled and pointer is not None and not in_shop
         if self.auto_active:
             hover_check = bool(hover_check and self.game_area and self.game_area.contains(QPoint(*pointer)))
         tooltip_same = False

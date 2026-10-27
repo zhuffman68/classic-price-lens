@@ -37,7 +37,7 @@ def build(panel,layout,enabled,window_minutes=None):
         QPushButton#expLink { background: transparent; border: none; color: #b8c7dc; padding: 5px 0; text-align: left; }
         QPushButton#expLink:hover { color: #edc68a; }
     """)
-    layout.setContentsMargins(0,12,0,0);layout.setSpacing(13)
+    layout.setContentsMargins(0,8,0,0);layout.setSpacing(8)
     identity=QHBoxLayout();names=QVBoxLayout();names.setSpacing(3)
     panel.character=label("Ready to watch your EXP","expIdentity")
     panel.map_label=label("Keep the game's EXP bar visible.","expMap")
@@ -47,7 +47,7 @@ def build(panel,layout,enabled,window_minutes=None):
     panel.bar=QProgressBar();panel.bar.setRange(0,10000);panel.bar.setTextVisible(False);panel.bar.setFixedHeight(6)
     layout.addWidget(panel.bar)
     hero=QFrame();hero.setObjectName("expHero")
-    hero_layout=QVBoxLayout(hero);hero_layout.setContentsMargins(18,16,18,16);hero_layout.setSpacing(12)
+    hero_layout=QVBoxLayout(hero);hero_layout.setContentsMargins(16,12,16,12);hero_layout.setSpacing(8)
     rate_row=QHBoxLayout()
     panel.minute_caption=label("PROGRESS / MIN","expEyebrow")
     panel.hour_caption=label("PROGRESS / HOUR","expEyebrow")
@@ -72,10 +72,11 @@ def build(panel,layout,enabled,window_minutes=None):
     for button in (panel.start_button,panel.pause_button,panel.stop_button):
         button.setMinimumHeight(32);controls.addWidget(button,1)
     layout.addLayout(controls)
-    panel.shortcut_hint=label("F11 · Start / pause / resume","expMuted");layout.addWidget(panel.shortcut_hint)
+    panel.shortcut_hint=label("Super + F10 · Start / pause / resume","expMuted")
+    options_row=QHBoxLayout();options_row.addWidget(panel.shortcut_hint,1)
     panel.overlay_check=QCheckBox("Show EXP overlay in the game")
     panel.overlay_check.setChecked(True);panel.overlay_check.toggled.connect(panel.overlay_changed.emit)
-    layout.addWidget(panel.overlay_check)
+    options_row.addWidget(panel.overlay_check);layout.addLayout(options_row)
     panel.state=label("","expMuted");layout.addWidget(panel.state)
     links=QHBoxLayout();panel.options_button=QPushButton("Session options…");panel.history_button=QPushButton("History")
     panel.options_button.setObjectName("expLink")

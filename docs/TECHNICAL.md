@@ -111,7 +111,7 @@ Qt animations provide 110ms fade-in, 90ms fade-out and 95ms shop-position easing
 
 ## v0.7.0 interaction and lookup changes
 
-EXP always starts stopped. Start tracking explicitly enables sampling; F11 starts, pauses or resumes. Stop saves and disables sampling. Percentage rates are the default, with raw or combined units available. Rates and ETA require 30 seconds of valid tracked time and use a five-minute window. Its optional readout is anchored to the game area's bottom-left and appears only for a started running or paused session. Map segments save automatically while the overall timer continues.
+EXP always starts stopped. Start tracking explicitly enables sampling; Super/Win+F10 starts, pauses or resumes. Stop saves and disables sampling. Percentage rates are the default, with raw or combined units available. Rates and ETA require 30 seconds of valid tracked time and use a five-minute window. Its optional readout is anchored to the game area's bottom-left and appears only for a started running or paused session. Map segments save automatically while the overall timer continues.
 
 Price cards are persistent; tab, section and field transitions are short and interruptible. Reduce motion disables them and pauses the local Lupin sprite. Hidden headers also pause the sprite.
 
@@ -119,6 +119,6 @@ Obsolete direct HTTPS requests can be cancelled before they hold up a new page. 
 
 ## Controls and desktop identity in v0.9.0
 
-Prices includes local name search; Translation has its own tab. One display dropdown selects the capture display. Wayland screen-sharing consent remains an OS dialog. F10 toggles prices independently of EXP, F11 starts/pauses/resumes EXP, and F12 translates (F9 on Windows, whose RegisterHotKey API reserves F12). The top Hotkeys button and Settings edit the same assignments. Wayland binds all three actions in one GlobalShortcuts session. CLI equivalents are `lupin --prices`, `lupin --exp` and `lupin --translate`; `--toggle` pauses the complete reader.
+Prices includes local name search; Translation has its own tab. One display dropdown selects the capture display. Wayland screen-sharing consent remains an OS dialog. Super/Win+F9 toggles prices, +F10 starts/pauses/resumes EXP, +F11 scans Korean and +F8 opens the Korean writer on both platforms. Every shortcut button opens the same configuration flow. Wayland binds all four actions in one GlobalShortcuts session. CLI equivalents are `lupin --prices`, `lupin --exp` and `lupin --translate`; `--toggle` pauses the complete reader.
 
 Linux package metadata is `lupin`, replacing/conflicting with/providing `classic-price-lens`. Legacy install roots, application settings and portal/desktop IDs remain stable. The desktop icon has a new Lupin resource name so existing menu entries and pinned launchers resolve the approved icon after a desktop cache refresh.

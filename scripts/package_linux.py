@@ -8,6 +8,7 @@ import tarfile
 import zipfile
 
 from package_common import ROOT, stage_application, stage_notices, assert_public_tree
+from trim_runtime import trim
 
 STAGE = ROOT / "dist/linux-root"
 OUT = STAGE / "opt/classic-price-lens"
@@ -43,8 +44,7 @@ def main():
         shutil.rmtree(OUT / "runtime" / relative, ignore_errors=True)
     for path in (OUT / "runtime/lib").rglob("*.a"):
         path.unlink()  # Static developer libraries are not used by the runtime.
-    for relative in ("Qt/qml", "include", "typesystems", "doc"):
-        shutil.rmtree(site / "PySide6" / relative, ignore_errors=True)
+    trim(OUT,'linux')
     (OUT / "bin").mkdir()
     reader = ROOT / "reader/target/x86_64-unknown-linux-musl/release/classic-screen-reader"
     shutil.copy2(reader, OUT / "bin/classic-screen-reader")
@@ -54,13 +54,14 @@ def main():
     destinations = {
         "packaging/classic-price-lens": "usr/bin/classic-price-lens",
         "packaging/classic-price-lens.desktop": "usr/share/applications/io.github.zhuffman68.ClassicPriceLens.desktop",
-        "price_lens/resources/icon.png": "usr/share/icons/hicolor/256x256/apps/io.github.zhuffman68.Lupin.png",
+        "price_lens/resources/icon.png": "usr/share/icons/hicolor/256x256/apps/io.github.zhuffman68.Lupin-scaled.png",
+        "price_lens/resources/icon.svg": "usr/share/icons/hicolor/scalable/apps/io.github.zhuffman68.Lupin-scaled.svg",
         "README.md": "usr/share/doc/classic-price-lens/README.md",
         "THIRD_PARTY.md": "usr/share/doc/classic-price-lens/copyright",
     }
-    for size in (16, 24, 32, 48, 64, 128):
+    for size in (16,20,22,24,28,32,40,48,56,64,96,128):
         destinations[f"price_lens/resources/icon-{size}.png"] = (
-            f"usr/share/icons/hicolor/{size}x{size}/apps/io.github.zhuffman68.Lupin.png")
+            f"usr/share/icons/hicolor/{size}x{size}/apps/io.github.zhuffman68.Lupin-scaled.png")
     for source, relative in destinations.items():
         target = STAGE / relative
         target.parent.mkdir(parents=True, exist_ok=True)

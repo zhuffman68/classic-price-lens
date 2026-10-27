@@ -14,6 +14,7 @@ class Overlay(QObject):
         self.buffer = b""
         self.last_state = None
         self.last_error = ""
+        self.layout_boxes=[]
         self.process.readyReadStandardOutput.connect(self.read_output)
         self.process.readyReadStandardError.connect(self.read_error)
         self.process.started.connect(self.flush_state)
@@ -39,7 +40,9 @@ class Overlay(QObject):
         while b"\n" in self.buffer:
             line, self.buffer = self.buffer.split(b"\n", 1)
             try:
-                point = json.loads(line).get("pointer")
+                report=json.loads(line)
+                if 'layout' in report:self.layout_boxes=report['layout'][:48]
+                point = report.get("pointer")
                 if point:
                     self.pointer.emit(*point)
             except (ValueError, TypeError):

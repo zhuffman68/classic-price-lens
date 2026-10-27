@@ -23,7 +23,21 @@ def key(name):
 def glyph_key(name):
     # The bundled recognizer reads the small Classic font's y as v (also seen
     # in the upstream Horny Mushroom Cap tooltip fixture). No edit-distance guess.
-    return key(name).replace("v", "y")
+    # Whole-word aliases avoid an edit-distance guess across stats, tiers,
+    # prices or percentages. Exact catalog spelling always wins first.
+    aliases={'soroll':'scroll','seroll':'scroll','scroil':'scroll','scroii':'scroll','scr0ll':'scroll',
+             'arrnor':'armor','mushroorn':'mushroom','helrnet':'helmet','whlte':'white',
+             'sllver':'silver','lron':'iron','0range':'orange','b1ue':'blue'}
+    return re.sub(r'\b[\w]+\b',lambda m:aliases.get(m[0],m[0]),key(name)).replace("v", "y")
+
+
+def item_words(name):
+    """Visible-name formatting only; provider proofs still use exact key()."""
+    return " ".join(re.sub(r"[-‐‑–—]", " ", key(name)).replace("nametag", "name tag").split())
+
+
+def unclipped_name(name):
+    return re.sub(r"(?:[.\u2026]\s*)+$", "", key(name)).rstrip()
 
 
 @dataclass(frozen=True)
@@ -61,10 +75,12 @@ class Catalog:
                                         on_sale=row.get("on_sale"))
         self.items = list(by_id.values())
         self.names = {}
+        self.read_names = {}
         self.glyph_names = {}
         for item in self.items:
             self.names.setdefault(key(item.name), []).append(item)
-            self.glyph_names.setdefault(glyph_key(item.name), []).append(item)
+            self.read_names.setdefault(item_words(item.name), []).append(item)
+            self.glyph_names.setdefault(glyph_key(item_words(item.name)), []).append(item)
         self.resolved = {}
         self.preferred = {}
 
@@ -72,12 +88,15 @@ class Catalog:
         name = key(visible_name or "")
         if name in self.names:
             return self.names[name]
-        if not re.search(r"(?:\.{2,}|…)$", name):
-            return self.glyph_names.get(glyph_key(name), []) if len(name) >= 6 else []
-        prefix = re.sub(r"(?:\.{2,}|…)$", "", name).rstrip()
+        if not re.search(r"[.\u2026]$", name):
+            words=item_words(name)
+            return (self.read_names.get(words) or self.glyph_names.get(glyph_key(words), [])) if len(words)>=6 else []
+        prefix = item_words(unclipped_name(name))
         if len(prefix) < 6:
             return []
-        candidates = [i for name_key, items in self.names.items() if name_key.startswith(prefix) for i in items]
+        candidates = [i for name_key, items in self.read_names.items() if name_key.startswith(prefix) for i in items]
+        if not candidates:
+            candidates=[i for name_key,items in self.read_names.items() if glyph_key(name_key).startswith(glyph_key(prefix)) for i in items]
         return [i for i in candidates if i.tier and key(i.tier) == key(tier)] if tier else candidates
 
     def bind_current(self, visible_name, tier, item):
@@ -86,27 +105,16 @@ class Catalog:
         self.preferred[(key(visible_name), tier)] = item
 
     def resolve(self, visible_name, tier=None):
-        """Only a unique exact name or genuine UI ellipsis prefix; no fuzzy guesses."""
+        """Unique canonical/formatted name or UI ellipsis prefix; no fuzzy guesses."""
         if not visible_name:
             return None
         name = key(visible_name)
         if (name, tier) in self.preferred:
             return self.preferred[(name, tier)]
-        exact = self.names.get(name, [])
-        if exact:
-            return exact[0] if len(exact) == 1 else None
-        if not re.search(r"(?:\.{2,}|…)$", name):
-            matches = self.candidates(name, tier)
-            return matches[0] if len(matches) == 1 else None
-        prefix = re.sub(r"(?:\.{2,}|…)$", "", name).rstrip()
-        if len(prefix) < 6:
-            return None
         identity = (name, tier)
         if identity in self.resolved:
             return self.resolved[identity]
-        candidates = [i for name_key, items in self.names.items() if name_key.startswith(prefix) for i in items]
-        if tier:
-            candidates = [i for i in candidates if i.tier and key(i.tier) == key(tier)]
+        candidates = self.candidates(visible_name,tier)
         result = candidates[0] if len(candidates) == 1 else None
         if len(self.resolved) >= 512:
             self.resolved.clear()
