@@ -40,6 +40,16 @@ class PriceSearchTests(unittest.TestCase):
         self.panel.timer.stop()
         self.panel.find_items()
 
+    def test_debounce_keeps_thumbnails_enabled_and_rejects_stale_selection(self):
+        self.search('Work');self.assertGreater(self.panel.results.count(),1)
+        self.panel.query.setText('Blue')
+        self.assertTrue(self.panel.results.isEnabled())
+        self.panel.results.setCurrentRow(0)
+        self.assertIsNone(self.panel.selected)
+        self.assertFalse(any(item for item in self.requests))
+        self.panel.timer.stop();self.panel.find_items();self.panel.results.setCurrentRow(0)
+        self.assertEqual(self.panel.selected.game_id,3)
+
     def test_typing_filters_names_without_price_requests(self):
         for query in ("w","wo","work","work gloves"):
             self.search(query)

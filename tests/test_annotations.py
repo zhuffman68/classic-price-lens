@@ -135,3 +135,15 @@ class AnnotationMotionTests(unittest.TestCase):
         self.window.read_command(json.dumps({**state,'rows':[{**row,'text':'FM 1,000 · 2s'}]}))
         self.assertIsNone(self.window.rows[0].get('_text_fade'))
         self.assertAlmostEqual(self.window.rows[0].get('_text_alpha',1),1)
+
+    def test_scan_status_uses_game_bottom_right_and_stacks_above_tracker(self):
+        from price_lens.overlay_layout import corner_offset
+        bounds=[100,150,600,500]
+        tracker={'kind':'experience','anchor':'bottom_left','bounds':bounds,'extra':'raw EXP\nMeso +1,200'}
+        offset=corner_offset(bounds,[tracker]);self.assertEqual(offset,76)
+        status={'kind':'translation_status','key':'chat:status','name':'Korean translation','text':'Scanning… 4s',
+                'x':0,'y':0,'anchor':'bottom_right','bounds':bounds,'bottom_offset':offset}
+        self.window.read_command(json.dumps({**self.command,'reduce_motion':True,'rows':[status]}))
+        rect=self.window.label_rect(self.window.rows[0],QPoint())
+        self.assertEqual(rect.right(),695)
+        self.assertEqual(rect.bottom(),645-offset)

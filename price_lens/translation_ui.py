@@ -1,14 +1,13 @@
 """Translation controls and the latest local results; no capture or networking."""
 from PySide6.QtCore import Signal,Qt
-from PySide6.QtWidgets import QWidget,QVBoxLayout,QHBoxLayout,QCheckBox,QPushButton,QScrollArea,QFrame,QLabel,QDoubleSpinBox
-from .motion import reveal,AnimatedTabs
+from PySide6.QtWidgets import QWidget,QVBoxLayout,QHBoxLayout,QFormLayout,QCheckBox,QPushButton,QScrollArea,QFrame,QLabel,QDoubleSpinBox
+from .motion import reveal,AnimatedTabs,MotionLabel
 from .composer_ui import ComposerWidget
 
 
 class TranslationPanel(QWidget):
     enabled_changed=Signal(bool)
     translate_requested=Signal()
-    shortcut_requested=Signal()
     clear_requested=Signal()
     timing_changed=Signal(float,float)
 
@@ -22,23 +21,26 @@ class TranslationPanel(QWidget):
         self.enabled_check.setToolTip('Scan Korean text in the shared game window. The Korean writer works separately.')
         self.enabled_check.setChecked(enabled);self.enabled_check.toggled.connect(self.enabled_changed.emit)
         enable_row=QHBoxLayout();enable_row.addWidget(self.enabled_check,1)
-        self.status_label=QLabel('Translation disabled');self.status_label.setStyleSheet('color:#a6b1bf;font-size:11px')
+        self.status_label=MotionLabel('Translation disabled');self.status_label.setStyleSheet('color:#a6b1bf;font-size:11px')
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignRight|Qt.AlignmentFlag.AlignVCenter)
         self.status_label.setWordWrap(True);enable_row.addWidget(self.status_label,1);layout.addLayout(enable_row)
         actions=QHBoxLayout()
-        self.translate_button=QPushButton("Translate now");self.translate_button.setMinimumHeight(34)
+        self.translate_button=QPushButton("Scan now");self.translate_button.setMinimumHeight(34)
         self.translate_button.setObjectName("primary");self.translate_button.clicked.connect(self.translate_requested.emit)
-        self.shortcut_button=QPushButton("Shortcut…");self.shortcut_button.clicked.connect(self.shortcut_requested.emit)
-        actions.addWidget(self.translate_button,1);actions.addWidget(self.shortcut_button);layout.addLayout(actions)
-        self.hint=QLabel("Scan the Classic World window for Korean text. Translations appear with the original below.")
+        self.translate_button.setEnabled(enabled)
+        self.enabled_check.toggled.connect(self.translate_button.setEnabled)
+        actions.addWidget(self.translate_button,1);layout.addLayout(actions)
+        self.hint=QLabel("Scan the Classic World window for Korean text. Results appear as soon as they’re ready.")
         self.hint.setWordWrap(True);self.hint.setStyleSheet("color:#a6b1bf; font-size:11px")
         layout.addWidget(self.hint)
-        timings=QHBoxLayout()
+        timings=QFormLayout()
         self.scan=QDoubleSpinBox();self.scan.setRange(1,10);self.scan.setSingleStep(.5);self.scan.setSuffix(' s');self.scan.setValue(scan_seconds)
         self.linger=QDoubleSpinBox();self.linger.setRange(0,5);self.linger.setSingleStep(.5);self.linger.setSuffix(' s');self.linger.setValue(linger_seconds)
-        timings.addWidget(QLabel('Scan for'));timings.addWidget(self.scan);timings.addSpacing(10)
-        timings.addWidget(QLabel('Keep after disappearance'));timings.addWidget(self.linger);timings.addStretch()
+        for spin in (self.scan,self.linger):spin.setFixedWidth(80)
+        timings.addRow('Keep checking for',self.scan)
+        timings.addRow('Keep after disappearance',self.linger)
         layout.addLayout(timings)
+        self.scan.setToolTip('Results appear as soon as text is read. Keep checking for new or moving text during this window; press again to restart.')
         for spin in (self.scan,self.linger):spin.valueChanged.connect(lambda *_:self.timing_changed.emit(self.scan.value(),self.linger.value()))
         scroll=QScrollArea();scroll.setWidgetResizable(True);scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.results=QWidget();self.results_layout=QVBoxLayout(self.results);self.results_layout.setContentsMargins(0,0,0,0)
@@ -50,11 +52,7 @@ class TranslationPanel(QWidget):
             writer_scroll=QScrollArea();writer_scroll.setWidgetResizable(True);writer_scroll.setFrameShape(QFrame.Shape.NoFrame);writer_scroll.setWidget(self.writer)
             self.modes.addTab(writer_scroll,'Write Korean')
 
-    def set_shortcut(self,description):
-        self.shortcut_button.setText("Shortcut: "+description)
-        self.hint.setText(f"Press {description} to scan the Classic World window for Korean text.")
-
-    def set_active(self,active):self.translate_button.setText('Extend scan' if active else 'Scan now')
+    def set_active(self,active):self.translate_button.setText('Restart scan' if active else 'Scan now')
 
     def set_status(self,message):
         self.status_label.setText(message)

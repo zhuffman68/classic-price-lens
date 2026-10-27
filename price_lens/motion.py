@@ -1,7 +1,9 @@
 """Short, interruptible QWidget motion; idle and hidden widgets do no animation work."""
+import re
 from PySide6.QtCore import QEasingCurve,QPoint,Qt,QVariantAnimation,QSize,QRect
 from PySide6.QtGui import QPainter, QPalette
-from PySide6.QtWidgets import QApplication, QGraphicsOpacityEffect, QLabel, QTabWidget, QWidget
+from PySide6.QtWidgets import QApplication, QGraphicsOpacityEffect, QLabel, QTabWidget, QWidget,QSizePolicy
+from .number_motion import NumberRoll
 
 
 def enabled(widget):
@@ -19,23 +21,52 @@ class MotionLabel(QLabel):
         self.animation.setDuration(110)
         self.animation.setEasingCurve(QEasingCurve.Type.OutCubic)
         self.animation.valueChanged.connect(self._alpha)
+        self.number_roll=NumberRoll(text)
+        self.digits=QVariantAnimation(self);self.digits.setDuration(160)
+        self.digits.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self.digits.valueChanged.connect(self._digits)
 
     def _alpha(self, value):
         self.alpha = float(value)
         self.update()
 
+    def _digits(self,value):
+        self.number_roll.progress=float(value);self.update()
+
     def setText(self, value):
         if value == self.text():return
-        animate = bool(self.text()) and enabled(self) and not self.property("quietUpdates")
+        animate = enabled(self) and not self.property("quietUpdates")
+        old=self.text()
+        shape=lambda text:re.sub(r'\d+(?:[,.]\d+)*','#',text)
+        only_numbers=bool(any(c.isdigit() for c in value) and shape(old)==shape(value)
+                          and self.fontMetrics().horizontalAdvance(value)<=self.contentsRect().width())
+        if animate and not value and self.text():fade_away(self)
         self.animation.stop()
+        self.digits.stop()
+        self.number_roll.set_text(value,animate and only_numbers)
         super().setText(value)
-        if animate:
+        if animate and only_numbers:
+            self.alpha=1.0
+            self.digits.setStartValue(0.0);self.digits.setEndValue(1.0);self.digits.start()
+        elif animate:
             self.animation.setStartValue(.55)
             self.animation.setEndValue(1.0)
             self.animation.start()
         else:self.alpha = 1.0
 
     def paintEvent(self, event):
+        if not enabled(self):
+            self.animation.stop();self.digits.stop();self.number_roll.finish();self.alpha=1.0
+        # Keep one renderer for a numeric caption at rest and in motion. Native
+        # QLabel shaping and per-cell drawing differ in rounding/kerning; swapping
+        # between them made the surrounding words move during every roll.
+        numeric_line = (any(c.isdigit() for c in self.text()) and '\n' not in self.text()
+                        and self.fontMetrics().horizontalAdvance(self.text())<=self.contentsRect().width())
+        if numeric_line:
+            painter=QPainter(self);painter.setFont(self.font())
+            painter.setOpacity(self.alpha)
+            painter.setPen(self.palette().color(QPalette.ColorRole.WindowText))
+            self.number_roll.paint(painter,self.contentsRect(),self.alignment());return
         if self.alpha >= .999:
             return super().paintEvent(event)
         painter = QPainter(self)
@@ -47,6 +78,7 @@ class MotionLabel(QLabel):
 
     def hideEvent(self, event):
         self.animation.stop()
+        self.digits.stop();self.number_roll.finish()
         self.alpha = 1.0
         super().hideEvent(event)
 
@@ -162,38 +194,39 @@ class RollingLabel(QLabel):
     """Clip and roll changed digits only; semantic text updates immediately."""
     def __init__(self,text="",parent=None):
         super().__init__(text,parent)
-        self.old_text=text;self.progress=1.0
+        self.roll=NumberRoll(text)
         self.animation=QVariantAnimation(self);self.animation.setDuration(160)
         self.animation.setEasingCurve(QEasingCurve.Type.OutCubic)
         self.animation.valueChanged.connect(self.advance)
         self.setMinimumWidth(90)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed)
 
-    def advance(self,value):self.progress=float(value);self.update()
+    def sizeHint(self):
+        margins=self.contentsMargins()
+        return QSize(90,self.fontMetrics().height()+margins.top()+margins.bottom())
+
+    def minimumSizeHint(self):return self.sizeHint()
+
+    def advance(self,value):self.roll.progress=float(value);self.update()
 
     def setText(self,text):
         if text==self.text():return
-        self.animation.stop();self.old_text=self.text()
+        self.animation.stop()
         super().setText(text)
-        if enabled(self) and any(c.isdigit() for c in text) and any(c.isdigit() for c in self.old_text):
+        if self.roll.set_text(text,enabled(self)):
             self.animation.setStartValue(0.0);self.animation.setEndValue(1.0);self.animation.start()
-        else:self.progress=1.0
 
     def paintEvent(self,event):
         painter=QPainter(self);painter.setFont(self.font());painter.setPen(self.palette().color(QPalette.ColorRole.WindowText))
-        metrics=painter.fontMetrics();height=metrics.height();cell=metrics.horizontalAdvance('0')
-        old=self.old_text.rjust(len(self.text()));new=self.text().rjust(len(old));old=old.rjust(len(new))
-        widths=[cell if c.isdigit() else metrics.horizontalAdvance(c) for c in new]
-        width=sum(widths);left=self.width()-width if self.alignment()&Qt.AlignmentFlag.AlignRight else (self.width()-width)//2 if self.alignment()&Qt.AlignmentFlag.AlignHCenter else 0
-        y=(self.height()-height)//2
-        painter.setClipRect(self.rect())
-        for before,after,w in zip(old,new,widths):
-            rect=QRect(left,y,w,height);left+=w
-            if self.progress>=.999 or before==after or not(after.isdigit() or before.isdigit()):
-                painter.drawText(rect,Qt.AlignmentFlag.AlignCenter,after);continue
-            painter.save();painter.setClipRect(rect)
-            painter.drawText(rect.translated(0,-round(height*self.progress)),Qt.AlignmentFlag.AlignCenter,before)
-            painter.drawText(rect.translated(0,round(height*(1-self.progress))),Qt.AlignmentFlag.AlignCenter,after)
-            painter.restore()
+        if not enabled(self):self.roll.finish()
+        self.roll.paint(painter,self.contentsRect(),self.alignment())
+
+    def showEvent(self,event):
+        super().showEvent(event)
+        if enabled(self):
+            text=self.text();self.roll=NumberRoll()
+            if self.roll.set_text(text):
+                self.animation.setStartValue(0.0);self.animation.setEndValue(1.0);self.animation.start()
 
     def hideEvent(self,event):
-        self.animation.stop();self.progress=1.0;super().hideEvent(event)
+        self.animation.stop();self.roll.finish();super().hideEvent(event)

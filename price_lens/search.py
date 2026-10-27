@@ -35,6 +35,7 @@ class PriceSearch(QWidget):
         self.ttl = 900
         self.expanded = False
         self.card_key = None
+        self.results_current = False
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0,12,0,0)
         layout.setSpacing(12)
@@ -64,7 +65,7 @@ class PriceSearch(QWidget):
         self.results.setMaximumHeight(210)
         self.results.setStyleSheet("QListWidget { background: #1e2734; border: 1px solid #354255; border-radius: 7px; } QListWidget::item { padding: 9px 10px; border-bottom: 1px solid #2a3647; } QListWidget::item:selected { background: #35455c; color: #f4e7d1; }")
         self.results.currentItemChanged.connect(self.select_result)
-        self.results.itemClicked.connect(lambda *_:visibility(self.results,False))
+        self.results.itemClicked.connect(lambda *_:visibility(self.results,False) if self.results_current else None)
         self.results.hide()
         layout.addWidget(self.results)
         self.detail_scroll = QScrollArea()
@@ -105,6 +106,7 @@ class PriceSearch(QWidget):
             if image.width()>32 or image.height()>32:image=image.scaled(QSize(32,32),Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.FastTransformation)
             painter=QPainter(tile);painter.drawImage((32-image.width())//2,(32-image.height())//2,image);painter.end()
             icon=QIcon(tile)
+            icon.addPixmap(tile,QIcon.Mode.Disabled)
         for index in range(self.results.count()):
             row=self.results.item(index);item=row.data(Qt.ItemDataRole.UserRole)
             if getattr(item,'game_id',None)==item_id and not image.isNull():row.setIcon(icon)
@@ -130,7 +132,9 @@ class PriceSearch(QWidget):
             fade_away(self.results)
             if getattr(self,"price_view",None):fade_away(self.price_view)
         self.clear_selection()
-        self.results.setEnabled(False)
+        # Keep the normal icon palette during debounce. The selection handler
+        # gates demand so stale rows cannot start a price request.
+        self.results_current = False
         self.matches_button.hide()
         self.timer.start()
         self.active_changed.emit()
@@ -167,7 +171,7 @@ class PriceSearch(QWidget):
                 self.results.addItem(row)
                 if self.thumbnails and resolved:self.on_thumbnail(resolved.game_id)
         self.results.blockSignals(False)
-        self.results.setEnabled(True)
+        self.results_current = True
         visibility(self.results,bool(found))
         if found:reveal(self.results)
         self.thumbnail_timer.start()
@@ -183,6 +187,7 @@ class PriceSearch(QWidget):
         if self.results.count():self.results.setCurrentRow(0)
 
     def select_result(self, current, previous=None):
+        if not self.results_current:return
         item = current.data(Qt.ItemDataRole.UserRole) if current else None
         if isinstance(item,tuple):
             name,candidates = item

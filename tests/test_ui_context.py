@@ -141,6 +141,15 @@ class FakeThumbnails(QObject):
 
 
 class ContextUiTests(unittest.TestCase):
+    def test_display_resolution_fits_at_460_pixel_width(self):
+        w=self.window;w.resize(460,960)
+        index=w.monitor.currentIndex()
+        w.monitor.setItemText(index,'Display 2 · Centre · 1920 × 1080')
+        w.update_capture_controls();w.show();self.app.processEvents()
+        self.assertEqual(w.width(),460)
+        required=w.monitor.fontMetrics().horizontalAdvance(w.monitor.currentText())+46
+        self.assertGreaterEqual(w.monitor.width(),required)
+
     def test_display_selector_and_tab_position_remain_stable_on_every_page(self):
         self.window.mode="idle"
         self.window.show();self.app.processEvents()
@@ -622,7 +631,7 @@ class ContextUiTests(unittest.TestCase):
         self.assertFalse(hasattr(self.window,'display_map'))
         self.window.monitor.setCurrentIndex(1)
         self.assertIsNotNone(self.window.screen_index)
-        self.assertEqual([self.window.tabs.tabText(i) for i in range(3)],['Prices','EXP Tracking','Translation'])
+        self.assertEqual([self.window.tabs.tabText(i) for i in range(3)],['Prices','EXP/Meso Tracking','Translation'])
         self.assertEqual(self.window.search_panel.parentWidget(),self.window.prices_page)
         self.assertFalse(self.window.exp_enabled)
         for i in range(3):

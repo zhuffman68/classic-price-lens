@@ -8,6 +8,9 @@ use std::io::{self, BufRead, Write};
 use std::time::Instant;
 mod experience;
 mod game_area;
+mod text;
+mod wallet;
+mod tooltip_text;
 use game_area::{Locator, Rect};
 
 #[derive(Deserialize)]
@@ -20,6 +23,8 @@ struct Request {
     height: Option<u32>,
     #[serde(default)]
     tooltip: bool,
+    #[serde(default)]
+    tooltip_retry: bool,
     origin: Option<ScreenPoint>,
     #[serde(default)]
     auto_game: bool,
@@ -30,6 +35,8 @@ struct Request {
     experience_only: bool,
     #[serde(default)]
     read_map: bool,
+    #[serde(default)]
+    read_wallet: bool,
 }
 
 fn main() {
@@ -37,6 +44,7 @@ fn main() {
     let mut tooltip_reader = None;
     let mut locator = Locator::new();
     let mut experience = None;
+    let mut wallet = wallet::WalletReader::default();
     let stdin = io::stdin();
     let mut stdout = io::BufWriter::new(io::stdout());
     for line in stdin.lock().lines() {
@@ -119,10 +127,11 @@ fn main() {
                 frame
             };
             if request.experience_only {
+                let balance = if request.read_wallet {wallet.read(&frame,origin)} else {serde_json::Value::Null};
                 let result = experience
                     .get_or_insert_with(experience::ExperienceReader::new)
                     .read(frame, origin, request.read_map);
-                return Ok(serde_json::json!({"atMs":request.at_ms,"experience":result,
+                return Ok(serde_json::json!({"atMs":request.at_ms,"experience":result,"wallet":balance,"walletRead":request.read_wallet,
                     "experienceOnly":true,"ocrMs":started.elapsed().as_secs_f64()*1000.0}));
             }
             let capture = ShopCapture {
@@ -146,6 +155,14 @@ fn main() {
                         .get_or_insert_with(ItemTooltipReader::bundled)
                         .read(&tooltip_capture);
                     value["tooltip"] = serde_json::to_value(reading.tooltip)?;
+                    if request.tooltip_retry {
+                        let found=&value["tooltip"]["found"];
+                        if found.is_object() {
+                            let candidates=tooltip_text::alternatives(&tooltip_capture.frame,tooltip_capture.origin,found);
+                            value["tooltip"]["found"]["alternatives"]=serde_json::json!(candidates);
+                        }
+                        value["tooltipRetried"]=serde_json::json!(true);
+                    }
                 }
             }
             value["ocrMs"] = serde_json::json!(started.elapsed().as_secs_f64() * 1000.0);

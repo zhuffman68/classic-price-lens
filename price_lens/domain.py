@@ -51,6 +51,7 @@ class Item:
     nx_price: int | None = None
     nx_count: int = 1
     on_sale: bool | None = None
+    gender: str | None = None
 
 
 class Catalog:
@@ -62,7 +63,7 @@ class Catalog:
                 continue
             item_id = row["id"]
             by_id[item_id] = Item(item_id, row["name"], row.get("category") == "Equipment",
-                                  item_id // 10000 in (207, 233), row.get("tier"))
+                                  item_id // 10000 in (207, 233), row.get("tier"), gender=row.get('gender'))
         for category in (cash_document or {}).get("categories", []):
             for row in category.get("items", []):
                 if not isinstance(row, dict) or not isinstance(row.get("id"), int) or not row.get("name"):
@@ -72,7 +73,7 @@ class Catalog:
                 by_id[row["id"]] = Item(row["id"], row["name"], row.get("category") == "Equipment",
                                         cash=True, nx_price=int(nx) if number(nx) else None,
                                         nx_count=count if isinstance(count, int) and count > 0 else 1,
-                                        on_sale=row.get("on_sale"))
+                                        on_sale=row.get("on_sale"),gender=row.get('gender'))
         self.items = list(by_id.values())
         self.names = {}
         self.read_names = {}
@@ -88,6 +89,13 @@ class Catalog:
         name = key(visible_name or "")
         if name in self.names:
             return self.names[name]
+        gender = re.fullmatch(r'(.+?)\s+\(([mf])\)', name)
+        if gender:
+            base, suffix = gender.groups()
+            candidates = (self.names.get(base) or self.read_names.get(item_words(base))
+                          or self.glyph_names.get(glyph_key(item_words(base)), []))
+            expected = 'male' if suffix == 'm' else 'female'
+            return [i for i in candidates if i.equipment and i.gender == expected]
         if not re.search(r"[.\u2026]$", name):
             words=item_words(name)
             return (self.read_names.get(words) or self.glyph_names.get(glyph_key(words), [])) if len(words)>=6 else []

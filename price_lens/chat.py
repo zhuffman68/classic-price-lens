@@ -184,7 +184,7 @@ class ChatTranslation(QObject):
             if score<best[0]:best=(score,candidate)
         return best[1] if best[0]<=.035 else None
 
-    def annotations(self,image,sx,sy,bounds):
+    def annotations(self,image,sx,sy,bounds,occupied=()):
         rows=[];now=time.monotonic()
         if now-self.last_track>=.2 and image.cacheKey()!=self.last_image:
             self.last_track=now;self.last_image=image.cacheKey();keep=[]
@@ -204,8 +204,11 @@ class ChatTranslation(QObject):
                          'text':card['text'],'original':card['original'],'color':'#e3e9f2'})
         message='Loading translator…' if self.waiting else 'Translating…' if self.busy else f'Scanning Korean… {max(0,self.until-now):.0f}s' if self.watching else self.notice if now<self.notice_until else ''
         if message:
+            from .overlay_layout import corner_offset
             rows.append({'kind':'translation_status','key':'chat:status','name':'Korean translation','text':message,'color':'#b8d6f2',
-                         'x':max(bounds[0]+4,bounds[0]+bounds[2]-278),'y':bounds[1]+12})
+                         'x':bounds[0]+bounds[2]-4,'y':bounds[1]+bounds[3]-4,
+                         'anchor':'bottom_right','bottom_offset':corner_offset(bounds,occupied),
+                         'bounds':bounds})
         return rows
 
     def clear(self):

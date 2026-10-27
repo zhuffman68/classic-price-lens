@@ -9,6 +9,9 @@ minerva-core = { path = "../vendor/minerva/crates/minerva-core" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 image = { version = "0.25", default-features = false, features = ["png"] }
+ocrs = { version = "0.13.1", default-features = false, features = ["onnx"] }
+rten = "0.26"
+rten-imageproc = "0.26"
 
 [profile.dev]
 opt-level = 2

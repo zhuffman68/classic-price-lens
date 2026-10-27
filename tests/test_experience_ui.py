@@ -44,10 +44,15 @@ class ExperienceUiTests(unittest.TestCase):
         self.assertTrue(hasattr(self.panel,'start_button'))
         self.assertFalse(hasattr(self.panel,'enabled_check'))
         self.assertFalse(hasattr(self.panel,'details_button'))
+        self.assertEqual(self.panel.state.text(),'')
+        self.assertTrue(self.panel.state.isHidden())
         self.panel.start_button.click();self.feed(2010,1)
         self.assertIsNotNone(self.panel.tracker.run)
         self.assertEqual(self.panel.table.window(),self.panel.history_dialog)
-        self.assertEqual(self.panel.notes.window(),self.panel.options_dialog)
+        self.assertEqual(self.panel.notes.window(),self.panel.window())
+        self.assertEqual(self.panel.map_input.window(),self.panel.window())
+        self.assertFalse(hasattr(self.panel,'options_button'))
+        self.assertFalse(hasattr(self.panel,'options_dialog'))
 
     def train(self):
         self.panel.set_connected(True)
@@ -108,7 +113,36 @@ class ExperienceUiTests(unittest.TestCase):
         self.now+=6;self.panel.refresh()
         self.assertIsNone(self.panel.overlay_row())
         self.assertEqual(self.panel.tracker.run.seconds,before)
-        self.assertIn("timer held",self.panel.state.text())
+        self.assertIn("EXP estimates held",self.panel.state.text())
+
+    def test_shared_wallet_tracking_counts_net_change_and_holds_pause(self):
+        self.train()
+        def wallet(value,step=1):
+            self.now+=step
+            self.panel.feed({'atMs':int(self.now*1000),'experience':payload(self.panel.tracker.current.exp),
+                             'walletRead':True,'wallet':{'mesos':value} if value is not None else None})
+        wallet(70000);wallet(70000)
+        wallet(None);wallet(71200);wallet(71200)
+        self.assertEqual(self.panel.meso_gain.text(),'+1,200')
+        self.assertIn('Meso +1,200',self.panel.overlay_row()['extra'])
+        self.panel.toggle_pause();wallet(50000);wallet(50000)
+        self.assertEqual(self.panel.mesos.gain,1200)
+        self.panel.toggle_pause();wallet(50000);wallet(50000);wallet(50100);wallet(50100)
+        self.assertEqual(self.panel.mesos.gain,1300)
+        self.panel.stop()
+        saved=self.panel.history.rows()[0]
+        self.assertEqual(saved['mesos'],1300)
+        self.assertEqual(saved['wallet_end'],50100)
+
+    def test_wallet_can_be_saved_without_readable_exp(self):
+        self.panel.set_connected(True);self.panel.start()
+        for amount in (70000,70000,71200,71200):
+            self.now+=1
+            self.panel.feed({'atMs':int(self.now*1000),'walletRead':True,'wallet':{'mesos':amount}})
+        self.assertEqual(self.panel.mesos.gain,1200)
+        self.assertIn('Meso tracking',self.panel.overlay_row()['name'])
+        self.panel.stop()
+        self.assertEqual(self.panel.history.rows()[0]['mesos'],1200)
 
     def test_map_changes_save_a_segment_and_continue_the_total_timer(self):
         self.train()

@@ -59,6 +59,17 @@ class ComparisonTests(unittest.TestCase):
 
 
 class IdentityTests(unittest.TestCase):
+    def test_equipment_gender_suffix_requires_matching_catalog_gender(self):
+        catalog=Catalog({'items':[{'id':1040040,'name':'Red Hwarang Shirt','category':'Equipment','gender':'male'},
+                                  {'id':1,'name':'Test Shirt','category':'Equipment','gender':'male'},
+                                  {'id':2,'name':'Test Shirt','category':'Equipment','gender':'female'},
+                                  {'id':3,'name':'Work Gloves','category':'Equipment'},
+                                  {'id':4,'name':'Test Scroll','gender':'male'}]})
+        self.assertEqual(catalog.resolve('Red Hwarang Shirt (M)').game_id,1040040)
+        self.assertEqual(catalog.resolve('Test Shirt (F)').game_id,2)
+        self.assertIsNone(catalog.resolve('Red Hwarang Shirt (F)'))
+        self.assertIsNone(catalog.resolve('Work Gloves (M)'))
+        self.assertIsNone(catalog.resolve('Test Scroll (M)'))
     def test_observed_scroll_ocr_error_preserves_stat_and_tier(self):
         catalog=Catalog({'scrolls':[{'id':1,'name':'Overall Armor DEX Scroll: Greater','tier':'Greater'},
                                     {'id':2,'name':'Overall Armor DEX Scroll: Chaos','tier':'Chaos'},

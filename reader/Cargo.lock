@@ -62,6 +62,9 @@ version = "0.5.0"
 dependencies = [
  "image",
  "minerva-core",
+ "ocrs",
+ "rten",
+ "rten-imageproc",
  "serde",
  "serde_json",
 ]

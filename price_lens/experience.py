@@ -63,6 +63,11 @@ class Run:
     approximate_exp: bool = False
     gaps: int = 0
     reason: str = "Saved"
+    mesos: int | None = None
+    meso_seconds: float = 0
+    wallet_start: int | None = None
+    wallet_end: int | None = None
+    session_seconds: float | None = None
 
 
 class ExperienceTracker:

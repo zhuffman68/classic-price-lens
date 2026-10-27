@@ -7,6 +7,7 @@ from pathlib import Path
 from PySide6.QtCore import QObject, Signal, Qt, QRect, QPoint, QPointF, QTimer, QVariantAnimation, QEasingCurve
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPen, QCursor, QRegion,QFontDatabase
 from PySide6.QtWidgets import QApplication, QWidget
+from .number_motion import NumberRoll
 
 
 class CommandPipe(QObject):
@@ -103,7 +104,7 @@ class AnnotationWindow(QWidget):
                 row.update(supplied)
                 row.pop("_retired_rect", None)
                 row["_width"] = min(350, max(230,metrics.horizontalAdvance(row["text"])+20,
-                                             metrics.horizontalAdvance(row.get("extra",""))+20,
+                                             max((metrics.horizontalAdvance(line) for line in row.get('extra','').splitlines()),default=0)+20,
                                              metrics.horizontalAdvance(row.get("name",""))+20))
                 if row.get("kind")=="translation":
                     row["_width"]=min(360,max(180,row.get("bounds",[0,0,360,0])[2]-8))
@@ -145,8 +146,9 @@ class AnnotationWindow(QWidget):
                 target=.25 if row.get('kind')=='shop' and covered else 1.0
                 row['_target_alpha']=target
                 if self.reduce_motion:row['_alpha']=target
-                if old_text is not None and old_text != row["text"] and old_content!=row.get('content_id',row['text']) and not self.reduce_motion:
+                if old_text is not None and old_text != row["text"] and old_content!=row.get('content_id',row['text']) and not self.reduce_motion and not any(c.isdigit() for c in row['text']):
                     self.fade_text(row)
+                self.update_numbers(row)
                 if old is None and not self.reduce_motion:
                     row["_alpha"] = 0.0
                 if row.get("_fading_out") or old is None or old_alpha_target!=target:
@@ -188,6 +190,39 @@ class AnnotationWindow(QWidget):
     @staticmethod
     def row_key(row):
         return row.get("key", (row.get("name"), row.get("x"), row.get("y")))
+
+    def update_numbers(self, row):
+        rolls=row.setdefault('_rolls',{});animations=row.setdefault('_roll_animations',{})
+        values={'text':row['text'],'deal_delta':row.get('deal_delta','')}
+        if row.get('kind')=='experience':values['name']=row.get('name','')
+        values.update({f'extra:{i}':line for i,line in enumerate(row.get('extra','').splitlines())})
+        for key in set(rolls)-set(values):
+            roll=rolls.pop(key);animation=animations.pop(key,None)
+            if animation:animation.stop();animation.deleteLater()
+        for key,text in values.items():
+            roll=rolls.setdefault(key,NumberRoll())
+            if self.reduce_motion:
+                animation=animations.pop(key,None)
+                if animation:animation.stop();animation.deleteLater()
+                roll.set_text(text,False);roll.finish();continue
+            if not roll.set_text(text):continue
+            previous=animations.pop(key,None)
+            if previous:previous.stop();previous.deleteLater()
+            animation=QVariantAnimation(self);animations[key]=animation
+            animation.setDuration(160);animation.setStartValue(0.0);animation.setEndValue(1.0)
+            animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+            def advance(value,roll=roll,row=row):
+                roll.progress=float(value);self.invalidate_row(row)
+            def finish(key=key,animation=animation):
+                if animations.get(key) is animation:animations.pop(key,None)
+                animation.deleteLater()
+            animation.valueChanged.connect(advance);animation.finished.connect(finish);animation.start()
+
+    @staticmethod
+    def paint_number(painter,row,key,rect,text,alignment=Qt.AlignmentFlag.AlignVCenter):
+        roll=row.get('_rolls',{}).get(key)
+        if roll and roll.text==text:roll.paint(painter,rect,alignment)
+        else:painter.drawText(rect,alignment,text)
 
     def invalidate_row(self, row, previous=None):
         box = self.label_rect(row, QCursor.pos())
@@ -284,6 +319,10 @@ class AnnotationWindow(QWidget):
                 animation.stop()
                 animation.deleteLater()
                 row[key] = None
+        for animation in row.get('_roll_animations',{}).values():
+            animation.stop();animation.deleteLater()
+        row['_roll_animations']={}
+        for roll in row.get('_rolls',{}).values():roll.finish()
 
     def expire(self):
         import time
@@ -326,17 +365,20 @@ class AnnotationWindow(QWidget):
             position = row["_draw_pos"]
             x, y = round(position.x()), round(position.y())
         width = row["_width"]
-        height = 53 if row.get("extra") else 36
+        height = 36+17*len(row.get('extra','').splitlines())
         if row.get("kind")=="translation":
             height=row["_height"]
             bounds=QRect(*row.get("bounds",[0,0,self.width(),self.height()])).intersected(self.rect())
             width=min(width,max(1,bounds.width()-4));height=min(height,max(1,bounds.height()-4))
             return QRect(max(bounds.x()+2,min(x,bounds.right()-width-2)),
                          max(bounds.y()+2,min(y,bounds.bottom()-height-2)),width,height)
-        if row.get("anchor")=="bottom_left" and row.get("bounds"):
+        if row.get("anchor") in ('bottom_left','bottom_right') and row.get("bounds"):
             bounds=QRect(*row["bounds"])
             width=min(width,max(1,bounds.width()-8))
-            return QRect(bounds.left()+4,bounds.bottom()-height-3,width,height)
+            height=min(height,max(1,bounds.height()-8))
+            left=bounds.left()+4 if row['anchor']=='bottom_left' else bounds.right()-width-3
+            top=max(bounds.top()+4,bounds.bottom()-height-3-int(row.get('bottom_offset',0)))
+            return QRect(left,top,width,height)
         x = min(max(2, x), max(2, self.width() - width - 2))
         y = min(max(7, y), max(7, self.height() - 33))
         return QRect(x, y - 5, width, height)
@@ -381,21 +423,22 @@ class AnnotationWindow(QWidget):
                     tint=QColor(color);tint.setAlpha(40)
                     painter.setPen(Qt.PenStyle.NoPen);painter.setBrush(tint);painter.drawRoundedRect(chip,4,4)
                     painter.setPen(color);painter.setFont(self.price_font)
-                    painter.drawText(chip,Qt.AlignmentFlag.AlignCenter,row["deal_delta"])
+                    self.paint_number(painter,row,'deal_delta',chip,row['deal_delta'],Qt.AlignmentFlag.AlignCenter)
             painter.setFont(self.name_font)
             if row.get("kind")=="experience":painter.setFont(self.price_font)
             painter.setPen(QColor("#c4cbd6"))
             name_width=width-18-(64 if row.get("deal_delta") else 0)
             name = painter.fontMetrics().elidedText(row.get("name", "Unresolved item"), Qt.TextElideMode.ElideRight, name_width)
-            painter.drawText(QRect(x + 9, y - 3, name_width, 14), Qt.AlignmentFlag.AlignVCenter, name)
+            self.paint_number(painter,row,'name',QRect(x+9,y-3,name_width,14),name)
             painter.setFont(self.price_font)
             painter.setOpacity(float(row.get("_alpha",1.0))*float(row.get("_text_alpha",1.0)))
             painter.setPen(QColor(row.get("color", "#dce1e8")))
             text=painter.fontMetrics().elidedText(row["text"],Qt.TextElideMode.ElideRight,width-18)
-            painter.drawText(QRect(x + 9, y + 10, width - 18, 18), Qt.AlignmentFlag.AlignVCenter,text)
+            self.paint_number(painter,row,'text',QRect(x+9,y+10,width-18,18),text)
             if row.get("extra"):
                 painter.setFont(self.name_font);painter.setPen(QColor("#aab5c4"))
-                painter.drawText(QRect(x+9,y+28,width-18,15),Qt.AlignmentFlag.AlignVCenter,row["extra"])
+                for i,line in enumerate(row['extra'].splitlines()):
+                    self.paint_number(painter,row,f'extra:{i}',QRect(x+9,y+28+i*17,width-18,15),line)
 
 
 def main():

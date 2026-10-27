@@ -27,8 +27,30 @@ class LupinUiTests(unittest.TestCase):
     def test_all_shortcut_buttons_use_one_editor(self):
         w=self.window
         with patch('price_lens.shortcut_ui.edit_shortcuts') as editor:
-            for button in (w.shortcuts_button,w.hotkey_button,w.translation_panel.shortcut_button,w.translation_panel.writer.shortcut):button.click()
-        self.assertEqual([call.args[1] for call in editor.call_args_list],['prices','prices','chat','write'])
+            for button in (w.shortcuts_button,w.hotkey_button,w.translation_panel.writer.shortcut):button.click()
+        self.assertEqual([call.args[1] for call in editor.call_args_list],['prices','prices','write'])
+        self.assertFalse(hasattr(w.translation_panel,'shortcut_button'))
+
+    def test_tab_footer_uses_current_shortcuts_in_a_fixed_position(self):
+        w=self.window;w.show();self.app.processEvents();positions=[]
+        for index,part in [(w.search_tab_index,'F9'),(w.exp_tab_index,'F10'),(w.translation_tab_index,'F11')]:
+            w.tabs.setCurrentIndex(index);self.app.processEvents()
+            self.assertIn(part,w.shortcut_footer.text())
+            positions.append(w.shortcut_footer.mapTo(w,w.shortcut_footer.rect().topLeft()).y())
+        w.translation_panel.modes.setCurrentIndex(1)
+        self.assertIn('F8',w.shortcut_footer.text())
+        self.assertEqual(len(set(positions)),1)
+        w.on_write_hotkey_changed('Ctrl+Alt+J')
+        self.assertIn('Ctrl+Alt+J',w.shortcut_footer.text())
+
+    def test_translation_scan_button_requires_enabled_translation(self):
+        panel=self.window.translation_panel
+        self.assertFalse(panel.translate_button.isEnabled())
+        panel.enabled_check.setChecked(True)
+        self.assertTrue(panel.translate_button.isEnabled())
+        panel.set_active(True);self.assertEqual(panel.translate_button.text(),'Restart scan')
+        panel.enabled_check.setChecked(False)
+        self.assertFalse(panel.translate_button.isEnabled())
 
     def test_composer_hotkey_needs_no_capture_and_notifies_after_explicit_copy(self):
         w=self.window;w.mode='idle';w.reader.image=w.reader.image.__class__()

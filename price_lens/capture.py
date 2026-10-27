@@ -35,6 +35,7 @@ class PixelReader(QObject):
         self.pending_locate_only = False
         self.last_experience = 0.0
         self.last_map_read = 0.0
+        self.last_wallet_read = 0.0
         self.pending_experience = False
         self.timings = deque(maxlen=240)
         self.last_metrics = 0
@@ -45,6 +46,9 @@ class PixelReader(QObject):
         self.last_pointer = None
         self.tooltip_rect = None
         self.tooltip_fingerprint = None
+        self.tooltip_retry_requested = False
+        self.tooltip_retry_key = None
+        self.tooltip_retry_at = 0.0
         self.using_roi = False
         self.roi_clean = True
         self.shop_context = None
@@ -187,7 +191,7 @@ class PixelReader(QObject):
         self.next_area_search = 0
         self.shop_rect = self.shop_fingerprint = self.shop_context = None
         self.tooltip_rect = self.tooltip_fingerprint = None
-        self.last_experience = self.last_map_read = 0
+        self.last_experience = self.last_map_read = self.last_wallet_read = 0
         self.area_changed.emit()
 
     def set_auto_area(self, enabled):
@@ -268,7 +272,7 @@ class PixelReader(QObject):
         if self.auto_active:
             hover_check = bool(hover_check and self.game_area and self.game_area.contains(QPoint(*pointer)))
         tooltip_same = False
-        if hover_check and self.tooltip_rect and self.tooltip_fingerprint is not None and self.pointer == self.last_pointer:
+        if hover_check and not self.tooltip_retry_requested and self.tooltip_rect and self.tooltip_fingerprint is not None and self.pointer == self.last_pointer:
             tooltip_same = self.fingerprint(image, self.tooltip_rect) == self.tooltip_fingerprint
         if self.shop_rect and self.shop_fingerprint is not None:
             patch = image.copy(self.shop_context or self.shop_rect)
@@ -313,11 +317,20 @@ class PixelReader(QObject):
         request = {"path": str(path), "at_ms": int(self.last_frame * 1000),
                    "pointer": {"x": pointer[0], "y": pointer[1]} if pointer is not None else None,
                    "tooltip": bool(hover_check),
+                   "tooltip_retry": bool(hover_check and self.tooltip_retry_requested),
                    "origin": origin,
                    "auto_game": self.auto_active and not self.pending_local_roi,
                    "roi": {"x": region.x(), "y": region.y(), "width": region.width(), "height": region.height()} if self.auto_active and self.using_roi and not self.pending_local_roi else None,
                    "width": image.width(), "height": image.height()}
+        self.tooltip_retry_requested = False
         self.process.write((json.dumps(request) + "\n").encode())
+
+    def retry_tooltip(self, key):
+        now=time.monotonic()
+        if key is None or key==self.tooltip_retry_key or now-self.tooltip_retry_at<.5:return
+        self.tooltip_retry_key=key;self.tooltip_retry_at=now
+        self.tooltip_retry_requested=True;self.image_sequence+=1
+        QTimer.singleShot(0,self.scan)
 
     def scan_location(self,now):
         image=self.image.convertToFormat(QImage.Format.Format_RGBA8888)
@@ -337,7 +350,8 @@ class PixelReader(QObject):
             return
         area = area.intersected(self.image.rect())
         read_map = now-self.last_map_read >= 5
-        if not read_map:
+        read_wallet = now-self.last_wallet_read >= 1
+        if not read_map and not read_wallet:
             area = QRect(area.x(), max(area.y(), area.bottom()+1-256), area.width(), min(256, area.height()))
         image = self.image.copy(area).convertToFormat(QImage.Format.Format_RGBA8888)
         if image.isNull():
@@ -349,8 +363,9 @@ class PixelReader(QObject):
         self.pending_since = self.last_experience = now
         if read_map:
             self.last_map_read = now
+        if read_wallet:self.last_wallet_read=now
         request = {"path":str(path),"width":image.width(),"height":image.height(),
-                   "at_ms":int(self.last_frame*1000),"experience_only":True,"read_map":read_map,
+                   "at_ms":int(self.last_frame*1000),"experience_only":True,"read_map":read_map,"read_wallet":read_wallet,
                    "origin":{"x":area.x(),"y":area.y()}}
         self.process.write((json.dumps(request)+"\n").encode())
 

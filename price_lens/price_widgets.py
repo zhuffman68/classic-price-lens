@@ -3,7 +3,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFrame,QHBoxLayout,QPushButton,QVBoxLayout,QWidget
 
 from .domain import WORLD,age_text,compare
-from .motion import visibility
+from .motion import visibility,RollingLabel
 from .ui_components import COLORS,mesos,text_label
 from .thumbnails import ItemImage
 
@@ -17,8 +17,9 @@ class PriceCard(QFrame):
         layout.setSpacing(7)
         self.fields={}
         def field(name,parent,style="font-size: 11px; color: #98a3b1",wrap=True):
-            widget=text_label("",style,wrap)
-            widget.setProperty("quietUpdates",True)
+            numeric = name in ('store','market')
+            widget=RollingLabel() if numeric else text_label('',style,wrap)
+            widget.setStyleSheet(style)
             self.fields[name]=widget
             parent.addWidget(widget)
             return widget

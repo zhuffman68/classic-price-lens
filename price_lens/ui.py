@@ -25,12 +25,14 @@ from .motion import AnimatedTabs, MotionLabel, reveal
 from .branding import Brand
 from .shop_rows import ShopRows
 from .tooltip_geometry import description_bounds, still_present, TooltipReference
+from .tooltip_names import TooltipNames,name_key
 from .chat import ChatTranslation
 from .translation_ui import TranslationPanel
 from .compose import KoreanComposer
 from .composer_ui import ComposerDialog
 from .thumbnails import ThumbnailCache
 from .shortcut_defaults import load as load_shortcuts, label as shortcut_label
+from . import window_size
 from . import APP_NAME, LEGACY_APP_NAME
 
 COLORS = {"green": "#86ceac", "red": "#ed9394", "amber": "#e4bd7b", "blue": "#9ebde3", "muted": "#98a3b1"}
@@ -89,8 +91,6 @@ class LensWindow(QMainWindow):
         super().__init__()
         self.root = Path(root)
         self.setWindowTitle(APP_NAME)
-        self.resize(640, min(860, QApplication.primaryScreen().availableGeometry().height()-48))
-        self.setMinimumSize(540, 500)
         self.catalog = None
         self.catalog_loading = True
         self.catalog_error = ""
@@ -102,6 +102,7 @@ class LensWindow(QMainWindow):
         self.session_available = False
         self.rows = []
         self.tooltip_reference=TooltipReference()
+        self.tooltip_names=TooltipNames()
         self.shop_rows = ShopRows(self.shop_identity)
         self.shop_open = False
         self.shop_tooltip_rect = None
@@ -122,6 +123,7 @@ class LensWindow(QMainWindow):
         self.keep_capture = False
         self.closing = False
         self.settings = QSettings("LocalTools", LEGACY_APP_NAME)
+        window_size.restore(self, self.settings)
         shortcuts=load_shortcuts(self.settings)
         self.first_price_seen = self.settings.value("first-price-seen", False, type=bool)
         self.labels_enabled = self.settings.value("show-prices", True, type=bool)
@@ -245,6 +247,8 @@ class LensWindow(QMainWindow):
         setup.setContentsMargins(12, 12, 12, 12)
         setup.setSpacing(8)
         self.status_badge = label("Choose a display", "color: #e4bd7b; font-weight: 650; font-size: 13px")
+        self.status_badge.setWordWrap(True)
+        self.status_badge.setMinimumHeight(36)
         capture_header = QHBoxLayout()
         capture_header.addWidget(self.status_badge,1)
         setup.addLayout(capture_header)
@@ -253,6 +257,8 @@ class LensWindow(QMainWindow):
         setup_details.setContentsMargins(0,4,0,0)
         setup_details.setSpacing(8)
         self.monitor = QComboBox()
+        self.monitor.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.monitor.setMinimumContentsLength(12)
         self.monitor.setAccessibleName("Display containing Classic World")
         self.monitor.addItem("Choose the display containing Classic World…", None)
         selected = self.settings.value("monitor-name", "")
@@ -302,7 +308,6 @@ class LensWindow(QMainWindow):
         self.exp_panel.overlay_check.blockSignals(True)
         self.exp_panel.overlay_check.setChecked(self.exp_overlay)
         self.exp_panel.overlay_check.blockSignals(False)
-        self.exp_panel.shortcut_hint.setText(self.exp_hotkey_description+' · Start / pause / resume')
         self.tabs = AnimatedTabs()
         self.prices_page = QWidget()
         prices_layout = QVBoxLayout(self.prices_page)
@@ -330,22 +335,25 @@ class LensWindow(QMainWindow):
         self.exp_scroll.setWidgetResizable(True)
         self.exp_scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.exp_scroll.setWidget(self.exp_panel)
-        self.exp_tab_index = self.tabs.addTab(self.exp_scroll, "EXP Tracking")
+        self.exp_tab_index = self.tabs.addTab(self.exp_scroll, "EXP/Meso Tracking")
         self.translation_panel=TranslationPanel(self.chat_enabled,self,composer=self.composer,
             compose_shortcut=self.write_hotkey_description,configure_compose=self.configure_write_hotkey,
             scan_seconds=self.chat.scan_seconds,linger_seconds=self.chat.linger_seconds)
         self.translation_panel.timing_changed.connect(self.set_chat_timing)
         self.translation_panel.enabled_changed.connect(self.set_chat_enabled)
         self.translation_panel.translate_requested.connect(self.translate_chat)
-        self.translation_panel.shortcut_requested.connect(self.configure_chat_hotkey)
         self.translation_panel.clear_requested.connect(self.chat.clear)
         self.chat_check=self.translation_panel.enabled_check
-        self.chat_shortcut=self.translation_panel.shortcut_button
         self.chat_status_label=self.translation_panel.status_label
-        self.translation_panel.set_shortcut(self.chat_hotkey_description)
         self.translation_tab_index=self.tabs.addTab(self.translation_panel,"Translation")
         self.tabs.currentChanged.connect(self.on_tab_changed)
         layout.addWidget(self.tabs, 1)
+        self.shortcut_footer = label('', 'color:#a6b1bf;font-size:11px')
+        self.shortcut_footer.setMinimumHeight(24)
+        self.shortcut_footer.setAccessibleName('Current tab keyboard shortcut')
+        layout.addWidget(self.shortcut_footer)
+        self.translation_panel.modes.currentChanged.connect(self.update_shortcut_footer)
+        self.update_shortcut_footer()
         self.notice = label("");self.notice.hide()
         prices_layout.addWidget(self.notice)
         self.status_label = label("", "color: #939eac; font-size: 10px", True)
@@ -361,7 +369,9 @@ class LensWindow(QMainWindow):
             QPushButton#primary { background: #d9ad66; color: #231e16; border-color: #d9ad66; font-weight: 650; }
             QPushButton#primary:hover { background: #ebc483; }
             QPushButton#primary:disabled { background: #2b303a; color: #828b97; border-color: #39414e; }
-            QPushButton#captureToggle { background: #293548; border-color: #42516a; color: #d2dceb; }
+            QPushButton#captureToggle { background: #d9ad66; color: #231e16; border-color: #d9ad66; font-weight:650; }
+            QPushButton#captureToggle:hover { background: #ebc483; }
+            QPushButton#captureToggle:disabled { background:#2b303a; color:#828b97; border-color:#39414e; }
             QPushButton#quiet { background: transparent; border: 0; color: #b1bac7; padding: 5px 2px; text-align: left; }
             QPushButton#quiet:hover { color: #ebc483; }
             QCheckBox { color: #b5bfcc; padding: 3px 0; }
@@ -427,7 +437,7 @@ class LensWindow(QMainWindow):
         self.hover_check.setEnabled(self.labels_enabled)
         self.hover_check.toggled.connect(self.set_hover)
         layout.addWidget(self.hover_check)
-        self.exp_overlay_check = QCheckBox("Show EXP tracker in the bottom-left of the game")
+        self.exp_overlay_check = QCheckBox("Show EXP/Meso tracker in the bottom-left of the game")
         self.exp_overlay_check.setChecked(self.exp_overlay)
         self.exp_overlay_check.toggled.connect(self.set_exp_overlay)
         layout.addWidget(self.exp_overlay_check)
@@ -516,6 +526,7 @@ class LensWindow(QMainWindow):
         self.prices_layout.setStretch(self.prices_layout.indexOf(self.scroll),0 if active else 1)
 
     def on_chat_changed(self):
+        if self.closing:return
         if hasattr(self,"translation_panel"):
             self.translation_panel.set_cards(self.chat.history)
             self.translation_panel.set_active(self.chat.active)
@@ -525,12 +536,12 @@ class LensWindow(QMainWindow):
         description=shortcut_label(description)
         self.chat_hotkey_description=description
         self.settings.setValue("chat-hotkey-description",description)
-        if hasattr(self,"translation_panel"):self.translation_panel.set_shortcut(description)
+        self.update_shortcut_footer()
 
     def on_exp_hotkey_changed(self,description):
         description=shortcut_label(description)
         self.exp_hotkey_description=description;self.settings.setValue('exp-hotkey-description',description)
-        if hasattr(self,'exp_panel'):self.exp_panel.shortcut_hint.setText(description+' · Start / pause / resume')
+        self.update_shortcut_footer()
 
     def toggle_prices(self):
         if self.mode!='live':
@@ -564,6 +575,7 @@ class LensWindow(QMainWindow):
         self.write_hotkey_description=description;self.settings.setValue('write-hotkey-description',description)
         if hasattr(self,'translation_panel') and hasattr(self.translation_panel,'writer'):self.translation_panel.writer.set_shortcut(description)
         if self.composer_dialog:self.composer_dialog.editor.set_shortcut(description)
+        self.update_shortcut_footer()
 
     def open_composer(self):
         if self.hotkey_dialog_open:return
@@ -608,8 +620,6 @@ class LensWindow(QMainWindow):
             self.on_chat_status("Disabled · local models unloaded")
 
 
-    def configure_chat_hotkey(self):self.configure_shortcuts("chat")
-
     def translate_chat(self,*_):
         if self.hotkey_dialog_open:return
         if self.mode!='live' or self.reader.image.isNull():
@@ -652,6 +662,7 @@ class LensWindow(QMainWindow):
         self.update_price_status()
 
     def on_tab_changed(self, index):
+        self.update_shortcut_footer()
         self.update_price_layout()
         if hasattr(self,"search_panel"):
             panel = self.search_panel
@@ -659,6 +670,23 @@ class LensWindow(QMainWindow):
                                     identity=panel.pending_identity if index == self.search_tab_index else None,
                                     candidates=panel.pending_candidates)
         self.update_capture_controls()
+
+    def update_shortcut_footer(self, *_):
+        if not hasattr(self, 'shortcut_footer'):return
+        index = self.tabs.currentIndex()
+        if index == self.exp_tab_index:
+            chord, action = self.exp_hotkey_description, 'Start / pause / resume tracking'
+        elif index == self.translation_tab_index:
+            writing = self.translation_panel.modes.currentIndex() == 1
+            chord = self.write_hotkey_description if writing else self.chat_hotkey_description
+            action = 'Open Korean writer' if writing else 'Scan Korean text'
+        else:
+            chord, action = self.hotkey_description or shortcut_label(self.hotkey_sequence), 'Pause / resume prices'
+        self.shortcut_footer.setText(f'{shortcut_label(chord)}  ·  {action}')
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        window_size.remember(self)
 
     def on_search_item(self, item):
         if self.tabs.currentIndex() == self.search_tab_index:
@@ -791,6 +819,7 @@ class LensWindow(QMainWindow):
         self.hotkey_status = ""
         self.settings.setValue("hotkey-description", description)
         self.hotkey_button.setToolTip("Pause / resume: " + description)
+        self.update_shortcut_footer()
 
     def on_hotkey_status(self, message):
         self.hotkey_status = message
@@ -867,6 +896,9 @@ class LensWindow(QMainWindow):
     def update_capture_controls(self):
         self.setup_frame.setVisible(True)
         valid = self.screen_index is not None and 0 <= self.screen_index < len(self.screens)
+        display_width = self.monitor.fontMetrics().horizontalAdvance(self.monitor.currentText())+46 if valid else 200
+        if self.monitor.minimumWidth()!=display_width:self.monitor.setMinimumWidth(display_width)
+        self.monitor.setToolTip(self.monitor.currentText())
         self.share.setEnabled(valid and not self.capture_starting)
         self.share.setText("Waiting for sharing…" if self.capture_starting else "Pause reading" if self.mode == "live" else "Resume reading" if self.mode == "paused" and self.session_available else "Start reading")
         self.share.setToolTip("Choose a display first" if not valid else "Toggle screen reading")
@@ -1146,6 +1178,7 @@ class LensWindow(QMainWindow):
         raw_found=found
         found = found if eligible else None
         if found:
+            found = self.tooltip_names.resolve(found,image,self.catalog)
             name = found.get("name")
             area = found.get("area") or {}
             read_point = read_pointer
@@ -1158,6 +1191,8 @@ class LensWindow(QMainWindow):
                 near = read_point is not None and box.adjusted(-640, -640, 640, 640).contains(QPoint(*read_point))
                 moved = read_point is None or max(abs(pointer[0] - read_point[0]), abs(pointer[1] - read_point[1])) > 64
                 known = bool(name and (self.catalog is None or self.catalog.candidates(name, found.get("tier"))))
+                if not known and near and not moved and not result.get('tooltipRetried') and hasattr(self.reader,'retry_tooltip'):
+                    self.reader.retry_tooltip(name_key(found,image))
                 if not (known and box.width() >= 40 and box.height() >= 8 and near and not moved):
                     found = None
                 else:
@@ -1503,8 +1538,7 @@ class LensWindow(QMainWindow):
                                     "follow_pointer": [geometry.x() + round(point[0] * sx), geometry.y() + round(point[1] * sy)],
                                     "pointer_region": [geometry.x() + round(region.x() * sx), geometry.y() + round(region.y() * sy),
                                                        round(region.width() * sx), round(region.height() * sy)]})
-        if (self.exp_enabled and self.exp_overlay and self.mode == "live" and game_visible and screen_matches and not screen_old
-                and self.exp_panel.tracker.fresh(time.monotonic())):
+        if self.exp_enabled and self.exp_overlay and self.mode == "live" and game_visible and screen_matches and not screen_old:
             row = self.exp_panel.overlay_row()
             if row:
                 area = self.reader.game_area if self.reader.auto_active else self.reader.crop
@@ -1521,7 +1555,7 @@ class LensWindow(QMainWindow):
                 sx,sy=geometry.width()/image.width(),geometry.height()/image.height()
                 bounds=[round(area.x()*sx),round(area.y()*sy),round(area.width()*sx),round(area.height()*sy)]
                 # Shop and EXP references paint above a manually requested chat card.
-                annotations=self.chat.annotations(image,sx,sy,bounds)+annotations
+                annotations=self.chat.annotations(image,sx,sy,bounds,occupied=annotations)+annotations
         self.overlay.update(list(geometry.getRect()), annotations, hover_enabled=self.prices_enabled and self.labels_enabled and self.mode == "live" and game_visible and screen_matches and not screen_old)
         if (annotations and ready_price and not self.first_price_seen):
             self.first_price_seen = True
@@ -1583,6 +1617,7 @@ class LensWindow(QMainWindow):
             event.accept()
             return
         self.closing = True
+        window_size.save(self, self.settings)
         self.timer.stop()
         self.exp_panel.close_session()
         self.hotkeys.close()
