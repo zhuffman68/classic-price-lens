@@ -261,7 +261,8 @@ class ContextUiTests(unittest.TestCase):
         self.assertFalse(self.window.scroll.isHidden())
         self.assertEqual(self.window.card_views,before)
         self.assertIsNotNone(self.window.price_content.outgoing)
-        QTest.qWait(180)
+        deadline=time.monotonic()+1
+        while self.window.price_content.outgoing is not None and time.monotonic()<deadline:QTest.qWait(10)
         self.assertIsNone(self.window.price_content.outgoing)
 
     def test_price_search_works_without_starting_capture(self):
@@ -395,6 +396,20 @@ class ContextUiTests(unittest.TestCase):
                 self.assertEqual(w.quote_for(item).basis,'No price in the market snapshot')
         finally:
             service.close();service.pool.shutdown(wait=True);w.service=previous
+
+    def test_overlay_sale_age_is_independent_of_cache_age_and_keeps_expiry_warning(self):
+        w=self.window;now=time.time()
+        quote=Quote(1,1000,now-30,now-720,20,'MesoWatch','','24h')
+        with patch('price_lens.ui.time.time',return_value=now):
+            w.on_reading(self.reading(shop_hover=True));w.on_quote(1,quote)
+            self.assertIn('Last sale 12m ago',w.overlay.rows[0]['text'])
+            self.assertNotIn('30s',w.overlay.rows[0]['text'])
+            w.rows=[];w.tooltip_result={'name':'Example Hat','area':dict(x=100,y=100,width=120,height=18),'_pointer':[340,240]}
+            w.render();self.assertIn('Last sale 12m ago',w.overlay.rows[-1]['text'])
+            w.on_quote(1,replace(quote,fetched_at=now-w.ttl-1))
+            self.assertIn('refresh needed',w.overlay.rows[-1]['text'])
+            w.on_quote(1,replace(quote,observed_at=None))
+            self.assertIn('Last sale unknown',w.overlay.rows[-1]['text'])
 
     def test_windows_starting_state_does_not_request_a_system_chooser(self):
         self.window.mode='idle'
@@ -832,7 +847,8 @@ class ContextUiTests(unittest.TestCase):
                 self.assertIn("Refreshing market reference",content)
                 self.assertEqual(len(self.window.overlay.rows),1)
                 row=self.window.overlay.rows[0]
-                self.assertIn("18m old",row["text"])
+                self.assertIn("Latest report 0s ago",row["text"])
+                self.assertNotIn("18m old",row["text"])
                 self.assertIn("refreshing",row["text"])
                 self.assertNotEqual(row["color"],"#86ceac")
         self.window.pause()

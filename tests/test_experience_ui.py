@@ -69,6 +69,16 @@ class ExperienceUiTests(unittest.TestCase):
         self.assertNotIn("EXP/min",self.panel.overlay_row()["text"])
         self.assertTrue(self.panel.overlay_row()["name"].startswith("Lv."))
 
+    def test_tracking_clock_adds_hours_and_keeps_seconds_without_shifting_controls(self):
+        from price_lens.experience import duration_text
+        self.panel.resize(428,650);self.panel.show();self.panel.set_connected(True);self.panel.start()
+        self.app.processEvents();before=self.panel.pause_button.geometry()
+        for seconds,expected in ((3599,'59m 59s'),(3600,'1h 00m 00s'),(3661,'1h 01m 01s'),(36061,'10h 01m 01s')):
+            self.panel.elapsed.setText(duration_text(seconds,seconds_in_hours=True));self.app.processEvents()
+            self.assertEqual(self.panel.elapsed.text(),expected)
+            self.assertGreaterEqual(self.panel.elapsed.width(),self.panel.elapsed.fontMetrics().horizontalAdvance(expected))
+            self.assertEqual(self.panel.pause_button.geometry(),before)
+
     def test_units_and_rate_labels_remain_consistent_in_each_mode(self):
         self.train()
         self.assertEqual(self.panel.minute_caption.text(), 'Per minute')

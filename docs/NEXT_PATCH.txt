@@ -1,13 +1,16 @@
 Local patch status
 
-v0.14.2 reads darker orange selected shop rows directly from their current
-pixels. The correction is limited to a verified shop band, keeps glyphs and
-occluders intact, reuses the current OCR engine and caches unchanged results.
-The shared tracking timer now sits in a compact row above EXP and MESO.
-It retains v0.14.1's smoother watched-item transitions, compact ready-panel
-spacing, plain tabs and refreshes of retained item details.
-Both translation bundles, existing settings and sharing sessions are retained.
-Build and validation details are in VERIFICATION.md.
+v0.14.3 places the larger tracking timer on the left and its controls on the
+right, above EXP and MESO. It adds hours without dropping seconds. On-screen item cards share the Prices page content
+transition; price updates keep their existing cards. Overlay references show
+last-sale ages with explicit refresh warnings.
 
+Native description-frame validation accommodates warm chat showing through
+translucent panels and colored upgraded equipment names. Comparison panels
+remain separate. Centered, wrapped cash-item titles without a cyan marker use
+their complete native frame and header instead. Exact equipment names retain the existing unscrolled-price
+assumption. Vendor OCR and both translation models are unchanged.
+
+Build and validation details are in VERIFICATION.md.
 Uploads remain on hold at the user's request. Do not push source, create a
 GitHub release or upload itch.io channels until publication is authorized again.

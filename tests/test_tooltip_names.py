@@ -28,6 +28,16 @@ class TooltipNameTests(unittest.TestCase):
             found={**self.found,'alternatives':alternatives}
             self.assertEqual(self.names.resolve(found,self.image,self.catalog)['name'],'Leaf Earrins')
 
+    def test_upgrade_count_is_removed_only_for_a_unique_equipment_name(self):
+        found={**self.found,'name':'Leaf Earrings (+3)'}
+        resolved=self.names.resolve(found,self.image,self.catalog)
+        self.assertEqual(resolved['name'],'Leaf Earrings');self.assertEqual(resolved['raw_name'],found['name'])
+        catalog=Catalog({'items':[{'id':1,'name':'Screw','category':'Etc'},
+            {'id':2,'name':'Cape','category':'Equipment'},{'id':3,'name':'Cape','category':'Equipment'},
+            {'id':4,'name':'Leaf Earrings (+3)','category':'Equipment'}]})
+        for name in ('Screw (+3)','Cape (+3)','Leaf Earrings (+3)','Leaf Earrings (M)','Leaf Earrings 10%'):
+            self.assertEqual(self.names.resolve({**self.found,'name':name},self.image,catalog)['name'],name)
+
     def test_second_pass_cannot_change_explicit_stat_tier_color_or_gender(self):
         item=Item(1,'Test',equipment=True,gender='male')
         for before,after in [('Overall DEX Sorol: Greater','Overall LUK Scroll: Greater'),

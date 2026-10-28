@@ -219,12 +219,12 @@ class ExperiencePanel(QWidget):
             approximate = self.watch_approximate or run.approximate_exp or any(r.approximate_exp for r in tracker.completed if r.started>=self.watch_epoch)
             total_prefix = "≈" if approximate else ""
             self.gain.setText(f"{total_prefix}{totals['exp']:+,.0f}" if self.display_mode=="raw" else f"{totals['progress']:+.2f}%")
-            self.elapsed.setText(duration_text(self.mesos.seconds))
+            self.elapsed.setText(duration_text(self.mesos.seconds,seconds_in_hours=True))
             self.eta.setText(duration_text(window["eta"]) if rate is not None and rate>0 else "—")
         else:
             self.rate.setText("—");self.hour_rate.setText("—");self.raw_hint.hide()
             self.observation.setText('')
-            self.gain.setText("—");self.elapsed.setText(duration_text(self.mesos.seconds));self.eta.setText("—")
+            self.gain.setText("—");self.elapsed.setText(duration_text(self.mesos.seconds,seconds_in_hours=True));self.eta.setText("—")
         self.observation.setVisible(bool(self.observation.text()))
         state=('' if not self.requested else
                "Screen reading is paused · tracking is held." if not self.connected else

@@ -136,6 +136,66 @@ class ShopReaderTests(unittest.TestCase):
         found=json.loads(result.stdout)['tooltip']['found']
         self.assertEqual(found['name'],'Screw');self.assertTrue(found['pinned'])
 
+    def test_translucent_description_titles_read_with_warm_chat_and_gold_ink(self):
+        from PySide6.QtGui import QImage,QPainter,QColor
+        from PySide6.QtCore import QRect
+        source=QImage(str(ROOT/'vendor/minerva/samples/item-tooltip/screw@60,20.png'))
+        with tempfile.TemporaryDirectory() as directory:
+            requests=[]
+            for index,(gold,dy,occluded,framed) in enumerate(((False,0,False,True),(True,350,False,True),
+                                                            (True,0,True,True),(True,0,False,False))):
+                image=QImage(500,600,QImage.Format.Format_RGBA8888);image.fill(QColor('#ad969e'))
+                painter=QPainter(image);painter.fillRect(QRect(62,54+dy,244,176),QColor(78,65,62))
+                painter.drawImage(72,68+dy,source.copy(QRect(72,68,110,24)))
+                if framed:
+                    for x in (62,303):
+                        painter.fillRect(x,54+dy,3,176,QColor(30,26,40))
+                        painter.fillRect(x+1,54+dy,1,176,QColor(170,150,160))
+                painter.end()
+                for y in range(68+dy,92+dy):
+                    for x in range(72,182):
+                        p=image.pixelColor(x,y);r,g,b=p.red(),p.green(),p.blue()
+                        if max(r,g,b)<140:image.setPixelColor(x,y,QColor(78,65,62))
+                        elif gold and x>=88 and min(r,g,b)>=145 and max(r,g,b)-min(r,g,b)<45:
+                            image.setPixelColor(x,y,QColor(max(r,g,b),round(max(r,g,b)*2/3),0))
+                if occluded:
+                    painter=QPainter(image);painter.fillRect(QRect(71,76+dy,3,3),QColor('white'));painter.end()
+                path=Path(directory)/f'title-{index}.png';image.save(str(path))
+                requests.append(json.dumps({'path':str(path),'tooltip':True,'pointer':{'x':60,'y':20+dy}}))
+            result=subprocess.run([str(BINARY)],input='\n'.join(requests)+'\n',text=True,capture_output=True,
+                                  check=True,timeout=20,env={**os.environ,'RAYON_NUM_THREADS':'2'})
+        readings=[json.loads(line)['tooltip'] for line in result.stdout.splitlines()]
+        for index in (0,1):self.assertEqual(readings[index]['found']['name'],'Screw')
+        self.assertEqual(readings[1]['found']['area']['y'],420)
+        self.assertEqual(readings[2],'none') # A bright foreign occluder stays an occluder.
+        self.assertEqual(readings[3],'none') # No title palette adaptation without a native frame.
+
+    def test_centered_multiline_item_title_needs_a_complete_native_header_frame(self):
+        from PySide6.QtGui import QImage,QPainter,QColor
+        from PySide6.QtCore import QRect
+        source=QImage(str(ROOT/'vendor/minerva/samples/item-tooltip/screw@60,20.png'))
+        with tempfile.TemporaryDirectory() as directory:
+            requests=[]
+            for index,cap in enumerate((True,False)):
+                image=QImage(640,800,QImage.Format.Format_RGBA8888);image.fill(QColor('#ad969e'))
+                painter=QPainter(image);painter.fillRect(QRect(220,580,236,180),QColor(78,65,62))
+                for x in (220,453):
+                    painter.fillRect(x,580,3,180,QColor(30,26,40));painter.fillRect(x+1,580,1,180,QColor(170,150,160))
+                if cap:
+                    painter.fillRect(220,580,236,3,QColor(30,26,40));painter.fillRect(220,581,236,1,QColor(170,150,160))
+                for y in (592,614):painter.drawImage(302,y,source.copy(QRect(88,70,72,18)))
+                painter.end();path=Path(directory)/f'centered-{index}.png';image.save(str(path))
+                request={'path':str(path),'tooltip':True,'origin':{'x':40,'y':30},'pointer':{'x':20,'y':20}}
+                requests.extend([json.dumps(request)]*2)
+            result=subprocess.run([str(BINARY)],input='\n'.join(requests)+'\n',text=True,capture_output=True,
+                check=True,timeout=20,env={**os.environ,'RAYON_NUM_THREADS':'2'})
+        readings=[json.loads(line)['tooltip'] for line in result.stdout.splitlines()]
+        for reading in readings[:2]:
+            self.assertEqual(reading['found']['name'],'Screw Screw');self.assertTrue(reading['found']['pinned'])
+            self.assertGreater(reading['found']['area']['height'],30)
+            self.assertEqual(reading['found']['area']['x'],268)
+        self.assertEqual(readings[2:],['none','none'])
+
     def test_small_shop_capture_keeps_desktop_coordinates(self):
         path = ROOT / "vendor/minerva/samples/player-shop/gems-and-ores.png"
         request = {"path": str(path), "at_ms": 123, "pointer": None, "origin": {"x": 140, "y": 80}}

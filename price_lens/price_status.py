@@ -1,4 +1,4 @@
-"""Compact, honest refresh status shared by shop and inventory annotations."""
+"""Per-item sale age and explicit stale/update status for game annotations."""
 from .domain import age_text
 
 
@@ -6,17 +6,18 @@ def reference_status(quote, state, now, ttl):
     if quote is None:
         return {"queued": "lookup queued…", "refreshing": "checking…",
                 "retry": "temporarily unavailable"}.get(state, "checking…")
-    age = age_text(now - quote.fetched_at)
+    label='Last sale' if quote.source=='MesoWatch' else 'Latest report'
+    observed_age=now-quote.observed_at if quote.observed_at is not None else None
+    age=(f'{label} {age_text(max(0,observed_age))} ago'
+         if observed_age is not None and observed_age>=-300 else f'{label} unknown')
     if state == "refreshing":
-        return f"{age} old • refreshing…"
+        return f"{age} • refreshing…"
     if state == "queued":
-        return f"{age} old • refresh queued"
+        return f"{age} • refresh queued"
     if state == "retry":
-        return f"{age} old • retry later"
+        return f"{age} • retry later"
     if not quote.cache_valid(now, ttl):
-        return f"{age} old • refresh needed"
+        return f"{age} • refresh needed"
     if quote.price is not None and not quote.fresh(now, ttl):
-        if quote.observed_at is None:
-            return f"{age} old • report age unknown"
-        return f"{age} old • old market reports"
+        return f"{age} • old market reports" if observed_age is not None and observed_age>86400 else f"{age} • report age unknown"
     return age

@@ -52,3 +52,31 @@ class TooltipGeometryTests(unittest.TestCase):
         image=QImage(800,800,QImage.Format.Format_RGBA8888);image.fill(QColor('#171c25'))
         self.assertIsNone(description_bounds(image,None))
         self.assertIsNone(description_bounds(image,dict(x=200,y=200,width=140,height=18)))
+
+    def test_warm_translucent_panels_remain_distinct_from_adjacent_comparison(self):
+        from PySide6.QtGui import QPainter
+        image=QImage(800,600,QImage.Format.Format_RGBA8888);image.fill(QColor('#ad969e'))
+        painter=QPainter(image)
+        for left in (200,441):
+            painter.fillRect(QRect(left,350,236,240),QColor(78,65,62))
+            for x in (left,left+233):
+                painter.fillRect(x,350,3,240,QColor(30,26,40))
+                painter.fillRect(x+1,350,1,240,QColor(170,150,160))
+        painter.end()
+        box=description_bounds(image,dict(x=210,y=363,width=120,height=18))
+        self.assertIsNotNone(box);self.assertEqual(box.x(),200);self.assertEqual(box.right(),435)
+        self.assertLessEqual(abs(box.top()-350),2);self.assertLessEqual(abs(box.bottom()-590),2)
+        self.assertTrue(still_present(image,box))
+        image.fill(QColor('#ad969e'));self.assertFalse(still_present(image,box))
+
+    def test_centered_header_uses_top_rim_when_chat_hides_part_of_a_side(self):
+        from PySide6.QtGui import QPainter
+        image=QImage(640,800,QImage.Format.Format_RGBA8888);image.fill(QColor('#ad969e'))
+        painter=QPainter(image);painter.fillRect(QRect(200,480,236,310),QColor(78,65,62))
+        for x in (200,433):
+            painter.fillRect(x,480,3,310,QColor(30,26,40));painter.fillRect(x+1,480,1,310,QColor(170,150,160))
+        painter.fillRect(434,480,1,60,QColor(39,31,68))
+        painter.fillRect(200,480,236,3,QColor(30,26,40));painter.fillRect(200,481,236,1,QColor(170,150,160));painter.end()
+        box=description_bounds(image,dict(x=208,y=492,width=219,height=28))
+        self.assertIsNotNone(box);self.assertTrue(box.contains(QRect(208,492,219,28)))
+        self.assertTrue(still_present(image,box));self.assertGreater(box.height(),300)

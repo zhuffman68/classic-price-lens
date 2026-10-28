@@ -1,5 +1,15 @@
 # Verification — 2026-10-28
 
+## Lupin v0.14.3
+
+- The 369-test source suite passes with three platform/offscreen skips using the bundled runtime. Public/generated regressions cover warm translucent headers, colored title ink, bright foreign occluders, absent frame evidence, centered multiline titles with no marker, separate comparison panels, exact equipment upgrade suffixes and hour-timer layout. The vendor revision and both model bundles are unchanged.
+- Replaying three private captures recognizes Fairy Wand (+3), Axe Pole Arm and Pumpkin Hat on the first read. Ordinary title reads took about 60–100 ms in the dated local sample, with a 73 ms warm median; these reader-only measurements do not promise end-to-end latency. The user confirmed most linked descriptions now work promptly, then supplied the centered Ink-and-Wash case.
+- Ink-and-Wash Painting Name Tag Ring uses a centered two-line title with no cyan bullet. A structurally verified frame/header reader now reads its exact full name and retains the final g descender. Its captured frame took about 102 ms cold and 19–22 ms with the exact-header cache. The GUI accepts the independently validated full panel; no name-specific guess was added. Private captures remain excluded from source/packages.
+- The timer and controls share the row above both EXP and MESO, with the larger timer on the left. Hours appear as 1h 00m 00s. Rendered 460- and 509-pixel layouts fit without scrolling and retain button positions across the hour boundary. Prices-page item additions/removals use the shared content transition; numeric updates retain their cards. Sampled transition frames retain exact outgoing pixels and settle cleanly to the ready panel.
+- Overlay references show latest-sale ages rather than repeating cache ages; explicit expiry, refresh and report-age warnings remain. Their new regression separates the observed-sale time from the snapshot check time.
+- GNU/Linux, musl and Windows readers build successfully. Windows/Wine installed checks pass all 369 tests with eight platform skips, plus per-user installation, running-app upgrade/removal and cache retention. Arch/pacman, Debian 12 and Ubuntu 22.04 installed checks and transactions pass. Seven publisher tests pass without publishing. All four artifacts have verified checksums; both translation models retain their pinned hashes.
+- The live Linux preview preserves capture helper 786039 through both UI handoffs. Native Windows installation remains v0.14.1; the new patch's physical Windows game capture is untested. Uploads remain on hold.
+
 ## Lupin v0.14.2
 
 - The 362-test source suite passes with three platform/offscreen skips; both Rust unit checks pass. A fresh image from the preserved live sharing session confirms that the orange Skull Beanie now has its FM 40,000 reference and +67 percent comparison alongside all other listings.

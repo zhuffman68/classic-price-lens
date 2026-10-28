@@ -49,6 +49,7 @@ def build(panel,layout,enabled,window_minutes=None):
         QLabel#expMap, QLabel#expMuted { color: #a7b2c2; font-size: 11px; }
         QLabel#trackingFigure { color: #edc68a; font-size: 20px; font-weight: 650; }
         QLabel#expMetric { font-size: 18px; font-weight: 600; color: #e5eaf2; }
+        QLabel#trackingClock { font-size: 26px; font-weight: 600; color: #e5eaf2; }
         QLabel#expPosition { font-size: 16px; font-weight: 600; color: #dce4ef; }
         QComboBox, QLineEdit { background: #1b2330; color: #e4eaf3; border: 1px solid #3b485c; border-radius: 6px; padding: 7px 9px; }
         QDialog { background: #171e29; }
@@ -60,9 +61,19 @@ def build(panel,layout,enabled,window_minutes=None):
     panel.character=label('', 'expIdentity');panel.map_label=label('', 'expMap')
     layout.addWidget(panel.character);layout.addWidget(panel.map_label)
     clock=QHBoxLayout();clock.setContentsMargins(16,0,16,0)
-    clock.addWidget(label('Time watching','expMuted'));clock.addStretch()
-    panel.elapsed=number('—','expMetric');panel.elapsed.setAlignment(Qt.AlignmentFlag.AlignRight|Qt.AlignmentFlag.AlignVCenter)
-    clock.addWidget(panel.elapsed);layout.addLayout(clock)
+    panel.elapsed=number('—','trackingClock');panel.elapsed.setAlignment(Qt.AlignmentFlag.AlignLeft|Qt.AlignmentFlag.AlignVCenter)
+    panel.elapsed.setProperty('reserveText','99h 59m 59s')
+    panel.elapsed.setAccessibleName('Tracking duration');panel.elapsed.setMinimumWidth(112)
+    clock.addWidget(panel.elapsed);clock.addSpacing(12)
+    controls=QHBoxLayout()
+    panel.start_button=QPushButton("Start tracking");panel.start_button.setObjectName("primary")
+    panel.start_button.clicked.connect(panel.start)
+    panel.pause_button=QPushButton("Pause");panel.pause_button.clicked.connect(panel.toggle_pause)
+    panel.stop_button=QPushButton("Stop and save");panel.stop_button.clicked.connect(panel.stop)
+    panel.save_button=panel.stop_button
+    for button in (panel.start_button,panel.pause_button,panel.stop_button):
+        button.setMinimumHeight(32);controls.addWidget(button,1)
+    clock.addLayout(controls,1);layout.addLayout(clock)
     hero=QFrame();hero.setObjectName("expHero")
     hero_layout=QVBoxLayout(hero);hero_layout.setContentsMargins(16,12,16,12);hero_layout.setSpacing(8)
     panel.exp_heading=label('EXP','trackingHeading');hero_layout.addWidget(panel.exp_heading)
@@ -99,15 +110,6 @@ def build(panel,layout,enabled,window_minutes=None):
     wallet.addWidget(panel.wallet_unit);wallet.addStretch();money_layout.addLayout(wallet)
     panel.meso_status=label('', 'expMuted');money_layout.addWidget(panel.meso_status)
     layout.addWidget(money)
-    controls=QHBoxLayout()
-    panel.start_button=QPushButton("Start tracking");panel.start_button.setObjectName("primary")
-    panel.start_button.clicked.connect(panel.start)
-    panel.pause_button=QPushButton("Pause");panel.pause_button.clicked.connect(panel.toggle_pause)
-    panel.stop_button=QPushButton("Stop and save");panel.stop_button.clicked.connect(panel.stop)
-    panel.save_button=panel.stop_button
-    for button in (panel.start_button,panel.pause_button,panel.stop_button):
-        button.setMinimumHeight(32);controls.addWidget(button,1)
-    layout.addLayout(controls)
     options_row=QHBoxLayout()
     panel.overlay_check=QCheckBox("Show tracking overlay in the game")
     panel.overlay_check.setChecked(True);panel.overlay_check.toggled.connect(panel.overlay_changed.emit)

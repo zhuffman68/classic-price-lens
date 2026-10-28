@@ -11,6 +11,8 @@ mod game_area;
 mod text;
 mod wallet;
 mod tooltip_text;
+mod tooltip_surface;
+mod centered_tooltip;
 mod shop_prices;
 mod shop_selection;
 use game_area::{Locator, Rect};
@@ -44,6 +46,7 @@ struct Request {
 fn main() {
     let mut reader = None;
     let mut tooltip_reader = None;
+    let mut centered_titles = centered_tooltip::CenteredTitles::default();
     let mut locator = Locator::new();
     let mut experience = None;
     let mut wallet = wallet::WalletReader::default();
@@ -153,11 +156,14 @@ fn main() {
                         origin: capture.origin,
                         pointer,
                     };
+                    if let Some(frame)=tooltip_surface::prepare(&tooltip_capture.frame) {tooltip_capture.frame=frame}
                     let tooltip_reader=tooltip_reader.get_or_insert_with(ItemTooltipReader::bundled);
                     let reading = tooltip_reader.read(&tooltip_capture);
                     value["tooltip"] = serde_json::to_value(reading.tooltip)?;
                     if !value["tooltip"]["found"]["name"].is_string() {
-                        if let Some(popup)=tooltip_text::popup(tooltip_reader,&mut tooltip_capture) {
+                        let popup=centered_titles.read(&tooltip_capture)
+                            .or_else(||tooltip_text::popup(tooltip_reader,&mut tooltip_capture));
+                        if let Some(popup)=popup {
                             value["tooltip"]=serde_json::to_value(popup)?;
                             value["tooltip"]["found"]["pinned"]=serde_json::json!(true);
                         }

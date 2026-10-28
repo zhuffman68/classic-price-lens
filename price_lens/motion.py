@@ -333,7 +333,9 @@ class RollingLabel(QLabel):
 
     def sizeHint(self):
         margins=self.contentsMargins()
-        return QSize(90,self.fontMetrics().height()+margins.top()+margins.bottom())
+        reserved=self.property('reserveText')
+        width=max(90,self.fontMetrics().horizontalAdvance(reserved)+4) if reserved else 90
+        return QSize(width,self.fontMetrics().height()+margins.top()+margins.bottom())
 
     def minimumSizeHint(self):return self.sizeHint()
 

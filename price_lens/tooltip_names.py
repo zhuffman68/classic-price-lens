@@ -24,6 +24,10 @@ class TooltipNames:
     def resolve(self, found, image, catalog):
         if not found or not catalog:return found
         if catalog.candidates(found.get('name'),found.get('tier')):return found
+        upgraded=re.fullmatch(r'(.+?)\s*\(\+\s*\d{1,2}\)\s*',found.get('name') or '')
+        if upgraded:
+            base=catalog.resolve(upgraded[1],found.get('tier'))
+            if base and base.equipment:return {**found,'name':base.name,'raw_name':found['name']}
         key=name_key(found,image)
         if key is None:return found
         proof=self.proofs.get(key)

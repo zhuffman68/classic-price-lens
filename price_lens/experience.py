@@ -291,10 +291,11 @@ class SessionHistory:
                                  for key,value in row.items()})
 
 
-def duration_text(seconds):
+def duration_text(seconds,*,seconds_in_hours=False):
     if seconds is None or not math.isfinite(seconds):
         return "—"
     seconds = max(0, round(seconds))
     hours, remainder = divmod(seconds, 3600)
     minutes, secs = divmod(remainder, 60)
-    return f"{hours}h {minutes:02}m" if hours else f"{minutes}m {secs:02}s"
+    if hours:return f"{hours}h {minutes:02}m"+(f" {secs:02}s" if seconds_in_hours else '')
+    return f"{minutes}m {secs:02}s"

@@ -21,7 +21,7 @@ from .tray import TrayController
 from .experience_ui import ExperiencePanel
 from .platform_paths import data_directory
 from .search import PriceSearch
-from .motion import AnimatedTabs, ContentArea, MotionLabel, reveal, fade_away
+from .motion import AnimatedTabs, ContentArea, MotionLabel
 from .fonts import interface_family
 from .branding import Brand
 from .shop_rows import ShopRows
@@ -1469,6 +1469,14 @@ class LensWindow(QMainWindow):
         now = time.time()
         screen_old = not self.last_screen or now - self.last_screen > 8
         observations = self.rows + ([self.tooltip_result] if self.tooltip_result else [])
+        structure=tuple((hovered,item.game_id if self.catalog and (item:=self.catalog.resolve(row.get('name'),row.get('tier'))) else row.get('name'))
+                        for row,hovered in ([(self.tooltip_result,True)] if self.tooltip_result else [])+[(row,False) for row in self.rows])
+        if not structure:
+            structure=('empty',self.mode,self.shop_open,self.capture_starting,self.catalog_error,self.catalog_loading,self.reader.game_area is not None)
+        previous=getattr(self,'screen_card_structure',None)
+        if previous is not None and previous!=structure and self.scroll.isVisible():
+            self.price_content.begin()
+        self.screen_card_structure=structure
         ready = 0
         if self.catalog:
             for row in observations:
@@ -1480,7 +1488,7 @@ class LensWindow(QMainWindow):
         if count:
             self.summary.setText(("Last read: " if self.mode == "paused" else "") + f"{count} item{'s' if count != 1 else ''} · {ready} market reference{'s' if ready != 1 else ''} ready")
         else:
-            self.summary.setText("")
+            self.summary.clear()
         # Keep the UI small at rest. Rebuild only when content/state changes or
         # the five-second age bucket changes; screen frames never rebuild cards.
         tooltip_content = {key: value for key, value in self.tooltip_result.items() if key not in ("area", "_pointer")} if self.tooltip_result else None
@@ -1521,21 +1529,17 @@ class LensWindow(QMainWindow):
                 if key in self.card_views:
                     card = self.card_views[key]
                     card.update_data(**data)
-                    fresh_view = False
                 else:
                     card = self.card_views[key] = price_card(watchlist=self.watchlist,**data)
-                    fresh_view = True
                 ordered.append(card)
                 card.setProperty('gameItemId',item.game_id if item else None)
                 card.thumbnail.setVisible(item is not None)
                 if item:card.thumbnail.set_image(self.thumbnails.image(item.game_id))
                 card.show()
-                if fresh_view:reveal(card)
             for key in list(self.card_views):
                 if key not in used:
                     card = self.card_views.pop(key)
                     self.cards_layout.removeWidget(card)
-                    fade_away(card)
                     card.hide();card.deleteLater()
             for index,card in enumerate(ordered):
                 if self.cards_layout.indexOf(card)!=index:self.cards_layout.insertWidget(index,card)

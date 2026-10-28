@@ -19,7 +19,7 @@ See market references beside player-shop listings, with item names and colors th
 - Shows item images beside shop entries in the Prices page.
 - Keeps shop references visible when an item description overlaps them.
 - Prices recognized item-description popups opened from item links, including away from the cursor.
-- Shows when a price was checked and how old its market reports are. The larger item card includes the most recent observed sale time when available. Thin or stale data receive no deal rating.
+- Shows the age of the latest observed sale beside each market reference, with refresh warnings when needed. The larger item card keeps snapshot/check details. Thin or stale data receive no deal rating.
 - Compares equipment as unscrolled. Individual stat rolls are not priced.
 
 <!-- DEMO: docs/media/shop-prices.gif — open a populated shop and hover a listing. -->
@@ -107,8 +107,8 @@ Download from **[itch.io](https://zhuffman68.itch.io/lupin)**. Repository collab
 | System | Download | Install |
 | --- | --- | --- |
 | Windows 10/11 x64 | `Windows-x64-Setup.exe` | Run it, then open Lupin from Start. |
-| Arch / Manjaro | `.pkg.tar.zst` | `sudo pacman -U ./lupin-0.14.2-1-x86_64.pkg.tar.zst` |
-| Debian 12+ / Ubuntu 22.04+ | `.deb` | `sudo apt install ./lupin_0.14.2-1_amd64.deb` |
+| Arch / Manjaro | `.pkg.tar.zst` | `sudo pacman -U ./lupin-0.14.3-1-x86_64.pkg.tar.zst` |
+| Debian 12+ / Ubuntu 22.04+ | `.deb` | `sudo apt install ./lupin_0.14.3-1_amd64.deb` |
 
 Extract downloaded ZIPs before running an installer or package command. For the Windows portable build, extract the full folder and open `run-windows.bat`. Updates preserve settings, prices and history; Linux packages replace the former `classic-price-lens` package.
 
