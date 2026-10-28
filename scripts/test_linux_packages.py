@@ -115,6 +115,7 @@ def main():
         run(folder, ["test", "-f", "/usr/share/pipewire/client.conf"], log)
         run(folder, ["lupin", "--self-test"], log)
         run(folder, ["env", "QT_QPA_PLATFORM=xcb", "xvfb-run", "-a", "lupin", "--self-test"], log)
+        run(folder, ["xvfb-run", "-a", "/opt/lupin/bin/lupin-market-fetch", "--self-test"], log)
         run(folder, ["sh", "-c", "cd /opt/lupin && QT_QPA_PLATFORM=xcb CLASSIC_LENS_TEST_X11=1 xvfb-run -a runtime/bin/python3 -B -m unittest discover -s tests -p test_hotkeys.py -v"], log)
         run(folder, ["sh", "-c", "cd /opt/lupin && QT_QPA_PLATFORM=offscreen runtime/bin/python3 -m unittest discover -s tests -q"], log)
         run(folder, ["dpkg", "--verify", "lupin"], log)

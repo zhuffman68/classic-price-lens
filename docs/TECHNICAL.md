@@ -11,22 +11,22 @@ The only game observation is an ordinary OS screen capture. This project:
 - Does not send input, window messages, or commands to the game.
 - Does not parent or attach an overlay window to the game window.
 - Creates and controls only its **own** windows and helper processes.
-- Sends item names/IDs to the public price source; screenshots and OCR frames stay local. No telemetry.
+- Downloads the public market snapshot and catalog; screenshots, OCR frames and searched item names stay local. No telemetry.
 
 On KDE Wayland, labels use a separate **XWayland** window because ordinary Wayland windows cannot freely position themselves at desktop coordinates. Qt's input-transparent/no-focus flags apply to that independent window. No game handle or game process is used. The X11 bypass-window-manager flag prevents KDE from shifting the annotation canvas below the top panel. The control panel is a normal movable window; drag it wherever convenient.
 
 ## Data and caching
 
-The Classic World regular/cash catalog comes from OSMS Data Explorer and is cached for one day. All market references come from one MesoWatch full-market snapshot. It refreshes asynchronously on launch and at the selected 5/15/30/60-minute interval. Chrome, Edge or Chromium is required for updates; its dedicated Lupin profile closes afterward. Item views never make individual price requests.
+The Classic World regular/cash catalog comes from OSMS Data Explorer and is cached for one day. All market references come from one MesoWatch full-market snapshot. It refreshes asynchronously on launch and at the selected 5/15/30/60-minute interval. A short-lived native helper loads the public page through WebKitGTK on Linux or the shared production WebView2 runtime on Windows, then exits. No browser application or personal browser profile is required. Linux packages declare the system libraries; Windows setup prepares the signed Microsoft runtime if absent. Item views never make individual price requests.
 
 A generation is validated and replaced atomically. Failed refreshes preserve the last-good data and original ages. Check time, source publication and most recent observed sale are distinct. Cache validity respects the selected interval and a one-hour publication limit. Thin, uncertain, missing or old market observations receive no deal colors. Missing items stay unpriced. The larger card shows the latest observed-sale time when supplied; no individual sale amount is inferred from a median.
 
-Names, game IDs, clean condition and item/set units must match. Equipment is compared unscrolled. NX retail values never substitute for meso resale references. Stars/bullets use set prices. Search, watched lists and overlays read the same local snapshot; thumbnail downloads have their own bounded cache.
+Names, game IDs, clean condition and item/set units must match. A well-formed source alias with differing listing/catalog IDs is omitted without guessing either identity; unrelated exact rows remain usable. Malformed IDs, duplicates, wrong worlds and generations containing no exact rows are rejected. Equipment is compared unscrolled. NX retail values never substitute for meso resale references. Stars/bullets use set prices. Search, watched lists and overlays read the same local snapshot; thumbnail downloads have their own bounded cache.
 
 
 ## Build / other systems
 
-Source builds require Python 3.11+, Rust 1.90+, Git, and PySide6/Qt Multimedia. No AI account or API key is needed. From a repository checkout on Linux:
+Source builds require Python 3.11+, Rust 1.90+, Git, PySide6/Qt Multimedia, a C compiler, pkg-config, and the WebKitGTK 4.1/GTK 3 development headers. For Debian/Ubuntu use `build-essential pkg-config libwebkit2gtk-4.1-dev`; Arch/Manjaro uses `base-devel pkgconf webkit2gtk-4.1 gtk3`. No AI account or API key is needed. From a repository checkout on Linux:
 
 ```bash
 python -m venv .venv
@@ -38,7 +38,7 @@ python -m pip install -r requirements.txt
 
 The reader uses Minerva's MIT headless core, pinned at `7e1aa7d418fb255bd66eb4dce848fc9eb305cd81`. `setup.sh` clones this revision if missing and builds the OCR helper and headless core. Rust build concurrency is limited to two jobs. The OCR model is bundled by upstream; see [THIRD_PARTY.md](../THIRD_PARTY.md).
 
-For a Windows source build, run `setup-windows.ps1` followed by `run-windows.bat`. To build the native installer/package formats, see [packaging/README.md](../packaging/README.md).
+For a Windows source build, use an x64 Visual Studio Developer PowerShell, then run `setup-windows.ps1` followed by `run-windows.bat`. The helper build accepts native MSVC or an explicitly supplied LLVM-MinGW compiler and verifies the pinned WebView2 SDK/loader/bootstrapper downloads. A production WebView2 runtime is also needed to fetch prices. To build the native installer/package formats, see [packaging/README.md](../packaging/README.md).
 
 macOS remains untested. The intended capture path uses Qt's OS screen capture through the same local helper (`python -m price_lens --capture`), with screen-recording permission on macOS. KDE/Spectacle and XWayland are Linux-specific adapters.
 
@@ -67,17 +67,17 @@ The primary button starts disabled until a display is selected, then changes bet
 
 Initial guidance appears inside Prices; the display selector and tab row remain fixed across pages. **Settings** contains overlay toggles, update interval, shortcut and troubleshooting. **Connection details / capture preview…** displays the existing captured image and technical messages without starting another share.
 
-**Ctrl+Alt+P** toggles reading/labels globally. Open **Settings → Keyboard shortcut…** to disable it or choose another key or combination, then select **Set hotkey**. The app uses Windows `RegisterHotKey` and its own message queue; it installs no keyboard hook and sends no game input. Reserved or conflicting combinations produce a clear message.
+**Super/Win+F9** toggles price labels globally. Open **Settings → Hotkeys…** to disable it or choose another key or combination, then select **Set hotkey**. The app uses Windows `RegisterHotKey` and its own message queue; it installs no keyboard hook and sends no game input. Reserved or conflicting combinations produce a clear message.
 
-Inventory/equipment tooltip prices are enabled by default. Shop-row labels take priority while any player shop is open; inventory tooltip labels are suppressed throughout that context. The checkbox can disable hover pricing, and its state is saved. Equipment is assumed unscrolled.
+Inventory/equipment tooltip prices are enabled by default. Shop-row labels take priority over their listing rows; hovering an inventory/equipment item outside the list can show its own card simultaneously. Labels covered by a recognized native item-description tooltip remain at 25% opacity. The checkbox can disable hover pricing, and its state is saved. Equipment is assumed unscrolled.
 
 Prices use the shared market snapshot described above. The Prices page combines manual search, a collapsible watched list, item thumbnails and on-screen listings. Watching is exact-ID based; a selected watched item opens its larger card, while collapsing returns to shop results. Details expanders have been removed. The panel shows current cache ages and latest observed-sale timing.
 
-Minimize the control panel to keep only the labels. Closing it ends capture and the helper processes. For an offline package check, run **selftest-windows.bat** in the installation folder, normally `%LOCALAPPDATA%\Programs\Classic Price Lens`. This verifies real OCR and overlay IPC without capturing a screen or interacting with a game. The console prints each result and stays open.
+Minimize the control panel to keep only the labels; the tray is enabled by default. Closing it ends capture and the helper processes. For an offline package check, run **selftest-windows.bat** in the installation folder, normally `%LOCALAPPDATA%\Programs\Lupin`. This verifies real OCR and overlay IPC without capturing a screen or interacting with a game. The console prints each result and stays open.
 
 Resource use is bounded: capture is capped where Qt supports it, frame queues apply backpressure, OCR skips unchanged shop pixels, known shops use a small read region, and the OCR worker uses two threads. Network requests are independent of the screen-reading rate. No telemetry or screenshot uploads.
 
-Windows installation, upgrade, uninstall and the bundled binaries are tested under Wine. Native Windows desktop capture, mixed-DPI and fullscreen behavior still require validation. See `THIRD_PARTY.md` for component licenses and data attribution.
+Windows installation, upgrade, uninstall and the bundled binaries are checked under Wine and in a Windows VM. Native VM desktop/shop capture has been exercised; physical multi-monitor, mixed-DPI and fullscreen behavior still require validation. See `THIRD_PARTY.md` for component licenses and data attribution.
 
 ## Automatic reading area and tray behavior (0.4.0)
 

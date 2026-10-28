@@ -12,4 +12,6 @@ py -3 -m venv .venv
 if ($LASTEXITCODE -ne 0) { throw "Python dependency installation failed" }
 cargo build --locked --release --manifest-path reader/Cargo.toml -j 2
 if ($LASTEXITCODE -ne 0) { throw "Screen-reader build failed" }
+& .venv/Scripts/python.exe scripts/build_market_helpers.py windows
+if ($LASTEXITCODE -ne 0) { throw "Market-helper build failed; run setup from a Visual Studio Developer PowerShell" }
 Write-Host "Ready. Run run-windows.bat. No administrator privileges or game access required."

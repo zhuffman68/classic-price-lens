@@ -2,7 +2,7 @@
 
 Published artifacts are in [GitHub Releases](https://github.com/zhuffman68/lupin/releases). End users need none of these build tools.
 
-All runtime downloads are pinned by SHA-256 in `runtime-linux.json` and `runtime-windows.json`. The staging scripts copy only application source, tiny upstream OCR fixtures, tests, runtime files and dependency notices. They never copy screenshots, databases, settings or private evidence. Python/Qt run from the application directory; installed files do not depend on the build path or system Python version.
+Runtime downloads are pinned by SHA-256 in `runtime-linux.json`, `runtime-windows.json` and `market-runtime.json`. The staging scripts copy only application source, tiny upstream OCR fixtures, tests, runtime files and dependency notices. They never copy screenshots, databases, settings or private evidence. Python/Qt run from the application directory; installed files do not depend on the build path or system Python version.
 
 ## Linux
 
@@ -15,6 +15,7 @@ rustup target add x86_64-unknown-linux-musl
 RUSTFLAGS='-C linker=rust-lld' cargo build --locked --release --target x86_64-unknown-linux-musl --manifest-path reader/Cargo.toml -j 2
 cargo fetch --locked --manifest-path reader/Cargo.toml
 python scripts/download_runtime.py linux
+python scripts/build_market_helpers.py linux --linux-root .build-tools/test-roots/ubuntu-22.04
 python scripts/package_linux.py
 python scripts/build_linux_packages.py
 ```
@@ -22,6 +23,8 @@ python scripts/build_linux_packages.py
 The notice collector expects the official Rust 1.98.1 source-distribution notice files at `.build-tools/rustc-1.98.1-x86_64-unknown-linux-gnu/rustc/share/doc/rust/`. When using another build layout, stage those notices at that path before packaging. `license-sources.json` pins upstream notices omitted from some crates.io archives. Application/package version comes from `price_lens/__init__.py`; the package builder updates the staged PKGBUILD accordingly. The unchanged OCR reader can retain its own component version across Python/UI releases.
 
 Output: `dist/lupin_VERSION-1_amd64.deb` and `dist/lupin-VERSION-1-x86_64.pkg.tar.zst`. Both install to `/opt/lupin`, with a launcher in `/usr/bin` and normal application-menu/icon entries. User caches and preferences are kept outside those paths. Neither package adds a daemon, service, autostart entry or custom system Qt libraries.
+
+Build the native market helper inside the Ubuntu 22.04 root after installing `build-essential pkg-config libwebkit2gtk-4.1-dev` there, or use an equivalent glibc 2.35-compatible builder. A developer-only host build uses `python scripts/build_market_helpers.py linux`. The DEB declares `libwebkit2gtk-4.1-0 (>= 2.40)` and GTK 3; pacman declares `webkit2gtk-4.1` and `gtk3`. The helper uses a temporary WebKit context and exits after each refresh. No engine is bundled.
 
 The bundled Qt manylinux runtime requires glibc 2.34+, targeting Debian 12+, Ubuntu 22.04+ and current Arch/Manjaro on x86_64. Desktop sharing also needs the installed desktop's portal backend. The package-manager dependency lists supply OS libraries rather than a second system Qt installation.
 
@@ -42,6 +45,7 @@ Compile the pinned Rust reader to `reader/target/x86_64-pc-windows-gnullvm/relea
 
 ```sh
 python scripts/download_runtime.py windows
+python scripts/build_market_helpers.py windows
 python scripts/package_windows.py
 ```
 
@@ -52,6 +56,10 @@ python scripts/build_windows_installer.py --iscc 'C:\Program Files (x86)\Inno Se
 ```
 
 For cross-building on Linux, pass the compiler's filesystem path and an explicit, isolated Wine prefix using `--wine-prefix`. The script never chooses the default Wine prefix. `windows.iss` creates a per-user x64 installer with Start-menu/optional desktop shortcuts, a stable upgrade identifier, and an Apps uninstall entry. Upgrade and uninstall request shutdown only through Lupin's own local IPC endpoint; no game process is inspected or controlled.
+
+The small native market helper and Microsoft WebView2 loader ship in `bin`. The SDK is a build input only. The pinned, signed Microsoft Evergreen bootstrapper ships with both installer and ZIP. Normal setup checks for a production runtime version 124+ before closing/upgrading Lupin and installs the shared runtime if missing; this may require internet access. The portable launcher performs the same preparation. System Edge/Chrome applications are not required. The runtime remains system-managed and is not removed with Lupin.
+
+Isolated Wine installer checks use explicit `/SKIPWEBVIEW2=1` because Wine does not supply this Windows runtime; that only verifies installation transactions. Native Windows must separately pass the helper local-page self-test and a real full-market refresh. `lupin-market-fetch.exe --runtime-check` checks availability without starting a renderer. `--profile PATH --self-test` reads local HTML and Korean Unicode through the same pipe as production. Neither check captures a screen or sends game input.
 
 The installed entry point is `runtime/pythonw.exe -B -m price_lens`. It waits for the user's **Start reading** action. `selftest-windows.bat` runs an offline check. `scripts/make_windows_zip.py` can also create a portable ZIP; archives remain unencrypted.
 

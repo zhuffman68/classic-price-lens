@@ -42,6 +42,18 @@ def main():
         shutil.copy2(ROOT / name, OUT / name)
     shutil.copy2(ROOT / "packaging/icon.ico", OUT / "lupin-scaled.ico")
     (OUT / "bin").mkdir(exist_ok=True)
+    market = ROOT / ".build-tools/market-helper/windows"
+    for name in ("lupin-market-fetch.exe", "WebView2Loader.dll"):
+        shutil.copy2(market / name, OUT / "bin" / name)
+    market_manifest = json.loads((ROOT / "packaging/market-runtime.json").read_text())
+    bootstrap = market_manifest["files"][1]
+    bootstrap_path = ROOT / ".build-tools/market-downloads" / bootstrap["name"]
+    assert hashlib.sha256(bootstrap_path.read_bytes()).hexdigest() == bootstrap["sha256"]
+    shutil.copy2(bootstrap_path, OUT / bootstrap["name"])
+    for name in ("LICENSE.txt", "NOTICE.txt"):
+        destination = OUT / "licenses" / ("WebView2-" + name)
+        destination.parent.mkdir(exist_ok=True)
+        shutil.copy2(ROOT / ".build-tools/webview2-sdk" / name, destination)
     if READER.is_file():
         shutil.copy2(READER, OUT / "bin/lupin-screen-reader.exe")
         toolchain = ROOT / ".build-tools/llvm-mingw-20261020-ucrt-ubuntu-22.04-x86_64"
@@ -53,6 +65,7 @@ def main():
     toolchain = ROOT / ".build-tools/llvm-mingw-20261020-ucrt-ubuntu-22.04-x86_64"
     shutil.copy2(toolchain / "LICENSE.TXT", licenses / "LLVM-MinGW-LICENSE.txt")
     (OUT / "runtime-sources.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    shutil.copy2(ROOT / "packaging/market-runtime.json", OUT / "market-runtime-sources.json")
     for path in list(OUT.rglob("__pycache__")):
         shutil.rmtree(path)
     trim(OUT,'windows')

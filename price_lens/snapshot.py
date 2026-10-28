@@ -23,15 +23,24 @@ def parse_snapshot(document, checked_at=None):
     if not isinstance(source_rows, list) or not 1 <= len(source_rows) <= 20000:
         raise ValueError("Invalid market item list")
     rows = {}
+    excluded_aliases = 0
     for row in source_rows:
         if not isinstance(row, dict):
             raise ValueError("Invalid market item")
         identity = row.get("id", "")
         match = re.fullmatch(r"(?:basil|cash):(\d{8})", identity) if isinstance(identity, str) else None
         name = row.get("name")
-        if (not match or row.get("catalogId", identity) != identity
+        catalog_id = row.get("catalogId", identity)
+        if (not match or not isinstance(catalog_id, str)
+                or not re.fullmatch(r"(?:basil|cash):\d{8}", catalog_id)
                 or not isinstance(name, str) or not 1 <= len(name) <= 200):
             raise ValueError("Invalid market item identity")
+        # The source can include an alias whose listing ID differs from its
+        # catalog ID. Neither identity is proven for our exact-ID prices, so
+        # omit that row without blocking unrelated, independently valid rows.
+        if catalog_id != identity:
+            excluded_aliases += 1
+            continue
         game_id = int(match[1])
         if game_id in rows:
             raise ValueError("Duplicate market item identity")
@@ -49,8 +58,12 @@ def parse_snapshot(document, checked_at=None):
                       high=number(row.get("p75")), per_set=unit == "set",
                       uncertain=uncertain, published_at=published)
         rows[game_id] = {"name": name, "unit": unit, "quote": asdict(quote)}
+    if not rows:
+        raise ValueError("No exact market item identities")
     meta = {"checked_at": checked_at, "published_at": published, "rows": len(rows),
             "priced": sum(row["quote"]["price"] is not None for row in rows.values())}
+    if excluded_aliases:
+        meta["excluded_aliases"] = excluded_aliases
     return meta, rows
 
 

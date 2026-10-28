@@ -1,5 +1,5 @@
 #ifndef AppVersion
-  #define AppVersion "0.13.1"
+  #define AppVersion "0.13.2"
 #endif
 #ifndef StageDir
   #define StageDir "..\dist\Lupin-Windows-x64"
@@ -44,6 +44,9 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 Name: "{app}"; Flags: uninsalwaysuninstall
 
 [Files]
+Source: "{#StageDir}\bin\lupin-market-fetch.exe"; Flags: dontcopy
+Source: "{#StageDir}\bin\WebView2Loader.dll"; Flags: dontcopy
+Source: "{#StageDir}\MicrosoftEdgeWebview2Setup.exe"; Flags: dontcopy
 Source: "{#StageDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "__pycache__\*,*.pyc,*.sqlite*,build-manifest.json"
 
 [Icons]
@@ -56,6 +59,7 @@ Type: files; Name: "{app}\classic-price-lens.ico"
 Type: files; Name: "{app}\bin\classic-screen-reader.exe"
 Type: files; Name: "{app}\price_lens\provider_index.py"
 Type: files; Name: "{app}\tests\test_provider_index.py"
+Type: files; Name: "{app}\price_lens\snapshot_browser.py"
 Type: files; Name: "{app}\lupin.ico"
 Type: files; Name: "{userprograms}\Classic Price Lens\Classic Price Lens.lnk"
 Type: dirifempty; Name: "{userprograms}\Classic Price Lens"
@@ -68,6 +72,7 @@ Filename: "{app}\runtime\pythonw.exe"; Parameters: "-B -m price_lens"; WorkingDi
 var
   MigratedFrom, MigratedTo: String;
   InstallCommitted: Boolean;
+  Uninstalling: Boolean;
 
 function PreviousInstallDirectory(): String;
 begin
@@ -94,25 +99,46 @@ end;
 
 function CloseLens(): Boolean;
 var
-  Runtime, Directory: String;
+  Runtime: String;
   ExitCode: Integer;
 begin
-  Directory := ExpandConstant('{app}');
-  Runtime := AddBackslash(Directory) + 'runtime\pythonw.exe';
-  if not FileExists(Runtime) then begin
-    Directory := PreviousInstallDirectory();
-    if Directory <> '' then Runtime := AddBackslash(Directory) + 'runtime\pythonw.exe';
+  if Uninstalling then
+    Runtime := ExpandConstant('{app}\bin\lupin-market-fetch.exe')
+  else begin
+    ExtractTemporaryFile('lupin-market-fetch.exe');
+    Runtime := ExpandConstant('{tmp}\lupin-market-fetch.exe');
   end;
-  Result := True;
-  if FileExists(Runtime) then
-    Result := Exec(Runtime, '-B -m price_lens --quit', Directory, SW_HIDE,
-                   ewWaitUntilTerminated, ExitCode) and (ExitCode = 0);
+  Result := Exec(Runtime, '--close-panel', ExtractFileDir(Runtime), SW_HIDE,
+                 ewWaitUntilTerminated, ExitCode) and (ExitCode = 0);
+end;
+
+function PrepareMarketRuntime(): String;
+var ExitCode: Integer;
+begin
+  Result := '';
+  // An explicit offline/installer-test opt-out. Normal setup prepares the runtime.
+  if ExpandConstant('{param:SKIPWEBVIEW2|0}') = '1' then Exit;
+  ExtractTemporaryFile('lupin-market-fetch.exe');
+  ExtractTemporaryFile('WebView2Loader.dll');
+  if Exec(ExpandConstant('{tmp}\lupin-market-fetch.exe'), '--runtime-check',
+          ExpandConstant('{tmp}'), SW_HIDE, ewWaitUntilTerminated, ExitCode) and (ExitCode = 0) then Exit;
+  ExtractTemporaryFile('MicrosoftEdgeWebview2Setup.exe');
+  WizardForm.StatusLabel.Caption := 'Preparing market updates...';
+  if not Exec(ExpandConstant('{tmp}\MicrosoftEdgeWebview2Setup.exe'), '/silent /install',
+              ExpandConstant('{tmp}'), SW_HIDE, ewWaitUntilTerminated, ExitCode) then begin
+    Result := 'The market runtime could not be installed. Connect to the internet and try again.';
+    Exit;
+  end;
+  if not (Exec(ExpandConstant('{tmp}\lupin-market-fetch.exe'), '--runtime-check',
+               ExpandConstant('{tmp}'), SW_HIDE, ewWaitUntilTerminated, ExitCode) and (ExitCode = 0)) then
+    Result := 'The market runtime is not ready. Connect to the internet and try again.';
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var Previous, Target: String; Attempt: Integer;
 begin
-  Result := '';
+  Result := PrepareMarketRuntime();
+  if Result <> '' then Exit;
   if not CloseLens() then
     Result := 'Close Lupin, then try the installation again.';
   if Result <> '' then Exit;
@@ -150,6 +176,7 @@ end;
 
 function InitializeUninstall(): Boolean;
 begin
+  Uninstalling := True;
   Result := CloseLens();
   if not Result and not UninstallSilent() then
     MsgBox('Close Lupin, then try uninstalling again.', mbError, MB_OK);

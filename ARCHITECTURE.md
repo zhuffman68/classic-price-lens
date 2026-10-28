@@ -1,6 +1,6 @@
 # Lupin architecture
 
-Lupin v0.13.1 provides market references, EXP/meso tracking and local Korean translation for MapleStory Classic World.
+Lupin v0.13.2 provides market references, EXP/meso tracking and local Korean translation for MapleStory Classic World.
 
 ## Observation boundary
 
@@ -48,7 +48,9 @@ Only a missing, uncovered shop price triggers a retry. A cropped shop passes thr
 
 On every launch, saved data loads immediately and one asynchronous full-market download starts. Later downloads follow the selected 5/15/30/60-minute interval. Changing the interval reschedules from the last successful check. Overlapping refreshes coalesce. Overlay, search and watched-item prices are local snapshot reads; typing, selecting, hovering and watching never initiate individual price requests.
 
-A compatible installed Chrome/Edge/Chromium uses only Lupin's dedicated profile and a loopback DevTools endpoint, then closes. The normal page supplies its current list. No personal browser profile, challenge solving, browser download, game process or resident service is involved. Edge can detach its launcher; the only alternate endpoint is the validated `DevToolsActivePort` file in that same app-owned profile. Shutdown flushes Browser.close and allows graceful termination before terminating only the subprocess created by Lupin.
+A short-lived native `lupin-market-fetch` helper reads the ordinary public market page using system web views: WebKitGTK on Linux and the shared production WebView2 runtime on Windows. It uses an offscreen/invisible window owned by the helper, never a game window. Linux uses an ephemeral context; Windows uses an app-owned data directory and disables OS-account single sign-on. Website permission requests and new windows are denied. No personal browser, installed browser discovery, DevTools socket or resident service is involved. Well-formed source rows with different listing/catalog IDs are excluded as unverified aliases; they never map prices to either ID. Malformed identities, duplicates, wrong worlds and empty exact generations still reject the update.
+
+`SnapshotFetcher` bounds UTF-8 stdout to 8 MiB, retains only bounded diagnostic stderr, accepts one JSON object after a successful helper exit and enforces a deadline. Stop/cancellation discards pending results; refreshes coalesce while a previous helper shuts down. Only the subprocess created by Lupin is terminated. The Windows helper's private job controls its own descendants so cancellation cannot leave its renderer running. Full generation validation still occurs in `SnapshotStore` before replacement.
 
 A complete generation is validated before an atomic SQLite replacement. Checks require Classic World, live list schema, exact IDs/names, clean equipment and item/set units. Failed/invalid refreshes retain the last-good data and its original ages, with bounded 5/15/60-minute failure retries. Successful refreshes never inherit a failure cooldown.
 
@@ -80,4 +82,4 @@ Inter is bundled for consistent interface/price typography. The GUI uses a small
 
 Maximization and control-panel pinning are disabled. Fresh default geometry is measured from compact controls, including active tracking fields, and bounded to the display. Normal user sizes persist; desktop-sized/maximized geometry cannot replace a compact preference. Long item/history lists can scroll independently.
 
-Programs install to `/opt/lupin` or `%LOCALAPPDATA%\\Programs\\Lupin`; launchers/readers use Lupin names. Windows upgrades move the old program directory, preserve additional files, remove obsolete shipped modules and support rollback before commit. Stable settings/socket/portal IDs preserve data and approved sharing. Both runtime/model manifests are pinned; install roots stay read-only in normal use. Private evidence, credentials, screenshots and caches are excluded. See [packaging](packaging/README.md) and [verification](VERIFICATION.md).
+Programs install to `/opt/lupin` or `%LOCALAPPDATA%\\Programs\\Lupin`; launchers/readers use Lupin names. Windows upgrades move the old program directory, preserve additional files, remove obsolete shipped modules and support rollback before commit. Shutdown sends Quit through Lupin's own local pipe and waits for that specific server process to finish unloading; synchronization-only access comes from the pipe's server PID, with no process enumeration or termination. Stable settings/socket/portal IDs preserve data and approved sharing. The WebView2 SDK, loader and official setup bootstrapper have pinned download hashes. Windows setup checks/prepares the shared runtime before closing an existing installation; Linux package dependencies provide WebKitGTK. The browser engine is not bundled. Both runtime/model manifests are pinned; install roots stay read-only in normal use. Private evidence, credentials, screenshots and caches are excluded. See [packaging](packaging/README.md) and [verification](VERIFICATION.md).

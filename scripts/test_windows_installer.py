@@ -42,6 +42,10 @@ def main():
 
     with log_path.open("w") as log:
         def run(command, cwd=None, timeout=120):
+            # Wine has no supported Evergreen WebView2 runtime. Exercise normal
+            # runtime preparation separately in the native Windows VM.
+            if str(command[0]).endswith("-Setup.exe"):
+                command = [*command, "/SKIPWEBVIEW2=1"]
             subprocess.run(["wine", *map(str, command)], cwd=cwd or ROOT, env=env,
                            stdout=log, stderr=subprocess.STDOUT, timeout=timeout, check=True)
 
@@ -97,6 +101,9 @@ def main():
             assert moved_extra.read_text()=="Preserve additional files during the folder rename.\n"
             moved_extra.unlink()
         assert (app/"bin/lupin-screen-reader.exe").is_file() and not (app/"bin/classic-screen-reader.exe").exists(), "Reader still has its old shipped name"
+        assert (app/"bin/lupin-market-fetch.exe").is_file(), "Native market helper missing"
+        assert (app/"bin/WebView2Loader.dll").is_file(), "WebView2 loader missing"
+        assert not (app/"price_lens/snapshot_browser.py").exists(), "Retired browser integration remains"
         trim=json.loads((app/'runtime-trim.json').read_text())
         assert not any((app/entry['path']).exists() for entry in trim['removed']),'Upgrade left unused runtime files behind'
         assert (app/'lupin-scaled.ico').is_file() and not (app/'lupin.ico').exists(),'Icon resource path was not migrated'

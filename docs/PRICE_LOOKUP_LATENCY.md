@@ -1,12 +1,14 @@
 # Price latency
 
-## Current behavior: v0.13.1
+## Current behavior: v0.13.2
 
 Prices are local reads from a single MesoWatch full-market snapshot. It refreshes on launch and at the selected 5/15/30/60-minute interval. Individual price API requests, provider-ID lookups, early per-item refresh and their worker queues have been removed. Missing items remain unpriced.
 
 Saved data appears immediately. A successful full refresh replaces the generation atomically; failed updates retain the original check/publication/report ages. Expired data has no deal colors. The larger card's latest observed-sale time is separate from the median reference and snapshot publication.
 
-A Windows VM sampled full downloads at about 2–4 seconds after a cold 8-second run. This work is asynchronous and does not delay a cached item lookup. A compatible installed browser briefly uses Lupin's own profile, then exits. No personal browser, game process or individual-item crawl is used.
+The updater now uses a small native system-web-view helper: WebKitGTK on Linux and the production WebView2 runtime on Windows. It exits after each update and needs no installed browser application or DevTools connection. A live Linux refresh downloaded and validated 1,917 rows (1,333 positive prices) in 2.322 seconds. This background work does not delay a saved item lookup. Timings vary with the network and machine load.
+
+The helper pipe is limited to one UTF-8 JSON object of at most 8 MiB. Its own deadline is 20 seconds; the parent permits 25 seconds, then terminates it and escalates after 800 ms. Cancelled or late output cannot replace the saved generation. A self-test loads local HTML without network access.
 
 Screen capture, OCR and rendering are separate costs. The Windows client drains local frame packets and keeps only the newest completed frame. Live samples after this fix had frame ages around 0.17–0.26 seconds; an example read took about 293 ms. A missing-price OCR retry is limited to the detected shop, requires two strict readings to agree, and caches unchanged patches. These are observations under VM/host load, not latency guarantees.
 

@@ -115,12 +115,26 @@ class SnapshotTests(unittest.TestCase):
             self.store.save(doc, self.now)
             self.assertEqual(compare(self.item, 1, 10, self.store.quote(self.item), self.now).tone, "muted")
 
-    def test_duplicate_or_mismatched_source_ids_reject_complete_generation(self):
-        for change in ({"id": "other:04010000"}, {"catalogId": "basil:04010001"}):
+    def test_duplicate_or_malformed_source_ids_reject_complete_generation(self):
+        for change in ({"id": "other:04010000"}, {"catalogId": "basil:invalid"}):
             doc = document(self.now); doc["items"][0].update(change)
             with self.assertRaises(ValueError):self.store.save(doc, self.now)
         doc = document(self.now);doc["items"].append(deepcopy(doc["items"][0]))
         with self.assertRaises(ValueError):self.store.save(doc, self.now)
+
+    def test_source_aliases_remain_unpriced_without_blocking_exact_items(self):
+        doc = document(self.now)
+        doc["items"].append(dict(doc["items"][0], id="basil:02014698",
+                                 catalogId="basil:02009666", name="Unverified alias", price=999))
+        meta = self.store.save(doc, self.now)
+        self.assertEqual((meta["rows"], meta["priced"], meta["excluded_aliases"]), (1, 1, 1))
+        self.assertEqual(self.store.quote(self.item).price, 100)
+        for identity in (2014698, 2009666):
+            self.assertIsNone(self.store.quote(Item(identity,"Unverified alias")))
+        original = self.store.meta.copy()
+        doc["items"] = doc["items"][1:]
+        with self.assertRaises(ValueError):self.store.save(doc,self.now)
+        self.assertEqual(self.store.meta,original)
 
     def test_cached_store_page_never_calls_item_api_even_after_fallback_interval(self):
         self.store.save(document(self.now-901), self.now-901)
@@ -136,7 +150,7 @@ class SnapshotTests(unittest.TestCase):
         self.store.save(document(self.now), self.now)
         updater = SnapshotUpdater(self.store)
         try:
-            with patch.object(updater.browser, "start") as start:
+            with patch.object(updater.fetcher, "start") as start:
                 updater.set_enabled(True)
                 QCoreApplication.processEvents()
                 self.assertEqual(start.call_count, 1)
@@ -154,7 +168,7 @@ class SnapshotTests(unittest.TestCase):
                 self.assertFalse(updater.timer.isActive())
         finally:updater.close()
 
-    def test_already_old_publication_does_not_cause_a_browser_refresh_loop(self):
+    def test_already_old_publication_does_not_cause_a_refresh_loop(self):
         updater = SnapshotUpdater(self.store)
         try:
             updater.enabled = True

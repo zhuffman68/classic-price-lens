@@ -19,7 +19,8 @@ libxcb-icccm4, libxcb-image0, libxcb-keysyms1, libxcb-randr0, libxcb-render-util
 libxcb-render0, libxcb-shape0, libxcb-shm0, libxcb-sync1, libxcb-xfixes0,
 libxcb-xinerama0, libxcb-xkb1, libxkbcommon0, libxkbcommon-x11-0, libwayland-client0,
 libwayland-cursor0, libwayland-egl1, libpulse0, libasound2 | libasound2t64,
-libpipewire-0.3-0, pipewire-bin, xdg-desktop-portal, xwayland, ca-certificates""".replace("\n", " ")
+libpipewire-0.3-0, pipewire-bin, xdg-desktop-portal, xwayland, ca-certificates,
+libwebkit2gtk-4.1-0 (>= 2.40), libgtk-3-0 | libgtk-3-0t64""".replace("\n", " ")
 
 
 def main():

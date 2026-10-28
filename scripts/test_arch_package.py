@@ -50,6 +50,8 @@ def main():
         run([str(launcher), "--self-test"])
         app = folder / "opt/lupin"
         assert not (folder/'opt/classic-price-lens').exists(), "Legacy install folder remains"
+        assert (app/'bin/lupin-market-fetch').is_file(), "Native market helper missing"
+        assert not (app/'price_lens/snapshot_browser.py').exists(), "Retired browser integration remains"
         run([str(app / "runtime/bin/python3"), "-B", "-m", "unittest", "discover", "-s", "tests", "-q"], app)
         run([*pacman, "-Qkk", "lupin"])
         run([*pacman, "-Rdd", "lupin"])

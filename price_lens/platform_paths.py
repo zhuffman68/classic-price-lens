@@ -16,6 +16,14 @@ def reader_binary(root):
     return next((path for path in choices if path.is_file()), choices[-1])
 
 
+def market_binary(root):
+    root = Path(root)
+    platform = "windows" if sys.platform == "win32" else "linux"
+    name = "lupin-market-fetch" + (".exe" if platform == "windows" else "")
+    choices = [root / "bin" / name, root / ".build-tools/market-helper" / platform / name]
+    return next((path for path in choices if path.is_file()), choices[0])
+
+
 def capture_socket_name():
     if sys.platform == "win32":
         user = re.sub(r"[^a-zA-Z0-9_]", "_", getpass.getuser())

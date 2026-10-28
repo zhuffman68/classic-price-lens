@@ -5,7 +5,7 @@ import sqlite3
 from PySide6.QtCore import QObject, QTimer, Signal
 
 from .domain import age_text
-from .snapshot_browser import BrowserSnapshot
+from .snapshot_fetcher import SnapshotFetcher
 
 
 class SnapshotUpdater(QObject):
@@ -21,9 +21,9 @@ class SnapshotUpdater(QObject):
         self.failures = 0
         self.error = ""
         self.interval = 900
-        self.browser = BrowserSnapshot(store.cache.path.parent / "market-browser", self)
-        self.browser.ready.connect(self.accept)
-        self.browser.failed.connect(self.failed)
+        self.fetcher = SnapshotFetcher(store.cache.path.parent / "market-webview", self)
+        self.fetcher.ready.connect(self.accept)
+        self.fetcher.failed.connect(self.failed)
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
         self.timer.timeout.connect(self.refresh)
@@ -37,7 +37,7 @@ class SnapshotUpdater(QObject):
             self.timer.start(0)
         else:
             self.timer.stop()
-            self.browser.stop()
+            self.fetcher.stop()
             self.busy = False
         self.changed.emit()
 
@@ -48,7 +48,7 @@ class SnapshotUpdater(QObject):
         self.busy = True
         self.error = ""
         self.changed.emit()
-        self.browser.start()
+        self.fetcher.start()
 
     def set_interval(self,seconds):
         self.interval=max(300,min(3600,int(seconds)))
@@ -96,4 +96,4 @@ class SnapshotUpdater(QObject):
     def close(self):
         self.closed = True
         self.timer.stop()
-        self.browser.close()
+        self.fetcher.close()

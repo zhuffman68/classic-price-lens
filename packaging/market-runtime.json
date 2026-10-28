@@ -1,0 +1,15 @@
+{
+  "sdk_version": "1.0.4314.35",
+  "files": [
+    {
+      "name": "microsoft.web.webview2.1.0.4314.35.nupkg",
+      "url": "https://api.nuget.org/v3-flatcontainer/microsoft.web.webview2/1.0.4314.35/microsoft.web.webview2.1.0.4314.35.nupkg",
+      "sha256": "90778deb1b77e36292828b4b5833c9255c27533f40e0ddd55891ae718944edc4"
+    },
+    {
+      "name": "MicrosoftEdgeWebview2Setup.exe",
+      "url": "https://msedge.sf.dl.delivery.mp.microsoft.com/filestreamingservice/files/9f5cc069-77d5-48b7-89c0-1abe2e0398b5/MicrosoftEdgeWebview2Setup.exe",
+      "sha256": "13f6d9cdc8c3e7186e4b180db7f48e199ee97d631480e8391fb3106f338fb21a"
+    }
+  ]
+}

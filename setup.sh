@@ -11,4 +11,5 @@ if [[ $(git -C vendor/minerva rev-parse HEAD) != 7e1aa7d418fb255bd66eb4dce848fc9
     exit 1
 fi
 cargo build --locked --manifest-path reader/Cargo.toml -j 2
+python scripts/build_market_helpers.py linux
 python -c 'import PySide6.QtMultimedia' || printf '%s\n' 'Install PySide6 (pip install -r requirements.txt, or python-pyside6 from your package manager).'

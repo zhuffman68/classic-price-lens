@@ -12,8 +12,8 @@ import shutil
 import subprocess
 
 ROOT=Path(__file__).resolve().parents[1]
-QT_MODULES={'QtCore','QtGui','QtWidgets','QtNetwork','QtMultimedia','QtSvg','QtWebSockets','QtTest'}
-DEV_PLUGINS={'designer','qmltooling','assetimporters','geometryloaders','renderers','sceneparsers','geoservices','position','sensors','texttospeech','sqldrivers'}
+QT_MODULES={'QtCore','QtGui','QtWidgets','QtNetwork','QtMultimedia','QtSvg','QtTest'}
+DEV_PLUGINS={'designer','qmltooling','assetimporters','geometryloaders','renderers','sceneparsers','geoservices','position','sensors','texttospeech','sqldrivers','webview'}
 
 
 def imported_modules():

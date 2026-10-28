@@ -48,6 +48,7 @@ def main():
     (OUT / "bin").mkdir()
     reader = ROOT / "reader/target/x86_64-unknown-linux-musl/release/classic-screen-reader"
     shutil.copy2(reader, OUT / "bin/lupin-screen-reader")
+    shutil.copy2(ROOT / ".build-tools/market-helper/linux/lupin-market-fetch", OUT / "bin/lupin-market-fetch")
     stage_application(OUT)
     stage_notices(OUT)
     (OUT / "runtime-sources.json").write_text(json.dumps(manifest, indent=2) + "\n")

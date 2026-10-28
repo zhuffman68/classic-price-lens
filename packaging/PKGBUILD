@@ -1,6 +1,6 @@
 # Generated payload is built by scripts/package_linux.py; no runtime downloads.
 pkgname=lupin
-pkgver=0.13.1
+pkgver=0.13.2
 pkgrel=1
 pkgdesc='Tools for MapleStory Classic World'
 arch=('x86_64')
@@ -13,7 +13,8 @@ depends=('glibc>=2.34' 'gcc-libs' 'libglvnd' 'dbus' 'fontconfig' 'freetype2'
          'libx11' 'libxext' 'libxfixes' 'libxrender' 'libxrandr' 'libdrm' 'libxi' 'libxcb' 'xcb-util'
          'xcb-util-cursor' 'xcb-util-image' 'xcb-util-keysyms' 'xcb-util-renderutil'
          'xcb-util-wm' 'libxkbcommon' 'libxkbcommon-x11' 'wayland' 'libpulse'
-         'alsa-lib' 'pipewire' 'xdg-desktop-portal' 'xorg-xwayland' 'ca-certificates')
+         'alsa-lib' 'pipewire' 'xdg-desktop-portal' 'xorg-xwayland' 'ca-certificates'
+         'webkit2gtk-4.1' 'gtk3')
 optdepends=('xdg-desktop-portal-kde: screen sharing on KDE Plasma'
             'xdg-desktop-portal-gtk: portal integration on GTK desktops'
             'xdg-desktop-portal-gnome: screen sharing on GNOME'

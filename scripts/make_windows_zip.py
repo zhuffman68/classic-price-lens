@@ -13,7 +13,8 @@ from price_lens import __version__
 
 
 def main():
-    required = ["run-windows.bat", "runtime/pythonw.exe", "bin/lupin-screen-reader.exe", "bin/libunwind.dll"]
+    required = ["run-windows.bat", "runtime/pythonw.exe", "bin/lupin-screen-reader.exe", "bin/libunwind.dll",
+                "bin/lupin-market-fetch.exe", "bin/WebView2Loader.dll", "MicrosoftEdgeWebview2Setup.exe"]
     for name in required:
         if not (FOLDER / name).is_file():
             raise FileNotFoundError(name)

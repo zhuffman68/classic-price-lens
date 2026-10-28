@@ -23,7 +23,7 @@ class PriceSchedulingTests(unittest.TestCase):
         self.assertTrue(condition())
 
     def test_launch_and_expiry_refresh_one_generation_without_item_calls(self):
-        with patch('price_lens.service.load_catalog',return_value=object()),patch('price_lens.snapshot_updater.BrowserSnapshot.start') as browser,patch('price_lens.data.get_json',side_effect=AssertionError('Individual HTTP call')):
+        with patch('price_lens.service.load_catalog',return_value=object()),patch('price_lens.snapshot_updater.SnapshotFetcher.start') as browser,patch('price_lens.data.get_json',side_effect=AssertionError('Individual HTTP call')):
             self.service.refresh_snapshot=True;self.service.set_refresh_interval(300);self.service.start()
             self.until(lambda:browser.call_count==1)
             self.service.snapshot_updater.accept(document(self.now))

@@ -1,15 +1,12 @@
 Local patch status
 
-v0.13.1 prevents desktop-sized restored panel geometry, retains sliding tab
-transitions through native layout changes, and uses Lupin program-folder,
-launcher and shipped reader names. Existing data and OS identities are preserved.
-The patch also improves Windows desktop capture and newest-frame delivery,
-shop-price OCR retries, tracking labels/units, inline watched items, typography,
-shop-card thumbnails and search transitions. Market references now use one
-full snapshot refreshed on launch and at the selected interval; the per-item
-provider/queue/index and Details expander have been removed.
+v0.13.2 replaces installed-browser discovery and DevTools transport with a
+short-lived native market helper. Linux uses system WebKitGTK; Windows uses
+the shared production WebView2 runtime, prepared by setup if needed. No browser
+application or personal browser profile is required. All prices still come
+from one local full-market snapshot, refreshed at launch and the selected TTL.
+Both translation model bundles and existing settings are retained.
 Build and validation details are in VERIFICATION.md.
 
 Uploads remain on hold at the user's request. Do not push source, create a
 GitHub release or upload itch.io channels until publication is authorized again.
-The prior v0.11.0 artifacts also remain local.

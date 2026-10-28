@@ -15,6 +15,8 @@
 
 MapleStory item names, game artwork and screenshots belong to their respective owners, including Nexon. This is a local independent tool, without affiliation or approval implied.
 
+- **Native market web views**: Linux links the system WebKitGTK/GTK shared libraries, supplied and serviced by the distribution. Their licenses and sources are supplied by those packages. Windows uses the shared Microsoft WebView2 runtime; the SDK/loader and official setup bootstrapper are identified in `market-runtime-sources.json`. The SDK LICENSE and NOTICE are included in `licenses/WebView2-*`. No Chromium/Qt WebEngine distribution or personal browser is bundled.
+
 ## Corresponding library sources
 
 The packaged builds use unmodified shared libraries; application Python source is included and the libraries can be replaced with interface-compatible builds. Source downloads for the bundled versions are available here:
