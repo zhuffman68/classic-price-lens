@@ -1,7 +1,9 @@
 """Presentation for automatic EXP watching; no sampling or accounting lives here."""
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QPixmap,QIcon
+from pathlib import Path
 from PySide6.QtWidgets import (QCheckBox,QComboBox,QDialog,QDialogButtonBox,QFrame,QHBoxLayout,QFormLayout,
-    QHeaderView,QLineEdit,QPushButton,QTableWidget,QVBoxLayout)
+    QHeaderView,QLineEdit,QPushButton,QTableWidget,QVBoxLayout,QWidget)
 from .motion import MotionLabel,RollingLabel
 
 
@@ -15,13 +17,34 @@ def number(value="",name=""):
     widget=RollingLabel(value);widget.setObjectName(name);return widget
 
 
+def with_unit(value,unit):
+    row=QWidget();layout=QHBoxLayout(row);layout.setContentsMargins(0,0,0,0);layout.setSpacing(3)
+    layout.addWidget(value,1)
+    suffix=unit_label(unit);suffix.setFixedWidth(22)
+    policy=suffix.sizePolicy();policy.setRetainSizeWhenHidden(True);suffix.setSizePolicy(policy)
+    suffix.setAlignment(Qt.AlignmentFlag.AlignLeft|Qt.AlignmentFlag.AlignVCenter)
+    layout.addWidget(suffix)
+    return row,suffix
+
+
+def unit_label(unit):
+    suffix=label('' if unit=='meso' else unit,'expUnit')
+    if unit=='meso':
+        suffix.setPixmap(QPixmap(str(Path(__file__).parent/'resources/meso.svg')))
+        suffix.setAccessibleName('meso');suffix.setToolTip('meso')
+    return suffix
+
+
 def build(panel,layout,enabled,window_minutes=None):
     panel.setObjectName("experiencePage")
     panel.setStyleSheet("""
         QWidget#experiencePage { background: transparent; }
-        QFrame#expHero { background: #222b39; border: 1px solid #354255; border-radius: 12px; }
+        QFrame#expHero { background: #222b39; border: none; border-radius: 12px; }
+        QFrame#expHero QWidget { background: transparent; border: none; }
         QFrame#expHero QLabel { border: none; background: transparent; }
         QLabel#expEyebrow { color: #a6b3c5; font-size: 10px; font-weight: 600; }
+        QLabel#trackingHeading { color: #edf1f7; font-size: 15px; font-weight: 700; }
+        QLabel#expUnit { color: #b2bdcd; font-size: 11px; }
         QLabel#expIdentity { font-size: 14px; font-weight: 600; color: #edf1f7; }
         QLabel#expMap, QLabel#expMuted { color: #a7b2c2; font-size: 11px; }
         QLabel#trackingFigure { color: #edc68a; font-size: 20px; font-weight: 650; }
@@ -38,17 +61,19 @@ def build(panel,layout,enabled,window_minutes=None):
     layout.addWidget(panel.character);layout.addWidget(panel.map_label)
     hero=QFrame();hero.setObjectName("expHero")
     hero_layout=QVBoxLayout(hero);hero_layout.setContentsMargins(16,12,16,12);hero_layout.setSpacing(8)
-    hero_layout.addWidget(label('EXP','expEyebrow'))
+    panel.exp_heading=label('EXP','trackingHeading');hero_layout.addWidget(panel.exp_heading)
     rate_row=QHBoxLayout();rate_row.setSpacing(12)
-    panel.minute_caption=label("PROGRESS / MIN","expEyebrow")
-    panel.hour_caption=label("PROGRESS / HOUR","expEyebrow")
+    panel.minute_caption=label("Per minute","expEyebrow")
+    panel.hour_caption=label("Per hour","expEyebrow")
     panel.gain=number('—','trackingFigure')
     panel.rate=number("—","trackingFigure");panel.hour_rate=number("—","trackingFigure")
-    for caption,value in ((label('SESSION GAIN','expEyebrow'),panel.gain),(panel.minute_caption,panel.rate),(panel.hour_caption,panel.hour_rate)):
-        column=QVBoxLayout();column.setSpacing(5);column.addWidget(caption);column.addWidget(value);rate_row.addLayout(column,1)
+    panel.exp_units=[]
+    for caption,value in ((label('Session gain','expEyebrow'),panel.gain),(panel.minute_caption,panel.rate),(panel.hour_caption,panel.hour_rate)):
+        row,unit=with_unit(value,'');panel.exp_units.append(unit)
+        column=QVBoxLayout();column.setSpacing(5);column.addWidget(caption);column.addWidget(row);rate_row.addLayout(column,1)
     hero_layout.addLayout(rate_row)
     panel.raw_hint=label("","expMuted");panel.raw_hint.hide();hero_layout.addWidget(panel.raw_hint)
-    panel.observation=label("Press Start tracking to begin a session.","expMuted");hero_layout.addWidget(panel.observation)
+    panel.observation=label("","expMuted");hero_layout.addWidget(panel.observation)
     metrics=QHBoxLayout()
     panel.elapsed,panel.eta=[number("—","expMetric") for _ in range(2)]
     for title,widget in zip(("TIME WATCHING","NEXT LEVEL"),(panel.elapsed,panel.eta)):
@@ -57,14 +82,19 @@ def build(panel,layout,enabled,window_minutes=None):
     layout.addWidget(hero)
     money=QFrame();money.setObjectName('expHero')
     money_layout=QVBoxLayout(money);money_layout.setContentsMargins(16,10,16,10);money_layout.setSpacing(7)
-    money_layout.addWidget(label('MESOS', 'expEyebrow'))
+    panel.meso_heading=label('MESO','trackingHeading');panel.meso_heading.setProperty('currencyIcon',False);money_layout.addWidget(panel.meso_heading)
     metrics=QHBoxLayout();metrics.setSpacing(12)
     panel.meso_gain,panel.meso_rate,panel.meso_hour=[number('—','trackingFigure') for _ in range(3)]
-    for title,widget in zip(('NET CHANGE','PER MIN','PER HOUR'),(panel.meso_gain,panel.meso_rate,panel.meso_hour)):
-        column=QVBoxLayout();column.setSpacing(4);column.addWidget(label(title,'expEyebrow'));column.addWidget(widget);metrics.addLayout(column,1)
+    panel.meso_captions=[];panel.meso_units=[]
+    for title,widget in zip(('Net change','Per minute','Per hour'),(panel.meso_gain,panel.meso_rate,panel.meso_hour)):
+        row,unit=with_unit(widget,'meso');panel.meso_units.append(unit)
+        caption=label(title,'expEyebrow');panel.meso_captions.append(caption)
+        column=QVBoxLayout();column.setSpacing(4);column.addWidget(caption);column.addWidget(row);metrics.addLayout(column,1)
     money_layout.addLayout(metrics)
     wallet=QHBoxLayout();wallet.addWidget(label('Wallet balance','expMuted'))
-    panel.wallet_balance=number('—','expMuted');wallet.addWidget(panel.wallet_balance);wallet.addStretch();money_layout.addLayout(wallet)
+    panel.wallet_balance=number('—','expMuted');wallet.addWidget(panel.wallet_balance)
+    panel.wallet_unit=unit_label('meso');policy=panel.wallet_unit.sizePolicy();policy.setRetainSizeWhenHidden(True);panel.wallet_unit.setSizePolicy(policy)
+    wallet.addWidget(panel.wallet_unit);wallet.addStretch();money_layout.addLayout(wallet)
     panel.meso_status=label('', 'expMuted');money_layout.addWidget(panel.meso_status)
     layout.addWidget(money)
     controls=QHBoxLayout()
@@ -77,7 +107,7 @@ def build(panel,layout,enabled,window_minutes=None):
         button.setMinimumHeight(32);controls.addWidget(button,1)
     layout.addLayout(controls)
     options_row=QHBoxLayout()
-    panel.overlay_check=QCheckBox("Show EXP/Meso overlay in the game")
+    panel.overlay_check=QCheckBox("Show tracking overlay in the game")
     panel.overlay_check.setChecked(True);panel.overlay_check.toggled.connect(panel.overlay_changed.emit)
     options_row.addWidget(panel.overlay_check);layout.addLayout(options_row)
     panel.state=label("","expMuted");layout.addWidget(panel.state)
@@ -115,7 +145,7 @@ def build(panel,layout,enabled,window_minutes=None):
     filters.addWidget(panel.export_button)
     history.addLayout(filters)
     panel.table = QTableWidget(0,6)
-    panel.table.setHorizontalHeaderLabels(["Map / date","Level","Time","EXP gain","Progress / min","Net mesos"])
+    history_headers(panel)
     panel.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
     panel.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
     panel.table.setShowGrid(False)
@@ -128,3 +158,11 @@ def build(panel,layout,enabled,window_minutes=None):
     close.rejected.connect(panel.history_dialog.reject)
     history.addWidget(close)
     panel.history_button.clicked.connect(panel.history_dialog.open)
+
+
+def history_headers(panel):
+    panel.table.setHorizontalHeaderLabels(['Map / date','Level','Time',
+        'EXP gain' if panel.display_mode=='raw' else 'Progress gain','Per minute','Net'])
+    header=panel.table.horizontalHeaderItem(5)
+    header.setIcon(QIcon(str(Path(__file__).parent/'resources/meso.svg')))
+    header.setToolTip('Net mesos')

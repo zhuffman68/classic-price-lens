@@ -21,7 +21,7 @@ def application_identity():
     """Installed builds have a desktop entry; source runs get a separate hidden identity."""
     root = Path(__file__).resolve().parents[1]
     identity = "io.github.zhuffman68.ClassicPriceLens"
-    if (root / "bin/classic-screen-reader").is_file():
+    if any((root / "bin" / name).is_file() for name in ("lupin-screen-reader", "classic-screen-reader")):
         return identity
     from PySide6.QtCore import QStandardPaths
     identity += ".Development"
@@ -32,7 +32,7 @@ def application_identity():
         def value(text):
             return str(text).replace("\\", "\\\\").replace("\n", "\\n")
         program = str(sys.executable).replace("\\", "\\\\").replace('"', '\\"').replace("`", "\\`").replace("$", "\\$")
-        desktop.write_text("[Desktop Entry]\nType=Application\nName=Classic Price Lens (development)\nNoDisplay=true\n"
+        desktop.write_text("[Desktop Entry]\nType=Application\nName=Lupin (development)\nNoDisplay=true\n"
                            f'Exec="{program}" -m price_lens --capture\nPath={value(root)}\n'
                            f"Icon={value(root / 'price_lens/resources/icon.png')}\nTerminal=false\n")
     return identity

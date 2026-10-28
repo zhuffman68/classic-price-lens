@@ -1,5 +1,7 @@
 # Third-party components and sources
 
+- **Inter Variable 4.1**: Rasmus Andersson and contributors, SIL Open Font License 1.1. The unmodified font and license are bundled for consistent price/interface typography on Windows and Linux. Source: [Inter 4.1](https://github.com/rsms/inter/releases/tag/v4.1), `docs/font-files/InterVariable.ttf`, SHA-256 `4989b125924991b90d05b2d16e0e388c48f7d5bb8b30539bbf9c755278d0ccaf`.
+
 - **Minerva core**: [itechify/minerva](https://github.com/itechify/minerva), revision `7e1aa7d418fb255bd66eb4dce848fc9eb305cd81`, MIT. The cloned repository retains its `LICENSE` and notices. Only the headless Rust library is linked; no upstream OS adapters, telemetry, branding or game-control features are run. Upstream's OCR fixtures remain in the local vendor checkout.
 - **ocrs text-recognition.onnx**: Robert Knight, model unmodified, CC BY-SA 4.0. [Model](https://huggingface.co/robertknight/ocrs), [license](https://creativecommons.org/licenses/by-sa/4.0/). Full upstream notice: `vendor/minerva/crates/minerva-core/models/NOTICE.md`. ocrs/rten code uses MIT OR Apache-2.0.
 - **PySide6 / Qt**: LGPLv3/GPLv3/commercial options; see [Qt for Python licenses](https://doc.qt.io/qtforpython-6/licenses.html). Installed packages bundle unmodified shared libraries with their original license files; source checkouts can use system packages instead.
@@ -9,8 +11,7 @@
 - **Windows native TLS trust**: [truststore 0.10.5](https://github.com/sethmlarson/truststore), MIT. The verified wheel and its license ship only in the Windows runtime. HTTPS uses an explicitly supplied Windows-native verifying context, including configured proxy requests; no global SSL patch or certificate-verification bypass is used.
 - **Windows reader runtime**: LLVM `libunwind.dll` from the verified llvm-mingw 20261020 release, Apache-2.0 with LLVM exceptions and included notices. `licenses/LLVM-MinGW-LICENSE.txt` is included in the portable folder.
 - **Classic World reference catalog**: [OSMS Data Explorer](https://osmsdataexplorer.com/), cached locally at runtime, not bundled in our code.
-- **Market prices**: [NiaMeowDB Classic World](https://meowdb.com/msclassic/free-market), requested at runtime with a descriptive application User-Agent. The app visibly credits and links each reference.
-- **Whole-market prices**: [MesoWatch](https://meso.watch/), its live Classic World list read through a short-lived, installed browser. Snapshots stay in the user's local cache and are never bundled with source or releases. Individual fallback prices use NiaMeowDB.
+- **Whole-market prices**: [MesoWatch](https://meso.watch/), its live Classic World list read through a short-lived, installed browser. Snapshots stay in the user's local cache and are never bundled with source or releases. All price views share this snapshot; no individual price API requests are made.
 
 MapleStory item names, game artwork and screenshots belong to their respective owners, including Nexon. This is a local independent tool, without affiliation or approval implied.
 
@@ -33,7 +34,6 @@ The animated Lupin is original MapleStory monster artwork, copyright Nexon, obta
 
 The previous wordmark used Nexon's official MapleStory Bold typeface; the bundled font is retained as a Korean glyph fallback. Its unmodified TTF and the distributor's copyright notice are included in `price_lens/resources/fonts/`. Official source: https://maplestory.nexon.com/Media/Font .
 
-MesoWatch's public NiaDB ID index is used only to validate already-confirmed NiaMeowDB item mappings; it is separate from the whole-market price list. Source: https://meso.watch/js/niadb.js .
 
 ## Local Korean translation and revised header
 
@@ -45,6 +45,8 @@ MesoWatch's public NiaDB ID index is used only to validate already-confirmed Nia
 - **Header animations:** unmodified original GMS v83 Lupin GIFs from the public [MapleStory.io](https://maplestory.io/) game-data export API. Walk: https://maplestory.io/api/GMS/83/mob/3210800/render/move ; attack: https://maplestory.io/api/GMS/83/mob/3210800/render/attack1 . Underlying artwork belongs to Nexon. The earlier OSMS WebP preview omitted final frames. This original-game art reference does not establish current Classic World mechanics.
 
 ## Price-search item images
+
+The small meso unit graphic is a pixel-vector reference of the standard Classic World shop/inventory currency icon, observed through ordinary OS sharing. It contains only the static game symbol. Nexon owns the underlying MapleStory artwork; no installed game asset was accessed or user screen capture bundled.
 
 The price-search thumbnails use the public [OSMS Data Explorer](https://osmsdataexplorer.com/) current Classic World item images, matched by game item ID: `https://osmsdataexplorer.com/data/current/images/items/ID.png` (eight-digit ID). The underlying MapleStory item artwork belongs to Nexon. Images are fetched into a per-user cache, not bundled or inferred from a different game's catalog.
 

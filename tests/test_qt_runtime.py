@@ -8,7 +8,7 @@ import unittest
 
 
 class QtRuntimeTests(unittest.TestCase):
-    def test_capture_helper_isolates_plugins_and_initializes_media_without_capture(self):
+    def test_capture_helper_isolates_plugins_and_initializes_backend_without_capture(self):
         with tempfile.TemporaryDirectory() as temporary:
             folder = Path(temporary)
             foreign = folder / "foreign-qt-plugins"
@@ -24,11 +24,17 @@ class Probe(original):
     def __init__(self, app):
         assert sys.argv[1] not in app.libraryPaths(), app.libraryPaths()
         super().__init__(app)
-        from PySide6.QtMultimedia import QVideoFrame
-        image = QImage(2, 2, QImage.Format.Format_RGBA8888)
-        image.fill(0xff123456)
-        self.sink.setVideoFrame(QVideoFrame(image))
-        assert self.sink.videoFrame().isValid(), 'Media backend did not initialize'
+        if sys.platform == 'win32':
+            from price_lens.windows_capture import WindowsDesktopCapture
+            assert isinstance(self.capture, WindowsDesktopCapture)
+            assert self.session is None and self.sink is None
+            assert not self.capture.timer.isActive(), 'Desktop capture started during construction'
+        else:
+            from PySide6.QtMultimedia import QVideoFrame
+            image = QImage(2, 2, QImage.Format.Format_RGBA8888)
+            image.fill(0xff123456)
+            self.sink.setVideoFrame(QVideoFrame(image))
+            assert self.sink.videoFrame().isValid(), 'Media backend did not initialize'
         assert not self.capture.isActive(), 'Test must never start OS sharing'
         QTimer.singleShot(0, app.quit)
 stream.CaptureServer = Probe

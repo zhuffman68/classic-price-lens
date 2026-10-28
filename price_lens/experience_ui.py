@@ -201,8 +201,7 @@ class ExperiencePanel(QWidget):
         map_name = (run.map_name if run and run.map_name != 'Unlabelled map' else self.map_input.text().strip() or tracker.map_name)
         self.map_label.setText(map_name)
         self.map_label.setVisible(bool(map_name))
-        self.minute_caption.setText("EXP / MIN" if self.display_mode=="raw" else "PROGRESS / MIN")
-        self.hour_caption.setText("EXP / HOUR" if self.display_mode=="raw" else "PROGRESS / HOUR")
+        for unit in self.exp_units:unit.setText('EXP' if self.display_mode=='raw' else '')
         totals = self.totals()
         if run:
             window = self.paused_window if self.user_paused and self.paused_window else tracker.window(300)
@@ -214,9 +213,9 @@ class ExperiencePanel(QWidget):
             else:
                 self.rate.setText(f"{rate*60:+.2f}%" if rate is not None else "—")
                 self.hour_rate.setText(f"{rate*3600:+.1f}%" if rate is not None else "—")
-            self.raw_hint.setText(f"{prefix}{hour/60:,.0f} EXP/min · {prefix}{hour:,.0f} EXP/hour" if hour is not None else "Raw EXP rates appear with the first stable estimate.")
-            self.raw_hint.setVisible(self.display_mode=="both")
-            self.observation.setText(f"Smoothed over {duration_text(window['seconds'])} of recent training" if rate is not None else f"Building a pace estimate · {max(0,30-round(window['seconds']))}s remaining")
+            self.raw_hint.setText(f"{prefix}{hour/60:,.0f} EXP/min · {prefix}{hour:,.0f} EXP/hour" if hour is not None else '')
+            self.raw_hint.setVisible(self.display_mode=="both" and hour is not None)
+            self.observation.setText(f"Recent pace · {duration_text(window['seconds'])} of training" if rate is not None else f"Measuring pace · {max(0,30-round(window['seconds']))}s of readings remaining")
             approximate = self.watch_approximate or run.approximate_exp or any(r.approximate_exp for r in tracker.completed if r.started>=self.watch_epoch)
             total_prefix = "≈" if approximate else ""
             self.gain.setText(f"{total_prefix}{totals['exp']:+,.0f}" if self.display_mode=="raw" else f"{totals['progress']:+.2f}%")
@@ -224,8 +223,9 @@ class ExperiencePanel(QWidget):
             self.eta.setText(duration_text(window["eta"]) if rate is not None and rate>0 else "—")
         else:
             self.rate.setText("—");self.hour_rate.setText("—");self.raw_hint.hide()
-            self.observation.setText("Press Start tracking to begin a session." if not self.requested else "Waiting for a readable EXP bar…")
+            self.observation.setText('')
             self.gain.setText("—");self.elapsed.setText(duration_text(self.mesos.seconds));self.eta.setText("—")
+        self.observation.setVisible(bool(self.observation.text()))
         state=('' if not self.requested else
                "Screen reading is paused · tracking is held." if not self.connected else
                "Paused · elapsed time and gains are held." if self.user_paused else
@@ -244,6 +244,10 @@ class ExperiencePanel(QWidget):
         rate = wallet.rate(now) if self.requested and not self.user_paused else None
         self.meso_rate.setText(f'{rate:+,.0f}' if rate is not None else '—')
         self.meso_hour.setText(f'{rate*60:+,.0f}' if rate is not None else '—')
+        from .motion import fading_visibility
+        for unit,available in zip(self.meso_units,(wallet.observed,rate is not None,rate is not None)):
+            fading_visibility(unit,available)
+        fading_visibility(self.wallet_unit,wallet.current is not None)
         if not self.requested:
             status = 'Open the item inventory while tracking to read your wallet.'
         elif self.user_paused:
@@ -306,7 +310,8 @@ class ExperiencePanel(QWidget):
         self.filter.blockSignals(False)
         rows = [row for row in rows if not selected or row["character"] == selected]
         self.table.setRowCount(len(rows))
-        self.table.setHorizontalHeaderLabels(["Map / date","Level","Time","EXP gain" if self.display_mode=="raw" else "Progress gain","EXP / min" if self.display_mode=="raw" else "Progress / min","Net mesos"])
+        from .experience_widgets import history_headers
+        history_headers(self)
         self.history_button.setText(f"History · {len(rows)}" if rows else "History")
         bests = {}
         for index, row in enumerate(rows):

@@ -2,7 +2,7 @@
 # Resolve the installed prefix, including when validating a package in a test root.
 set -eu
 app_prefix=$(CDPATH= cd -- "$(dirname -- "$(readlink -f -- "$0")")/../.." && pwd)
-app_root="$app_prefix/opt/classic-price-lens"
+app_root="$app_prefix/opt/lupin"
 cd -- "$app_root"
 export QT_MEDIA_BACKEND=ffmpeg
 export RAYON_NUM_THREADS=2

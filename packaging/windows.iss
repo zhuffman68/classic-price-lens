@@ -1,5 +1,5 @@
 #ifndef AppVersion
-  #define AppVersion "0.13.0"
+  #define AppVersion "0.13.1"
 #endif
 #ifndef StageDir
   #define StageDir "..\dist\Lupin-Windows-x64"
@@ -15,7 +15,8 @@ AppPublisher=zhuffman68
 AppPublisherURL=https://github.com/zhuffman68/lupin
 AppSupportURL=https://github.com/zhuffman68/lupin/issues
 AppUpdatesURL=https://github.com/zhuffman68/lupin/releases
-DefaultDirName={localappdata}\Programs\Classic Price Lens
+DefaultDirName={code:InstallDirectory}
+UsePreviousAppDir=no
 DefaultGroupName=Lupin
 UsePreviousGroup=no
 DisableProgramGroupPage=yes
@@ -39,6 +40,9 @@ SetupLogging=yes
 [Tasks]
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Shortcuts:"; Flags: unchecked
 
+[Dirs]
+Name: "{app}"; Flags: uninsalwaysuninstall
+
 [Files]
 Source: "{#StageDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "__pycache__\*,*.pyc,*.sqlite*,build-manifest.json"
 
@@ -49,6 +53,9 @@ Name: "{autodesktop}\Lupin"; Filename: "{app}\runtime\pythonw.exe"; Parameters: 
 [InstallDelete]
 #include "..\dist\windows-trim-delete.iss"
 Type: files; Name: "{app}\classic-price-lens.ico"
+Type: files; Name: "{app}\bin\classic-screen-reader.exe"
+Type: files; Name: "{app}\price_lens\provider_index.py"
+Type: files; Name: "{app}\tests\test_provider_index.py"
 Type: files; Name: "{app}\lupin.ico"
 Type: files; Name: "{userprograms}\Classic Price Lens\Classic Price Lens.lnk"
 Type: dirifempty; Name: "{userprograms}\Classic Price Lens"
@@ -58,23 +65,87 @@ Type: files; Name: "{autodesktop}\Classic Price Lens.lnk"
 Filename: "{app}\runtime\pythonw.exe"; Parameters: "-B -m price_lens"; WorkingDir: "{app}"; Description: "Launch Lupin"; Flags: nowait postinstall skipifsilent
 
 [Code]
+var
+  MigratedFrom, MigratedTo: String;
+  InstallCommitted: Boolean;
+
+function PreviousInstallDirectory(): String;
+begin
+  Result := '';
+  RegQueryStringValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{1E77CC5D-AE19-4808-AD70-E009B578BA74}_is1', 'InstallLocation', Result);
+end;
+
+function LegacyDirectory(const Directory: String): Boolean;
+begin
+  Result := CompareText(ExtractFileName(RemoveBackslashUnlessRoot(Directory)), 'Classic Price Lens') = 0;
+end;
+
+function InstallDirectory(Param: String): String;
+var Previous: String;
+begin
+  Previous := PreviousInstallDirectory();
+  if (Previous <> '') and not LegacyDirectory(Previous) then
+    Result := Previous
+  else if Previous <> '' then
+    Result := AddBackslash(ExtractFileDir(RemoveBackslashUnlessRoot(Previous))) + 'Lupin'
+  else
+    Result := ExpandConstant('{localappdata}\Programs\Lupin');
+end;
+
 function CloseLens(): Boolean;
 var
-  Runtime: String;
+  Runtime, Directory: String;
   ExitCode: Integer;
 begin
-  Runtime := ExpandConstant('{app}\runtime\pythonw.exe');
+  Directory := ExpandConstant('{app}');
+  Runtime := AddBackslash(Directory) + 'runtime\pythonw.exe';
+  if not FileExists(Runtime) then begin
+    Directory := PreviousInstallDirectory();
+    if Directory <> '' then Runtime := AddBackslash(Directory) + 'runtime\pythonw.exe';
+  end;
   Result := True;
   if FileExists(Runtime) then
-    Result := Exec(Runtime, '-B -m price_lens --quit', ExpandConstant('{app}'), SW_HIDE,
+    Result := Exec(Runtime, '-B -m price_lens --quit', Directory, SW_HIDE,
                    ewWaitUntilTerminated, ExitCode) and (ExitCode = 0);
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
+var Previous, Target: String; Attempt: Integer;
 begin
   Result := '';
   if not CloseLens() then
     Result := 'Close Lupin, then try the installation again.';
+  if Result <> '' then Exit;
+  Previous := PreviousInstallDirectory(); Target := ExpandConstant('{app}');
+  if (Previous <> '') and LegacyDirectory(Previous) and DirExists(Previous) and
+     (CompareText(RemoveBackslashUnlessRoot(Previous), RemoveBackslashUnlessRoot(Target)) <> 0) then begin
+    if DirExists(Target) then begin
+      Result := 'Choose an empty Lupin folder so the existing installation can be moved safely.';
+      Exit;
+    end;
+    ForceDirectories(ExtractFileDir(Target));
+    for Attempt := 1 to 30 do begin
+      if RenameFile(Previous, Target) then begin
+        MigratedFrom := Previous; MigratedTo := Target;
+        Log('Moved the existing application folder to Lupin.');
+        Exit;
+      end;
+      Sleep(100);
+    end;
+    Result := 'The previous application folder is still in use. Close Lupin and retry.';
+  end;
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssPostInstall then InstallCommitted := True;
+end;
+
+procedure DeinitializeSetup();
+begin
+  if not InstallCommitted and (MigratedFrom <> '') and
+     DirExists(MigratedTo) and not DirExists(MigratedFrom) then
+    RenameFile(MigratedTo, MigratedFrom);
 end;
 
 function InitializeUninstall(): Boolean;
@@ -82,4 +153,32 @@ begin
   Result := CloseLens();
   if not Result and not UninstallSilent() then
     MsgBox('Close Lupin, then try uninstalling again.', mbError, MB_OK);
+end;
+
+procedure RemoveEmptyDirectories(const Directory: String);
+var Entry: TFindRec; Child: String;
+begin
+  if FindFirst(AddBackslash(Directory) + '*', Entry) then begin
+    try
+      repeat
+        if (Entry.Name <> '.') and (Entry.Name <> '..') and
+           ((Entry.Attributes and FILE_ATTRIBUTE_DIRECTORY) <> 0) and
+           ((Entry.Attributes and $400) = 0) then begin
+          Child := AddBackslash(Directory) + Entry.Name;
+          RemoveEmptyDirectories(Child);
+          RemoveDir(Child);
+        end;
+      until not FindNext(Entry);
+    finally FindClose(Entry); end;
+  end;
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  // A renamed installation's directories predate this install transaction.
+  // Remove empty residue only; additional user files are never deleted.
+  if CurUninstallStep = usPostUninstall then begin
+    RemoveEmptyDirectories(ExpandConstant('{app}'));
+    RemoveDir(ExpandConstant('{app}'));
+  end;
 end;

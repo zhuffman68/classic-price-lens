@@ -43,7 +43,7 @@ def main():
     shutil.copy2(ROOT / "packaging/icon.ico", OUT / "lupin-scaled.ico")
     (OUT / "bin").mkdir(exist_ok=True)
     if READER.is_file():
-        shutil.copy2(READER, OUT / "bin/classic-screen-reader.exe")
+        shutil.copy2(READER, OUT / "bin/lupin-screen-reader.exe")
         toolchain = ROOT / ".build-tools/llvm-mingw-20261020-ucrt-ubuntu-22.04-x86_64"
         shutil.copy2(toolchain / "x86_64-w64-mingw32/bin/libunwind.dll", OUT / "bin/libunwind.dll")
     else:

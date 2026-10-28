@@ -21,7 +21,7 @@ def request(command, name=None, timeout=3000):
     accepted = bytes(socket.readLine()) == b"ok\n"
     if accepted and command == "quit" and socket.state() != QLocalSocket.LocalSocketState.UnconnectedState:
         # Upgrade/uninstall may replace files only after the UI has shut down.
-        accepted = socket.waitForDisconnected(timeout)
+        accepted = socket.waitForDisconnected(max(timeout,10000))
     socket.abort()
     return accepted
 

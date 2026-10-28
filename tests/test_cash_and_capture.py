@@ -6,7 +6,7 @@ from unittest.mock import patch
 from PySide6.QtCore import QRect
 from PySide6.QtGui import QColor, QImage
 
-from price_lens.data import Cache, MeowProvider, load_catalog, parse_summary
+from price_lens.data import Cache, load_catalog
 from price_lens.domain import Catalog, compare
 from price_lens.stream import screen_pixels
 from price_lens.capture import pointer_in_shop
@@ -55,53 +55,28 @@ class CashTests(unittest.TestCase):
             self.assertIn("NX catalog unavailable", catalog.warning)
 
     def test_market_mesos_are_not_replaced_by_cash_shop_nx(self):
-        item = Catalog(BASE, CASH).resolve("Example Slot Coupon")
-        summary = {"itemId": 8, "condition": "clean", "newestPriceAt": "2033-05-18T03:33:20Z",
-                   "usual": 40000, "last24h": {"median": 44000, "count": 12}}
-        quote = parse_summary(item, summary, 8, 2_000_000_000)
-        result = compare(item, 1, 22000, quote, 2_000_000_000)
-        self.assertEqual(quote.price, 44000)
-        self.assertEqual(item.nx_price, 5000)
-        self.assertEqual(result.label, "Below reference")
-        self.assertEqual(result.delta, -50)
-
-    def test_cash_provider_still_checks_exact_name_and_game_id(self):
+        from test_snapshot import document
+        from price_lens.snapshot import SnapshotStore
+        item=Catalog(BASE,CASH).resolve('Example Slot Coupon');now=2_000_000_000
         with tempfile.TemporaryDirectory() as directory:
-            provider = MeowProvider(Cache(Path(directory) / "prices.sqlite"))
-            item = Catalog(BASE, CASH).resolve("Example Slot Coupon")
-            with patch("price_lens.data.get_json", return_value={"items": [
-                {"id": 8, "name": item.name, "iconKey": str(item.game_id), "type": "Cash"}
-            ]}):
-                self.assertEqual(provider.resolve_id(item), 8)
+            store=SnapshotStore(Cache(Path(directory)/'prices.sqlite'));doc=document(now)
+            doc['items'][0].update(id=f'cash:{item.game_id:08d}',name=item.name,price=44000,priceSales=12)
+            store.save(doc,now);quote=store.quote(item)
+        self.assertEqual(quote.price,44000);self.assertEqual(item.nx_price,5000)
+        self.assertEqual(compare(item,1,22000,quote,now).delta,-50)
 
-    def test_duplicate_name_is_narrowed_by_one_current_provider_item(self):
-        cash = {"categories": [{"items": [
-            {"id": 1007001, "name": "Example Uniform"}, {"id": 1007999, "name": "Example Uniform"}
-        ]}]}
-        catalog = Catalog(BASE, cash)
-        self.assertIsNone(catalog.resolve("Example Uniform"))
+    def test_current_snapshot_narrows_duplicates_only_with_one_exact_id(self):
+        from test_snapshot import document
+        from price_lens.snapshot import SnapshotStore
+        import time
+        cash={'categories':[{'items':[{'id':1007001,'name':'Example Uniform'},{'id':1007999,'name':'Example Uniform'}]}]}
+        catalog=Catalog(BASE,cash);candidates=catalog.candidates('Example Uniform');now=time.time()
         with tempfile.TemporaryDirectory() as directory:
-            provider = MeowProvider(Cache(Path(directory) / "prices.sqlite"))
-            with patch("price_lens.data.get_json", return_value={"hasMore": False, "items": [
-                {"id": 7, "name": "Example Uniform", "iconKey": "1007001"}
-            ]}):
-                item = provider.resolve_name("Example Uniform", catalog.candidates("Example Uniform"))
-        catalog.bind_current("Example Uniform", None, item)
-        self.assertEqual(catalog.resolve("Example Uniform").game_id, 1007001)
-
-    def test_two_current_provider_versions_are_still_ambiguous(self):
-        cash = {"categories": [{"items": [
-            {"id": 1007001, "name": "Example Uniform"}, {"id": 1007999, "name": "Example Uniform"}
-        ]}]}
-        catalog = Catalog(BASE, cash)
-        with tempfile.TemporaryDirectory() as directory:
-            provider = MeowProvider(Cache(Path(directory) / "prices.sqlite"))
-            with patch("price_lens.data.get_json", return_value={"hasMore": False, "items": [
-                {"id": 7, "name": "Example Uniform", "iconKey": "1007001"},
-                {"id": 8, "name": "Example Uniform", "iconKey": "1007999"}
-            ]}):
-                with self.assertRaises(ValueError):
-                    provider.resolve_name("Example Uniform", catalog.candidates("Example Uniform"))
+            store=SnapshotStore(Cache(Path(directory)/'prices.sqlite'));doc=document(now)
+            doc['items'][0].update(id='cash:01007001',name='Example Uniform');store.save(doc,now)
+            self.assertEqual(store.identify(candidates).game_id,1007001)
+            doc['items'].append(dict(doc['items'][0],id='cash:01007999'));store.save(doc,now)
+            self.assertIsNone(store.identify(candidates))
 
 
 class CaptureGeometryTests(unittest.TestCase):

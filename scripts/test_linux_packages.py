@@ -87,8 +87,8 @@ def main():
     # Slim OCI images exclude documentation. Include our package's docs so the
     # check validates every shipped file, as on a normal desktop installation.
     (folder / "etc/dpkg/dpkg.cfg.d/zz-classic-lens-test").write_text(
-        'path-include=/usr/share/doc/classic-price-lens\n'
-        'path-include=/usr/share/doc/classic-price-lens/*\n')
+        'path-include=/usr/share/doc/lupin\n'
+        'path-include=/usr/share/doc/lupin/*\n')
     print("Verified official test root:", folder, flush=True)
     if args.prepare_only:
         return
@@ -110,19 +110,18 @@ def main():
         marker.write_text('Preserve user data during package migration.\n')
         run(folder, ["apt-get", "install", "-y", "--no-install-recommends", "/mnt/packages/" + package.name,
                      "xvfb", "xauth", "fonts-dejavu-core", "libxtst6"], log)
-        run(folder, ["classic-price-lens", "--version"], log)
         run(folder, ["lupin", "--version"], log)
-        run(folder, ["test", "-L", "/usr/bin/lupin"], log)
+        run(folder, ["test", "-f", "/usr/bin/lupin"], log)
         run(folder, ["test", "-f", "/usr/share/pipewire/client.conf"], log)
-        run(folder, ["classic-price-lens", "--self-test"], log)
-        run(folder, ["env", "QT_QPA_PLATFORM=xcb", "xvfb-run", "-a", "classic-price-lens", "--self-test"], log)
-        run(folder, ["sh", "-c", "cd /opt/classic-price-lens && QT_QPA_PLATFORM=xcb CLASSIC_LENS_TEST_X11=1 xvfb-run -a runtime/bin/python3 -B -m unittest discover -s tests -p test_hotkeys.py -v"], log)
-        run(folder, ["sh", "-c", "cd /opt/classic-price-lens && QT_QPA_PLATFORM=offscreen runtime/bin/python3 -m unittest discover -s tests -q"], log)
+        run(folder, ["lupin", "--self-test"], log)
+        run(folder, ["env", "QT_QPA_PLATFORM=xcb", "xvfb-run", "-a", "lupin", "--self-test"], log)
+        run(folder, ["sh", "-c", "cd /opt/lupin && QT_QPA_PLATFORM=xcb CLASSIC_LENS_TEST_X11=1 xvfb-run -a runtime/bin/python3 -B -m unittest discover -s tests -p test_hotkeys.py -v"], log)
+        run(folder, ["sh", "-c", "cd /opt/lupin && QT_QPA_PLATFORM=offscreen runtime/bin/python3 -m unittest discover -s tests -q"], log)
         run(folder, ["dpkg", "--verify", "lupin"], log)
         run(folder, ["md5sum", "--check", "--quiet", "/var/lib/dpkg/info/lupin.md5sums"], log)
         run(folder, ["apt-get", "remove", "-y", "lupin"], log)
         run(folder, ["test", "!", "-e", "/usr/bin/classic-price-lens"], log)
-        run(folder, ["test", "!", "-L", "/usr/bin/lupin"], log)
+        run(folder, ["test", "!", "-e", "/usr/bin/lupin"], log)
         assert marker.is_file(),'Package migration/removal changed user data'
     print("PASS: install, offline OCR/overlay, X11 plugin, tests, package checksums and removal:", args.image, args.tag, flush=True)
     print("Log:", log_path, flush=True)

@@ -11,7 +11,7 @@ from package_common import ROOT, stage_application, stage_notices, assert_public
 from trim_runtime import trim
 
 STAGE = ROOT / "dist/linux-root"
-OUT = STAGE / "opt/classic-price-lens"
+OUT = STAGE / "opt/lupin"
 DOWNLOADS = ROOT / ".build-tools/linux-downloads"
 
 
@@ -47,17 +47,17 @@ def main():
     trim(OUT,'linux')
     (OUT / "bin").mkdir()
     reader = ROOT / "reader/target/x86_64-unknown-linux-musl/release/classic-screen-reader"
-    shutil.copy2(reader, OUT / "bin/classic-screen-reader")
+    shutil.copy2(reader, OUT / "bin/lupin-screen-reader")
     stage_application(OUT)
     stage_notices(OUT)
     (OUT / "runtime-sources.json").write_text(json.dumps(manifest, indent=2) + "\n")
     destinations = {
-        "packaging/classic-price-lens": "usr/bin/classic-price-lens",
+        "packaging/lupin": "usr/bin/lupin",
         "packaging/classic-price-lens.desktop": "usr/share/applications/io.github.zhuffman68.ClassicPriceLens.desktop",
         "price_lens/resources/icon.png": "usr/share/icons/hicolor/256x256/apps/io.github.zhuffman68.Lupin-scaled.png",
         "price_lens/resources/icon.svg": "usr/share/icons/hicolor/scalable/apps/io.github.zhuffman68.Lupin-scaled.svg",
-        "README.md": "usr/share/doc/classic-price-lens/README.md",
-        "THIRD_PARTY.md": "usr/share/doc/classic-price-lens/copyright",
+        "README.md": "usr/share/doc/lupin/README.md",
+        "THIRD_PARTY.md": "usr/share/doc/lupin/copyright",
     }
     for size in (16,20,22,24,28,32,40,48,56,64,96,128):
         destinations[f"price_lens/resources/icon-{size}.png"] = (
@@ -66,9 +66,7 @@ def main():
         target = STAGE / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(ROOT / source, target)
-    (STAGE / "usr/bin/classic-price-lens").chmod(0o755)
-    alias = STAGE / "usr/bin/lupin"
-    alias.symlink_to("classic-price-lens")
+    (STAGE / "usr/bin/lupin").chmod(0o755)
     # ZIP wheel extraction does not preserve executable permissions for Qt helpers.
     for path in (site / "PySide6/Qt/libexec").glob("*"):
         if path.is_file():

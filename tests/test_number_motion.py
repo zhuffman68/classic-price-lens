@@ -65,6 +65,28 @@ class WindowSizeTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):NumberMotionTests.setUpClass();cls.app=NumberMotionTests.app
 
+    def test_screen_filling_saved_geometry_reopens_at_compact_width(self):
+        class Settings:
+            def value(self,key,default=None):
+                return QSize(1896,948) if key=='window-size' else default
+        window=QWidget();window_size.restore(window,Settings())
+        self.assertEqual(window.width(),460)
+        self.assertLess(window.width(),self.app.primaryScreen().availableGeometry().width()*.95)
+        window.close();window.deleteLater()
+
+    def test_normal_state_desktop_geometry_does_not_replace_the_last_compact_size(self):
+        class Settings:
+            def __init__(self):self.values={}
+            def value(self,key,default=None):return self.values.get(key,default)
+            def setValue(self,key,value):self.values[key]=value
+        settings=Settings();window=QWidget();window_size.restore(window,settings)
+        compact=window.size()
+        window.resize(self.app.primaryScreen().availableGeometry().size())
+        window_size.remember(window);window_size.save(window,settings)
+        self.assertEqual(window._normal_size,compact)
+        self.assertEqual(settings.value('window-size'),compact)
+        window.close();window.deleteLater()
+
     def test_normal_size_survives_reopen_and_oversized_saved_size_is_clamped(self):
         class Settings:
             values={}

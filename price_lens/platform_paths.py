@@ -9,8 +9,10 @@ from PySide6.QtCore import QStandardPaths
 
 def reader_binary(root):
     root = Path(root)
-    name = "classic-screen-reader.exe" if sys.platform == "win32" else "classic-screen-reader"
-    choices = [root / "bin" / name, root / "reader/target/release" / name, root / "reader/target/debug" / name]
+    extension = ".exe" if sys.platform == "win32" else ""
+    name = "classic-screen-reader" + extension
+    choices = [root / "bin" / ("lupin-screen-reader" + extension), root / "bin" / name,
+               root / "reader/target/release" / name, root / "reader/target/debug" / name]
     return next((path for path in choices if path.is_file()), choices[-1])
 
 

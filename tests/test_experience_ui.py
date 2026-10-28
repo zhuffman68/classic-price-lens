@@ -69,6 +69,45 @@ class ExperienceUiTests(unittest.TestCase):
         self.assertNotIn("EXP/min",self.panel.overlay_row()["text"])
         self.assertTrue(self.panel.overlay_row()["name"].startswith("Lv."))
 
+    def test_units_and_rate_labels_remain_consistent_in_each_mode(self):
+        self.train()
+        self.assertEqual(self.panel.minute_caption.text(), 'Per minute')
+        self.assertEqual(self.panel.hour_caption.text(), 'Per hour')
+        self.assertEqual([w.text() for w in self.panel.meso_captions][1:], ['Per minute','Per hour'])
+        self.assertEqual([w.accessibleName() for w in self.panel.meso_units], ['meso']*3)
+        self.assertTrue(all(not w.pixmap().isNull() for w in self.panel.meso_units))
+        self.assertTrue(all('%' in w.text() for w in (self.panel.gain,self.panel.rate,self.panel.hour_rate)))
+        self.panel.set_display('raw')
+        self.assertEqual([w.text() for w in self.panel.exp_units], ['EXP']*3)
+        self.panel.set_display('both')
+        self.assertTrue(all('%' in w.text() for w in (self.panel.gain,self.panel.rate,self.panel.hour_rate)))
+        self.assertIn('EXP/min', self.panel.raw_hint.text())
+
+    def test_meso_units_wait_for_numbers_without_moving_the_columns(self):
+        self.panel.show();self.app.processEvents()
+        self.assertEqual(self.panel.meso_heading.text(),'MESO')
+        self.assertTrue(all(unit.isHidden() for unit in self.panel.meso_units))
+        before=[value.geometry() for value in (self.panel.meso_gain,self.panel.meso_rate,self.panel.meso_hour)]
+        self.panel.set_connected(True);self.panel.start()
+        for _ in range(2):
+            self.now+=1;self.panel.feed({'atMs':int(self.now*1000),'walletRead':True,'wallet':{'mesos':70000}})
+        self.app.processEvents()
+        self.assertFalse(self.panel.meso_units[0].isHidden())
+        self.assertTrue(self.panel.meso_units[1].isHidden())
+        self.assertTrue(self.panel.meso_units[2].isHidden())
+        self.assertEqual([value.geometry() for value in (self.panel.meso_gain,self.panel.meso_rate,self.panel.meso_hour)],before)
+
+    def test_warmup_is_explicit_only_during_a_session(self):
+        self.assertEqual(self.panel.observation.text(), '')
+        self.assertTrue(self.panel.observation.isHidden())
+        self.panel.set_connected(True);self.panel.start();self.feed(2000)
+        self.assertIn('Measuring pace', self.panel.observation.text())
+        self.assertIn('30s', self.panel.observation.text())
+        for _ in range(31):self.feed(self.panel.tracker.current.exp+10,1)
+        self.assertNotIn('remaining', self.panel.observation.text())
+        self.panel.stop()
+        self.assertTrue(self.panel.observation.isHidden())
+
     def test_exp_and_meso_rate_columns_align_at_compact_and_wide_sizes(self):
         self.train();self.panel.show()
         for width in (428,608):

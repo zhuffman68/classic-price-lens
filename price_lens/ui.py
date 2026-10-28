@@ -21,7 +21,8 @@ from .tray import TrayController
 from .experience_ui import ExperiencePanel
 from .platform_paths import data_directory
 from .search import PriceSearch
-from .motion import AnimatedTabs, MotionLabel, reveal
+from .motion import AnimatedTabs, MotionLabel, reveal, fade_away
+from .fonts import interface_family
 from .branding import Brand
 from .shop_rows import ShopRows
 from .tooltip_geometry import description_bounds, still_present, TooltipReference
@@ -37,7 +38,6 @@ from .capture_platform import uses_system_picker
 from .window_policy import NormalWindow, is_maximize_message
 from .tls import catalog_error_text
 from .watchlist import Watchlist, WatchEncounters
-from .watchlist_ui import WatchlistDialog
 from . import APP_NAME, LEGACY_APP_NAME
 
 COLORS = {"green": "#86ceac", "red": "#ed9394", "amber": "#e4bd7b", "blue": "#9ebde3", "muted": "#98a3b1"}
@@ -114,7 +114,6 @@ class LensWindow(QMainWindow):
         self.shop_tooltip_clipped=False
         self.quotes = {}
         self.errors = {}
-        self.expanded_details = set()
         self.mode = "idle"
         self.snapshot_path = snapshot
         self.last_screen = 0
@@ -135,7 +134,7 @@ class LensWindow(QMainWindow):
         shortcuts=load_shortcuts(self.settings)
         self.first_price_seen = self.settings.value("first-price-seen", False, type=bool)
         self.labels_enabled = self.settings.value("show-prices", True, type=bool)
-        self.pinned = self.settings.value("keep-on-top", False, type=bool)
+        self.settings.setValue("keep-on-top", False)
         self.minimize_to_tray = self.settings.value("minimize-to-tray", True, type=bool)
         self.auto_game_area = self.settings.value("auto-game-area", True, type=bool)
         self.exp_enabled = False
@@ -144,7 +143,7 @@ class LensWindow(QMainWindow):
         if self.exp_display not in ("percent","raw","both"):self.exp_display = "percent"
         self.reduce_motion = self.settings.value("reduce-motion", False, type=bool)
         QApplication.instance().setProperty("reduceMotion", self.reduce_motion)
-        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, self.pinned)
+        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, False)
         self.ttl = self.settings.value("cache-ttl", DEFAULT_TTL, type=int)
         if self.ttl not in (300, 900, 1800, 3600):
             self.ttl = DEFAULT_TTL
@@ -206,13 +205,12 @@ class LensWindow(QMainWindow):
             self.hotkeys.actions['compose-korean']={'key':self.write_sequence,'description':'Write English and copy a Korean translation',
                 'activate':self.write_hotkeys.activated.emit,'changed':self.write_hotkeys.changed.emit,'token':self.write_hotkeys.activation_token.emit}
         self.hover_enabled = self.settings.value("tooltip-prices", True, type=bool)
-        self.bulk_enabled = self.settings.value("full-market-cache", True, type=bool)
         self.tooltip_result = None
         self.shop_tooltip_active = False
         self.service = PriceService(cache_path, self)
         self.thumbnails=ThumbnailCache(Path(cache_path).parent/'item-thumbnails-v1',self)
-        self.service.refresh_index = True
-        self.service.refresh_snapshot = self.bulk_enabled
+        self.service.refresh_snapshot = True
+        self.service.set_refresh_interval(self.ttl)
         self.reader = PixelReader(root, self)
         self.reader.auto_enabled = self.auto_game_area
         self.reader.tooltip_enabled = self.hover_enabled and self.labels_enabled and self.prices_enabled
@@ -331,13 +329,13 @@ class LensWindow(QMainWindow):
         self.tabs.addTab(self.prices_page, "Prices")
         self.search_panel = PriceSearch(self)
         self.search_panel.set_watchlist(self.watchlist)
-        self.search_panel.watchlist_requested.connect(self.open_watchlist)
         self.watchlist.changed.connect(self.on_watchlist_changed)
         self.search_panel.ttl = self.ttl
         self.search_panel.item_selected.connect(self.on_search_item)
         self.search_panel.identity_selected.connect(self.on_search_identity)
         self.search_panel.source_requested.connect(self.open_source)
         self.search_panel.set_thumbnails(self.thumbnails)
+        self.thumbnails.ready.connect(self.on_shop_thumbnail)
         self.search_panel.catalog_retry.connect(self.retry_catalog)
         self.prices_layout=prices_layout
         prices_layout.insertWidget(0,self.search_panel)
@@ -345,6 +343,7 @@ class LensWindow(QMainWindow):
         self.onscreen_button.setCheckable(True);self.onscreen_button.toggled.connect(self.update_price_layout)
         prices_layout.insertWidget(1,self.onscreen_button)
         self.search_panel.active_changed.connect(self.update_price_layout)
+        self.search_panel.watched_items.visible_changed.connect(self.update_price_layout)
         self.search_tab_index=0
         self.exp_scroll = QScrollArea()
         self.exp_scroll.setWidgetResizable(True)
@@ -375,7 +374,7 @@ class LensWindow(QMainWindow):
         self.status_label.setVisible(False)
         self.setCentralWidget(body)
         self.setStyleSheet("""
-            QMainWindow, QWidget { background: #171c25; color: #dce1e8; font-family: 'Noto Sans', sans-serif; font-size: 12px; }
+            QMainWindow, QWidget { background: #171c25; color: #dce1e8; font-family: 'INTERFACE_FONT'; font-size: 12px; }
             QLabel { background: transparent; }
             QPushButton, QComboBox, QKeySequenceEdit { background: #252d3b; border: 1px solid #354052; border-radius: 6px; padding: 7px 9px; }
             QPushButton:hover { background: #323c4c; border-color: #927b58; }
@@ -390,9 +389,16 @@ class LensWindow(QMainWindow):
             QPushButton#quiet { background: transparent; border: 0; color: #b1bac7; padding: 5px 2px; text-align: left; }
             QPushButton#quiet:hover { color: #ebc483; }
             QCheckBox { color: #b5bfcc; padding: 3px 0; }
+            QCheckBox:hover, QCheckBox:checked { color:#f0deb9; }
+            QCheckBox::indicator { width:16px;height:16px;border:1px solid #687991;border-radius:4px;background:#1b2534; }
+            QCheckBox::indicator:hover { border-color:#e2b66d;background:#303748; }
+            QCheckBox::indicator:checked { background:#d9ad66;border-color:#f0ca8d;image:url(CHECK_ICON); }
+            QCheckBox::indicator:checked:hover { background:#edc482; }
+            QCheckBox::indicator:disabled { background:#242c37;border-color:#3e4856; }
+            QCheckBox::indicator:checked:disabled { background:#746447;border-color:#9b8358; }
             QScrollArea, QScrollArea > QWidget > QWidget { background: transparent; }
             QFrame#card, QFrame#setup { background: #202734; border: 1px solid #303b4b; border-radius: 9px; }
-            QFrame#card QLabel, QFrame#setup QLabel, QWidget#cardDetails, QWidget#displayMap { background: transparent; border: none; }
+            QFrame#card QLabel, QFrame#setup QLabel, QWidget#displayMap { background: transparent; border: none; }
             QScrollBar:vertical { background: #171c25; width: 6px; }
             QScrollBar::handle:vertical { background: #455064; border-radius: 3px; min-height: 20px; }
             QTabWidget::pane { border: 0; padding-top: 6px; }
@@ -400,6 +406,7 @@ class LensWindow(QMainWindow):
             QTabBar::tab:selected { background: #303d51; color: #f1e1c6; }
             QTabBar::tab:hover:!selected { background: #222d3d; color: #dce4ef; }
         """)
+        self.setStyleSheet(self.styleSheet().replace('INTERFACE_FONT',interface_family()).replace('CHECK_ICON',str(Path(__file__).parent/'resources/check.svg').replace('\\','/')))
         self.exp_panel.set_display(self.exp_display)
         self.overlay.reduce_motion = self.reduce_motion
         self.build_settings()
@@ -416,6 +423,8 @@ class LensWindow(QMainWindow):
         self.render()
         QApplication.instance().screenAdded.connect(self.refresh_monitors)
         QApplication.instance().screenRemoved.connect(self.refresh_monitors)
+        self.watch_display_geometry()
+        QTimer.singleShot(0,self,lambda:window_size.fit_default(self))
         if QApplication.platformName() != "offscreen":
             QTimer.singleShot(700, self.initialize_hotkey)
         if self.chat_enabled:
@@ -452,7 +461,7 @@ class LensWindow(QMainWindow):
         self.hover_check.setEnabled(self.labels_enabled)
         self.hover_check.toggled.connect(self.set_hover)
         layout.addWidget(self.hover_check)
-        self.exp_overlay_check = QCheckBox("Show EXP/Meso tracker in the bottom-left of the game")
+        self.exp_overlay_check = QCheckBox("Show tracking overlay in the bottom-left of the game")
         self.exp_overlay_check.setChecked(self.exp_overlay)
         self.exp_overlay_check.toggled.connect(self.set_exp_overlay)
         layout.addWidget(self.exp_overlay_check)
@@ -467,10 +476,6 @@ class LensWindow(QMainWindow):
         self.motion_check.setChecked(self.reduce_motion)
         self.motion_check.toggled.connect(self.set_reduce_motion)
         layout.addWidget(self.motion_check)
-        self.pin_check = QCheckBox("Keep the control panel on top")
-        self.pin_check.setChecked(self.pinned)
-        self.pin_check.toggled.connect(self.pin)
-        layout.addWidget(self.pin_check)
         self.tray_check = QCheckBox("Minimize to the system tray")
         self.tray_check.setChecked(self.minimize_to_tray)
         self.tray_check.toggled.connect(self.set_minimize_to_tray)
@@ -482,19 +487,15 @@ class LensWindow(QMainWindow):
         def open_translation():
             self.settings_dialog.close();self.tabs.setCurrentIndex(self.translation_tab_index)
         translation_settings.clicked.connect(open_translation);layout.addWidget(translation_settings)
-        self.bulk_check = QCheckBox("Cache the full market on launch and hourly")
-        self.bulk_check.setChecked(self.bulk_enabled)
-        self.bulk_check.toggled.connect(self.set_bulk_enabled)
-        layout.addWidget(self.bulk_check)
-        layout.addWidget(label("Uses an installed Chrome, Edge or Chromium briefly in the background, then closes it. Saved prices stay available if an update fails.", "font-size: 11px; color: #a6b1bf", True))
-        layout.addWidget(label("Per-item fallback interval", "font-size: 13px; font-weight: 650"))
+        layout.addWidget(label("Downloads the full market on launch, then at the interval below. Chrome, Edge or Chromium is required and closes after each update. Saved references remain available if an update fails.", "font-size: 11px; color: #a6b1bf", True))
+        layout.addWidget(label("Refresh all prices every", "font-size: 13px; font-weight: 650"))
         self.ttl_combo = QComboBox()
         for minutes in (5, 15, 30, 60):
             self.ttl_combo.addItem(f"{minutes} minutes" + (" · recommended" if minutes == 15 else ""), minutes * 60)
         self.ttl_combo.setCurrentIndex((300, 900, 1800, 3600).index(self.ttl))
         self.ttl_combo.currentIndexChanged.connect(lambda index: self.set_ttl(self.ttl_combo.itemData(index)))
         layout.addWidget(self.ttl_combo)
-        layout.addWidget(label("Used when the full-market cache has no matching price. Visible references may refresh up to 30 seconds early. Pausing stops item lookups. Price ages remain visible.", "font-size: 11px; color: #a6b1bf", True))
+        layout.addWidget(label("One shared update supplies the overlay, search and watched items. No individual price lookups. Expired references lose their deal colors until fresh data arrives.", "font-size: 11px; color: #a6b1bf", True))
         layout.addWidget(label("Troubleshooting", "font-size: 15px; font-weight: 650"))
         self.crop_button = QPushButton("Limit the reading area…")
         self.crop_button.clicked.connect(self.crop)
@@ -531,14 +532,46 @@ class LensWindow(QMainWindow):
 
     def update_price_layout(self,*_):
         if not hasattr(self,"onscreen_button"):return
-        active=bool(self.search_panel.query.text().strip())
+        watching=self.search_panel.watched_items.expanded
+        active=bool(self.search_panel.query.text().strip() or self.search_panel.selected or
+                    self.search_panel.pending_identity or watching)
         self.onscreen_button.setVisible(active and bool(self.rows))
         self.onscreen_button.setText(f"On-screen items · {len(self.rows)}"+ (" ▾" if self.onscreen_button.isChecked() else " ▸"))
-        self.scroll.setVisible(not active or self.onscreen_button.isChecked())
+        show=not active or self.onscreen_button.isChecked()
+        if self.scroll.isHidden()==show:
+            if not show:fade_away(self.scroll)
+            self.scroll.setVisible(show)
+            if show:reveal(self.scroll)
         self.scroll.setMaximumHeight(220 if active else 16777215)
         self.summary.setVisible(not active or self.onscreen_button.isChecked())
         self.prices_layout.setStretch(self.prices_layout.indexOf(self.search_panel),1 if active else 0)
         self.prices_layout.setStretch(self.prices_layout.indexOf(self.scroll),0 if active else 1)
+        self.update_shop_thumbnails()
+        if watching:self.update_watched_quotes()
+
+    def update_watched_quotes(self):
+        section=self.search_panel.watched_items
+        if not self.catalog:return
+        for identity in section.visible_ids():
+            item=next((item for item in self.catalog.items if item.game_id==identity),None)
+            quote=self.service.cached(item) if item else None
+            section.set_quote(identity,quote,time.time(),self.ttl)
+
+    def update_shop_thumbnails(self):
+        if not hasattr(self,'card_views'):return
+        items=[]
+        if self.tabs.currentIndex()==0 and not self.scroll.isHidden() and self.catalog:
+            for card in self.card_views.values():
+                identity=card.property('gameItemId')
+                if identity:
+                    item=next((item for item in self.catalog.items if item.game_id==identity),None)
+                    if item:items.append(item)
+        self.search_panel.set_screen_items(items)
+
+    def on_shop_thumbnail(self,identity):
+        image=self.thumbnails.image(identity)
+        for card in self.card_views.values():
+            if card.property('gameItemId')==identity:card.thumbnail.set_image(image)
 
     def on_chat_changed(self):
         if self.closing:return
@@ -670,12 +703,6 @@ class LensWindow(QMainWindow):
         self.reader.last_experience = 0
         self.render()
 
-    def set_bulk_enabled(self, enabled):
-        self.bulk_enabled = enabled
-        self.settings.setValue("full-market-cache", enabled)
-        self.service.set_snapshot_enabled(enabled)
-        self.update_price_status()
-
     def on_tab_changed(self, index):
         self.update_shortcut_footer()
         self.update_price_layout()
@@ -708,11 +735,6 @@ class LensWindow(QMainWindow):
             self.service.set_manual(item,self.ttl)
         if item and item.game_id in self.quotes:
             self.search_panel.accept_quote(item.game_id,self.quotes[item.game_id])
-
-    def open_watchlist(self):
-        dialog = WatchlistDialog(self.watchlist, self)
-        dialog.exec()
-        dialog.deleteLater()
 
     def on_watchlist_changed(self):
         self.draw_labels(time.time(), time.time()-self.last_screen > 3)
@@ -854,12 +876,6 @@ class LensWindow(QMainWindow):
         self.hotkey_button.setToolTip(message)
         self.status_label.setText(message)
 
-    def pin(self, checked):
-        self.pinned = checked
-        self.settings.setValue("keep-on-top", checked)
-        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, checked)
-        self.show()
-
     def selected_display(self):
         if self.screen_index is None or self.screen_index >= len(self.screens):
             return "your display"
@@ -887,7 +903,7 @@ class LensWindow(QMainWindow):
                 if time.monotonic() - self.starting_at > 10:
                     hint += " The dialog may be behind another window; finish it or cancel setup below."
                 return ("Waiting for screen sharing", hint, "amber", "")
-            return ("Starting screen reading", f"Connecting to {display}. No additional system sharing dialog is needed.", "amber", "")
+            return ("Starting screen reading", f"Connecting to {display}.", "amber", "")
         if self.mode == "paused":
             return ("Paused", "Labels are hidden and price lookups are paused. Resume reuses your sharing session." if self.session_available else "Labels are hidden. Resume will reconnect your display.", "muted", "")
         if self.mode == "live":
@@ -1045,6 +1061,12 @@ class LensWindow(QMainWindow):
             self.settings.setValue("monitor-name", "")
         self.render()
 
+    def watch_display_geometry(self):
+        previous = getattr(self, "geometry_screens", [])
+        for screen in self.screens:
+            if screen not in previous:screen.geometryChanged.connect(self.refresh_monitors)
+        self.geometry_screens = list(self.screens)
+
     def refresh_monitors(self, *args):
         previously_selected = self.screen_index is not None and 0 <= self.screen_index < len(self.screens)
         selected_name = self.settings.value("monitor-name", "")
@@ -1053,6 +1075,7 @@ class LensWindow(QMainWindow):
             except RuntimeError:pass
         was_live = self.mode == "live"
         self.screens = sorted(QApplication.screens(), key=lambda screen: (screen.geometry().x(), screen.geometry().y()))
+        self.watch_display_geometry()
         self.monitor.blockSignals(True)
         self.monitor.clear()
         chosen = None
@@ -1340,6 +1363,8 @@ class LensWindow(QMainWindow):
         failed = any((item := self.catalog.resolve(row.get("name"), row.get("tier")))
                      and item.game_id in self.errors for row in observations)
         snapshot = self.service.snapshot_summary() if hasattr(self.service, "snapshot_summary") else ""
+        updater=getattr(self.service,'snapshot_updater',None)
+        self.search_panel.set_market_status(snapshot if updater and (updater.busy or updater.error) else '',bool(updater and updater.error))
         self.status_label.setText("Some market references are unavailable; cached prices are kept." if failed else snapshot or "Market references cached locally")
 
     def tick(self):
@@ -1356,17 +1381,12 @@ class LensWindow(QMainWindow):
         self.ttl = value
         self.settings.setValue("cache-ttl", value)
         self.search_panel.ttl = value
+        self.service.set_refresh_interval(value)
         if self.tabs.currentIndex() == self.search_tab_index:
             panel = self.search_panel
             self.service.set_manual(panel.selected,value,identity=panel.pending_identity,candidates=panel.pending_candidates)
         self.request_prices()
         self.render()
-
-    def set_details_open(self, key, expanded):
-        if expanded:
-            self.expanded_details.add(key)
-        else:
-            self.expanded_details.discard(key)
 
     def quote_for(self, item):
         quote = self.quotes.get(item.game_id) if item else None
@@ -1389,7 +1409,8 @@ class LensWindow(QMainWindow):
         elif self.mode == "paused":
             title, detail = "Reading is paused", "Resume to show price labels again."
         elif self.capture_starting:
-            title, detail = "Finish screen sharing", "Use the OS chooser to share the selected display or the full workspace. This panel will update when a screen arrives."
+            title, detail = (("Finish screen sharing", "Use the OS chooser to share the selected display or the full workspace.")
+                             if uses_system_picker() else ("Connecting to the display", "Waiting for the first image…"))
         elif self.catalog_error:
             title, detail = "Item names are unavailable", self.catalog_error
         elif self.catalog_loading:
@@ -1436,7 +1457,7 @@ class LensWindow(QMainWindow):
         tooltip_content = {key: value for key, value in self.tooltip_result.items() if key not in ("area", "_pointer")} if self.tooltip_result else None
         card_key = (repr(self.rows), repr(tooltip_content), repr(self.quotes), repr(self.errors),
                     self.mode, self.shop_open, screen_old, self.capture_starting, self.catalog_loading,
-                    self.catalog_error, id(self.catalog), self.ttl, int(now // 5), tuple(sorted(map(str, self.expanded_details))),
+                    self.catalog_error, id(self.catalog), self.ttl, int(now // 5),
                     tuple((key, quote.cache_valid(now, self.ttl), quote.fresh(now, self.ttl), self.service.state_for(key))
                           for key, quote in self.quotes.items()),
                     tuple((item.game_id, self.service.state_for(item.game_id)) for row in observations
@@ -1463,8 +1484,6 @@ class LensWindow(QMainWindow):
                                   paused=self.mode == "paused" or not self.prices_enabled, old_capture=self.mode == "live" and screen_old,
                                   lookup_error=bool(item and item.game_id in self.errors), hovered=hovered,
                                   lookup_state=self.service.state_for(item.game_id) if item else "",
-                                  expanded=key in self.expanded_details,
-                                  details_changed=lambda expanded, key=key: self.set_details_open(key, expanded),
                                   open_source=self.open_source)
                 used.add(key)
                 if key in self.card_views:
@@ -1475,6 +1494,9 @@ class LensWindow(QMainWindow):
                     card = self.card_views[key] = price_card(**data)
                     fresh_view = True
                 self.cards_layout.addWidget(card)
+                card.setProperty('gameItemId',item.game_id if item else None)
+                card.thumbnail.setVisible(item is not None)
+                if item:card.thumbnail.set_image(self.thumbnails.image(item.game_id))
                 card.show()
                 if fresh_view:reveal(card)
             for key in list(self.card_views):
@@ -1655,7 +1677,7 @@ class LensWindow(QMainWindow):
             self.render()
 
     def about(self):
-        QMessageBox.information(self, APP_NAME, "Reads OS-shared pixels and draws this independent window.\n\nNo game hooks, memory, files, messages, input or packet access. Screenshots remain local. Only item names/IDs go to public price sources.\n\nOCR: Minerva (MIT), pinned at 7e1aa7d. OCR model: ocrs, CC BY-SA 4.0. Catalog: OSMS Data Explorer. Prices: MesoWatch Classic World snapshot with NiaMeowDB fallback.\n\n24h median with at least 5 samples, otherwise the site's longer window. These are reported prices, not guaranteed trades. Equipment is assumed unscrolled, as requested. Its actual stats are not assessed.\n\nFull-market cache refreshes on launch and hourly through an installed Chrome/Edge/Chromium, then closes that browser. Per-item fallback defaults to 15 minutes. Expired data has no deal rating; latest reports over 24h old also have no rating.\n\nPrices and requests are cached locally. No telemetry or screenshot uploads.")
+        QMessageBox.information(self, APP_NAME, "Reads OS-shared pixels and draws this independent window.\n\nNo game hooks, memory, files, messages, input or packet access. Screenshots remain local. Only item names/IDs go to public price sources.\n\nOCR: Minerva (MIT), pinned at 7e1aa7d. OCR model: ocrs, CC BY-SA 4.0. Catalog: OSMS Data Explorer. Prices: MesoWatch Classic World full-market snapshot.\n\n24h median with at least 5 samples, otherwise the site's longer window. These are reported prices, not guaranteed trades. Equipment is assumed unscrolled, as requested. Its actual stats are not assessed.\n\nThe full market refreshes on launch and at the selected interval through an installed Chrome/Edge/Chromium, then closes that browser. Individual price lookups are not used. Expired data has no deal rating; latest reports over 24h old also have no rating.\n\nPrices and requests are cached locally. No telemetry or screenshot uploads.")
 
     def closeEvent(self, event):
         if self.closing:

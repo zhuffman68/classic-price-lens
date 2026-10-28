@@ -2,6 +2,7 @@
 import sys
 
 from PySide6.QtCore import QEvent, QObject, Qt, QTimer
+from .window_size import fills_work_area
 
 
 class NormalWindow(QObject):
@@ -23,7 +24,8 @@ class NormalWindow(QObject):
         window.installEventFilter(self)
 
     def remember_size(self):
-        if not (self.window.isMaximized() or self.window.isMinimized()):
+        if not (self.window.isMaximized() or self.window.isMinimized()
+                or fills_work_area(self.window.size(), self.window.screen())):
             self.normal_size = self.window.size()
 
     def native_state_changed(self, state):

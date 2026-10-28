@@ -11,6 +11,7 @@ mod game_area;
 mod text;
 mod wallet;
 mod tooltip_text;
+mod shop_prices;
 use game_area::{Locator, Rect};
 
 #[derive(Deserialize)]
@@ -45,6 +46,7 @@ fn main() {
     let mut locator = Locator::new();
     let mut experience = None;
     let mut wallet = wallet::WalletReader::default();
+    let mut price_recovery = shop_prices::PriceRecovery::default();
     let stdin = io::stdin();
     let mut stdout = io::BufWriter::new(io::stdout());
     for line in stdin.lock().lines() {
@@ -139,11 +141,11 @@ fn main() {
                 origin,
                 pointer: request.pointer,
             };
-            let mut value = serde_json::to_value(
-                reader
+            let mut shop_reading = reader
                     .get_or_insert_with(PlayerShopReader::bundled)
-                    .read(&capture),
-            )?;
+                    .read(&capture);
+            price_recovery.apply(&capture,&mut shop_reading);
+            let mut value = serde_json::to_value(shop_reading)?;
             if request.tooltip {
                 if let Some(pointer) = request.pointer {
                     let tooltip_capture = ItemCapture {

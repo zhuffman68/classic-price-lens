@@ -67,7 +67,7 @@ class BrowserSnapshot(QObject):
             self.process = None
         browser = find_browser()
         if not browser:
-            self.failed.emit("Full-market refresh needs Chrome, Edge or Chromium. Per-item prices remain available.")
+            self.failed.emit("Market updates need Chrome, Edge or Chromium. Saved prices are kept.")
             return
         self.profile.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.active = True
@@ -78,7 +78,7 @@ class BrowserSnapshot(QObject):
         process = self.process
         process.readyReadStandardError.connect(lambda: self.read_error(process) if self.process is process else process.readAllStandardError())
         process.readyReadStandardOutput.connect(lambda: process.readAllStandardOutput())
-        process.finished.connect(lambda *_: self.fail("The market browser closed before prices were ready.") if self.active and self.process is process else None)
+        process.finished.connect(lambda *_: self.process_finished(process))
         process.errorOccurred.connect(lambda *_: self.fail("The market browser could not start; saved prices are kept.") if self.active and self.process is process else None)
         process.stop_timer = QTimer(process)
         process.stop_timer.setSingleShot(True)
@@ -91,18 +91,35 @@ class BrowserSnapshot(QObject):
         self.deadline.start(25000)
         process.start(str(browser), arguments)
 
+    def process_finished(self,process):
+        if not self.active or self.process is not process:return
+        self.read_error(process)
+        if self.socket:return
+        # Edge can hand a launch to an existing browser for this app-owned
+        # profile, then exit without forwarding stderr. Its own port file is
+        # the only alternate endpoint; never discover a user's browser.
+        try:
+            lines=(self.profile/'DevToolsActivePort').read_text().splitlines()
+            port=int(lines[0]);path=lines[1]
+            if not 1<=port<=65535 or not re.fullmatch(r'/devtools/browser/[\w-]+',path):raise ValueError('Invalid local endpoint')
+            self.connect_endpoint(f'ws://127.0.0.1:{port}{path}')
+        except (OSError,ValueError,IndexError):self.fail('The market browser closed before prices were ready.')
+
     def read_error(self, process):
         self.stderr = (self.stderr + bytes(process.readAllStandardError()))[-16000:]
         if self.socket or not self.active:
             return
         match = re.search(rb"DevTools listening on (ws://127\.0\.0\.1:\d+/devtools/browser/[\w-]+)", self.stderr)
         if match:
-            self.socket = QWebSocket(parent=self)
-            self.socket.setMaxAllowedIncomingMessageSize(8 * 1024 * 1024)
-            self.socket.connected.connect(lambda: self.call("Target.createTarget", {"url": "about:blank"}, self.created))
-            self.socket.textMessageReceived.connect(self.message)
-            self.socket.errorOccurred.connect(lambda *_: self.fail("Market browser connection unavailable; saved prices are kept.") if self.active else None)
-            self.socket.open(QUrl(match[1].decode("ascii")))
+            self.connect_endpoint(match[1].decode('ascii'))
+
+    def connect_endpoint(self,url):
+        self.socket = QWebSocket(parent=self)
+        self.socket.setMaxAllowedIncomingMessageSize(8 * 1024 * 1024)
+        self.socket.connected.connect(lambda: self.call("Target.createTarget", {"url": "about:blank"}, self.created))
+        self.socket.textMessageReceived.connect(self.message)
+        self.socket.errorOccurred.connect(lambda *_: self.fail("Market browser connection unavailable; saved prices are kept.") if self.active else None)
+        self.socket.open(QUrl(url))
 
     def call(self, method, params, callback=None, session=None):
         if not self.active or not self.socket:
@@ -172,6 +189,7 @@ class BrowserSnapshot(QObject):
         process, socket = self.process, self.socket
         if self.active and socket:
             self.call("Browser.close", {})
+            socket.flush()
         self.active = False
         self.pending.clear()
         self.socket = None
@@ -181,12 +199,12 @@ class BrowserSnapshot(QObject):
         # Close only the subprocess we created. No global process lookup/kill.
         if process:
             if process.state() != QProcess.ProcessState.NotRunning:
-                process.stop_timer.start(700)
+                process.stop_timer.start(3000)
 
     def close(self):
         self.stop()
         if self.process and self.process.state() != QProcess.ProcessState.NotRunning:
-            self.process.terminate()
-            if not self.process.waitForFinished(1000):
-                self.process.kill()
-                self.process.waitForFinished(500)
+            if not self.process.waitForFinished(3000):
+                self.process.terminate()
+                if not self.process.waitForFinished(500):
+                    self.process.kill();self.process.waitForFinished(2000)

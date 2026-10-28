@@ -6,9 +6,10 @@ import threading
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal, Qt, QRect, QPoint, QPointF, QTimer, QVariantAnimation, QEasingCurve
-from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPen, QCursor, QRegion,QFontDatabase,QPolygonF
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPen, QCursor, QRegion,QFontDatabase,QPolygonF,QLinearGradient,QPainterPath
 from PySide6.QtWidgets import QApplication, QWidget
 from .number_motion import NumberRoll
+from .fonts import interface_font,interface_family
 
 
 class CommandPipe(QObject):
@@ -45,10 +46,8 @@ class AnnotationWindow(QWidget):
         self.watch_events = {}
         self.watch_star = QPolygonF([QPointF(math.cos(-math.pi/2+i*math.pi/5)*(5 if i%2==0 else 2.3),
                                             math.sin(-math.pi/2+i*math.pi/5)*(5 if i%2==0 else 2.3)) for i in range(10)])
-        self.price_font = QFont("Noto Sans")
-        self.price_font.setPixelSize(12)
-        self.name_font = QFont("Noto Sans")
-        self.name_font.setPixelSize(10)
+        self.price_font = interface_font(12,QFont.Weight.DemiBold)
+        self.name_font = interface_font(10)
         self.translation_font=QFont(self.price_font);self.translation_font.setPixelSize(13)
         self.original_font=QFont(self.name_font);self.original_font.setPixelSize(11)
         if self.korean_family is None:
@@ -56,10 +55,8 @@ class AnnotationWindow(QWidget):
             families=QFontDatabase.applicationFontFamilies(identity)
             type(self).korean_family=families[0] if families else ""
         if self.korean_family:
-            self.name_font.setFamilies(["Noto Sans",self.korean_family])
-            self.price_font.setFamilies(["Noto Sans",self.korean_family])
-            self.original_font.setFamilies(["Noto Sans",self.korean_family])
-            self.translation_font.setFamilies(["Noto Sans",self.korean_family])
+            for font in (self.name_font,self.price_font,self.original_font,self.translation_font):
+                font.setFamilies([interface_family(),self.korean_family])
         self.pointer_timer = QTimer(self)
         self.pointer_timer.setInterval(100)
         self.pointer_timer.timeout.connect(self.report_pointer)
@@ -235,7 +232,7 @@ class AnnotationWindow(QWidget):
         dirty = QRegion()
         for rectangle in (previous, box):
             if rectangle is not None:
-                dirty |= QRegion(rectangle.adjusted(-2, -2, 2, 2))
+                dirty |= QRegion(rectangle.adjusted(-4, -4, 4, 4))
         if not dirty.isEmpty():
             self.update(dirty)
 
@@ -244,6 +241,7 @@ class AnnotationWindow(QWidget):
             animation = row.pop("_watch_pulse", None)
             if animation:animation.stop();animation.deleteLater()
             row["_watch_level"] = 0.0
+            row['_watch_progress'] = 1.0
         if not row.get("watched"):
             return
         token = (self.row_key(row), row.get("watch_event"))
@@ -261,10 +259,12 @@ class AnnotationWindow(QWidget):
         animation.setStartValue(0.0);animation.setEndValue(1.0)
         def changed(value):
             row["_watch_level"] = (1-math.cos(4*math.pi*value))/2
+            row['_watch_progress'] = value
             self.invalidate_row(row)
         def finished():
             if row.get("_watch_pulse") is animation:row["_watch_pulse"] = None
             row["_watch_level"] = 0.0
+            row['_watch_progress'] = 1.0
             self.invalidate_row(row)
             animation.deleteLater()
         animation.valueChanged.connect(changed)
@@ -436,10 +436,24 @@ class AnnotationWindow(QWidget):
             x, y, width = box.x(), box.y() + 5, box.width()
             painter.setFont(self.price_font)
             watched = bool(row.get("watched"))
-            border = QColor(238, 190, 99, round(145+110*float(row.get("_watch_level",0)))) if watched else QColor(92, 103, 119, 160)
-            painter.setPen(QPen(border, 1.5 if watched else 1))
+            if watched:
+                painter.setPen(QPen(QColor('#352519'),3.5));painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.drawRoundedRect(box,5,5)
+            border = QColor('#aa783d') if watched else QColor(92, 103, 119, 160)
+            painter.setPen(QPen(border,1.3 if watched else 1))
             painter.setBrush(QColor(22, 28, 38, 247))
             painter.drawRoundedRect(box, 5, 5)
+            progress=float(row.get('_watch_progress',1))
+            if watched and not self.reduce_motion and 0<progress<1:
+                phase=(progress*2)%1
+                band=min(76,max(40,box.width()*.26))
+                center=box.left()-band+(box.width()+2*band)*phase
+                gradient=QLinearGradient(QPointF(center-band/2,box.top()),QPointF(center+band/2,box.bottom()))
+                for stop,colour in ((0,QColor(228,178,92,0)),(.3,QColor(225,172,80,38)),
+                                    (.5,QColor(245,211,145,100)),(.7,QColor(225,172,80,38)),(1,QColor(228,178,92,0))):
+                    gradient.setColorAt(stop,colour)
+                painter.save();clip=QPainterPath();clip.addRoundedRect(box.adjusted(2,2,-2,-2),4,4)
+                painter.setClipPath(clip,Qt.ClipOperation.IntersectClip);painter.fillRect(box,gradient);painter.restore()
             if row.get("kind")=="translation":
                 painter.save();painter.setClipRect(box.adjusted(6,4,-6,-4))
                 painter.setFont(self.name_font);painter.setPen(QColor("#b5c9e4"))

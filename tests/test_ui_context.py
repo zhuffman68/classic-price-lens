@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from PySide6.QtCore import QCoreApplication, QEvent, QObject, QRect, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QImage, QKeySequence, QMouseEvent
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialog, QDialogButtonBox, QKeySequenceEdit, QLabel, QPushButton
 
 from price_lens.domain import Catalog, Quote
@@ -99,6 +100,10 @@ class FakeService(QObject):
     def set_snapshot_enabled(self, enabled):
         self.refresh_snapshot = enabled
 
+    def set_refresh_interval(self,seconds):self.interval=seconds
+
+    def cached(self,item):return getattr(self,'cached_values',{}).get(item.game_id) if item else None
+
     def state_for(self, item_id):
         return self.states.get(item_id, "")
 
@@ -141,6 +146,18 @@ class FakeThumbnails(QObject):
 
 
 class ContextUiTests(unittest.TestCase):
+    def test_real_panel_keeps_the_slide_running_after_page_layout_updates(self):
+        w=self.window;w.resize(460,960);w.show();self.app.processEvents()
+        self.app.setProperty('reduceMotion',False)
+        for index in (w.exp_tab_index,w.translation_tab_index,0):
+            w.tabs.setCurrentIndex(index)
+            self.assertTrue(w.tabs.sliding)
+            QTest.qWait(80)
+            self.assertTrue(w.tabs.sliding)
+            self.assertGreater(w.tabs.animation.currentTime(),0)
+            QTest.qWait(260)
+            self.assertFalse(w.tabs.sliding)
+
     def test_display_resolution_fits_at_460_pixel_width(self):
         w=self.window;w.resize(460,960)
         index=w.monitor.currentIndex()
@@ -149,6 +166,26 @@ class ContextUiTests(unittest.TestCase):
         self.assertEqual(w.width(),460)
         required=w.monitor.fontMetrics().horizontalAdvance(w.monitor.currentText())+46
         self.assertGreaterEqual(w.monitor.width(),required)
+
+    def test_removed_on_top_preference_cannot_trap_a_new_panel(self):
+        settings=FakeSettings();settings.values['keep-on-top']=True
+        with patch('price_lens.ui.QSettings',return_value=settings):
+            fresh=LensWindow(Path.cwd(),Path('unused-cache'))
+        try:
+            self.assertFalse(fresh.windowFlags() & Qt.WindowType.WindowStaysOnTopHint)
+            self.assertFalse(settings.values['keep-on-top'])
+            self.assertFalse(hasattr(fresh,'pin_check'))
+        finally:fresh.close();fresh.deleteLater()
+
+    def test_translation_timings_fit_inline_at_minimum_width(self):
+        w=self.window;w.resize(460,960);w.show();w.tabs.setCurrentIndex(w.translation_tab_index)
+        QTest.qWait(350);self.app.processEvents()
+        panel=w.translation_panel
+        for label,spin,value in zip(panel.timing_labels,(panel.scan,panel.linger),(10,5)):
+            spin.setValue(value);self.app.processEvents()
+            self.assertLess(abs(label.mapTo(panel,label.rect().center()).y()-spin.mapTo(panel,spin.rect().center()).y()),3)
+            editor=spin.lineEdit()
+            self.assertLess(editor.fontMetrics().horizontalAdvance(editor.text())+8,editor.width())
 
     def test_display_selector_and_tab_position_remain_stable_on_every_page(self):
         self.window.mode="idle"
@@ -185,6 +222,28 @@ class ContextUiTests(unittest.TestCase):
         with patch("price_lens.ui.time.time",return_value=now+6):self.window.render()
         self.assertIs(next(iter(self.window.card_views.values())),before)
 
+    def test_shop_thumbnail_uses_exact_item_and_stays_left_of_name(self):
+        self.window.on_reading(self.reading(shop_hover=True))
+        card=next(iter(self.window.card_views.values()))
+        self.assertEqual(card.property('gameItemId'),1)
+        self.assertFalse(card.thumbnail.isHidden())
+        self.window.resize(460,960);self.window.show();self.app.processEvents()
+        self.assertLess(card.thumbnail.x(),card.fields['name'].mapTo(card,card.fields['name'].rect().topLeft()).x())
+        self.assertIn(1,[item.game_id for item in self.window.thumbnails.items])
+
+    def test_search_transitions_preserve_shop_cards_and_animate_their_return(self):
+        self.window.on_reading(self.reading(shop_hover=True))
+        self.window.resize(460,960);self.window.show();self.app.processEvents()
+        before=dict(self.window.card_views)
+        self.window.search_panel.query.setText('Example')
+        self.assertTrue(self.window.scroll.isHidden())
+        self.window.search_panel.timer.stop();self.window.search_panel.find_items()
+        self.assertIn('1 matches',self.window.search_panel.hint.text())
+        self.window.search_panel.query.clear()
+        self.assertFalse(self.window.scroll.isHidden())
+        self.assertEqual(self.window.card_views,before)
+        self.assertIsNotNone(getattr(self.window.scroll,'_reveal',None))
+
     def test_price_search_works_without_starting_capture(self):
         self.window.mode = "idle"
         self.window.tabs.setCurrentIndex(self.window.search_tab_index)
@@ -212,12 +271,50 @@ class ContextUiTests(unittest.TestCase):
         self.window.watchlist.remove(1)
         self.assertFalse(self.window.overlay.rows[0]['watched'])
 
+    def test_watched_list_opens_without_details_and_collapse_restores_shop(self):
+        from price_lens.domain import Item
+        w=self.window;w.on_reading(self.reading(shop_hover=True));w.show();self.app.processEvents()
+        quote=Quote(1,1000,time.time(),time.time(),20,'MesoWatch','','24h')
+        w.service.cached_values={1:quote};w.watchlist.toggle(Item(1,'Example Hat'))
+        section=w.search_panel.watched_items;QTest.qWait(230);self.app.processEvents()
+        self.assertIsNone(w.search_panel.selected)
+        self.assertTrue(w.search_panel.detail_scroll.isHidden())
+        self.assertEqual(section.rows.item(0).data(Qt.ItemDataRole.UserRole+1)[0],1000)
+        point=section.rows.visualItemRect(section.rows.item(0)).center()
+        QTest.mouseClick(section.rows.viewport(),Qt.MouseButton.LeftButton,pos=point)
+        self.assertEqual(w.search_panel.selected.game_id,1)
+        self.assertTrue(w.scroll.isHidden())
+        QTest.mouseClick(section.rows.viewport(),Qt.MouseButton.LeftButton,pos=point)
+        self.assertIsNone(w.search_panel.selected)
+        self.assertTrue(w.scroll.isHidden())
+        QTest.mouseClick(section.rows.viewport(),Qt.MouseButton.LeftButton,pos=point)
+        section.set_expanded(False)
+        self.assertIsNone(w.search_panel.selected)
+        self.assertFalse(w.scroll.isHidden())
+        self.assertIsNone(w.service.manual_item)
+
+    def test_watched_section_clips_stable_contents_and_limits_to_three_rows(self):
+        from price_lens.domain import Item
+        w=self.window;w.show();self.app.processEvents()
+        for n in range(5):w.watchlist.toggle(Item(1000000+n,f'Example {n}'))
+        section=w.search_panel.watched_items;QTest.qWait(230);self.app.processEvents()
+        self.assertEqual(section.rows.height(),130)
+        self.assertGreater(section.rows.verticalScrollBar().maximum(),0)
+        full=section.body.height();contents=section.body.content.height()
+        section.set_expanded(False);section.body.animation.setCurrentTime(100)
+        self.assertGreater(section.body.height(),0);self.assertLess(section.body.height(),full)
+        self.assertEqual(section.body.content.height(),contents)
+        middle=section.body.height();section.set_expanded(True)
+        self.assertEqual(section.body.height(),middle)
+        section.body.animation.setCurrentTime(200)
+        self.assertEqual(section.body.height(),full)
+
     def test_windows_starting_state_does_not_request_a_system_chooser(self):
         self.window.mode='idle'
         with patch('price_lens.ui.uses_system_picker',return_value=False):
             self.window.start_capture()
             self.assertEqual(self.window.status_badge.text(),'Starting screen reading')
-            self.assertIn('No additional system sharing dialog',self.window.capture_info.text())
+            self.assertEqual(self.window.capture_info.text(),f'Connecting to {self.window.selected_display()}.')
             self.assertNotIn('behind another window',self.window.capture_info.text())
 
     def test_wayland_starting_state_still_requests_the_system_picker(self):
@@ -292,12 +389,12 @@ class ContextUiTests(unittest.TestCase):
         self.assertTrue(self.window.auto_area_check.isChecked())
         self.assertTrue(self.window.reader.auto_enabled)
 
-    def test_full_market_cache_defaults_on_and_can_be_disabled_persistently(self):
-        self.assertTrue(self.window.bulk_check.isChecked())
+    def test_market_updates_on_launch_with_the_selected_global_interval(self):
         self.assertTrue(self.window.service.refresh_snapshot)
-        self.window.bulk_check.setChecked(False)
-        self.assertFalse(self.window.service.refresh_snapshot)
-        self.assertFalse(self.window.settings.values["full-market-cache"])
+        self.assertEqual(self.window.service.interval,self.window.ttl)
+        self.window.ttl_combo.setCurrentIndex(0)
+        self.assertEqual(self.window.service.interval,300)
+        self.assertFalse(hasattr(self.window,'bulk_check'))
 
     def test_lost_game_area_hides_labels_and_stops_price_requests(self):
         self.window.on_reading(self.reading(shop_hover=True))
@@ -565,7 +662,7 @@ class ContextUiTests(unittest.TestCase):
         self.window.on_quote(1, Quote(1, None, now, None, 0, "Test", "", "24h"))
         content = "\n".join(widget.text() for widget in self.window.cards.findChildren(QLabel))
         self.assertIn("Item name recognised", content)
-        self.assertIn("No market reports", content)
+        self.assertIn("No price in the market snapshot", content)
         self.assertNotIn("unreadable", content.lower())
 
     def test_empty_hover_reference_is_not_left_checking_forever(self):
@@ -585,13 +682,13 @@ class ContextUiTests(unittest.TestCase):
         self.assertEqual(self.window.overlay.rows, [])
 
 
-    def test_details_remain_open_across_price_card_updates(self):
+    def test_price_cards_have_no_details_toggle_and_show_observed_sale_time(self):
         self.window.on_reading(self.reading(shop_hover=True))
-        details = next(button for button in self.window.cards.findChildren(QPushButton) if button.text() == "Details")
-        details.click()
-        self.window.card_key = None
-        self.window.render()
-        self.assertTrue(any(button.text() == "Hide details" for button in self.window.cards.findChildren(QPushButton)))
+        now=time.time()
+        self.window.on_quote(1,Quote(1,1000,now,now-120,20,'MesoWatch','','24h',basis='observed shop sales'))
+        card=next(iter(self.window.card_views.values()))
+        self.assertFalse(hasattr(card,'toggle'))
+        self.assertIn('Most recent observed sale',card.fields['recent'].text())
 
     def test_expiration_removes_comparison_inside_the_same_age_bucket(self):
         with patch("price_lens.ui.time.time", return_value=1001):

@@ -1,6 +1,6 @@
 """Translation controls and the latest local results; no capture or networking."""
 from PySide6.QtCore import Signal,Qt
-from PySide6.QtWidgets import QWidget,QVBoxLayout,QHBoxLayout,QFormLayout,QCheckBox,QPushButton,QScrollArea,QFrame,QLabel,QDoubleSpinBox
+from PySide6.QtWidgets import QWidget,QVBoxLayout,QHBoxLayout,QCheckBox,QPushButton,QScrollArea,QFrame,QLabel,QDoubleSpinBox
 from .motion import reveal,AnimatedTabs,MotionLabel
 from .composer_ui import ComposerWidget
 
@@ -33,12 +33,17 @@ class TranslationPanel(QWidget):
         self.hint=QLabel("Scan the Classic World window for Korean text. Results appear as soon as they’re ready.")
         self.hint.setWordWrap(True);self.hint.setStyleSheet("color:#a6b1bf; font-size:11px")
         layout.addWidget(self.hint)
-        timings=QFormLayout()
+        timings=QVBoxLayout();timings.setSpacing(7)
         self.scan=QDoubleSpinBox();self.scan.setRange(1,10);self.scan.setSingleStep(.5);self.scan.setSuffix(' s');self.scan.setValue(scan_seconds)
         self.linger=QDoubleSpinBox();self.linger.setRange(0,5);self.linger.setSingleStep(.5);self.linger.setSuffix(' s');self.linger.setValue(linger_seconds)
-        for spin in (self.scan,self.linger):spin.setFixedWidth(80)
-        timings.addRow('Keep checking for',self.scan)
-        timings.addRow('Keep after disappearance',self.linger)
+        self.timing_labels=[]
+        for text,spin in (('Keep checking for',self.scan),('Keep after disappearance',self.linger)):
+            spin.setDecimals(1);spin.setFixedWidth(96)
+            spin.setStyleSheet('QDoubleSpinBox {background:#222c3b;color:#e7edf5;border:1px solid #45536a;border-radius:6px;padding:4px 6px;}')
+            row=QHBoxLayout();row.setSpacing(8)
+            caption=QLabel(text);self.timing_labels.append(caption)
+            row.addWidget(caption);row.addStretch();row.addWidget(spin)
+            timings.addLayout(row)
         layout.addLayout(timings)
         self.scan.setToolTip('Results appear as soon as text is read. Keep checking for new or moving text during this window; press again to restart.')
         for spin in (self.scan,self.linger):spin.valueChanged.connect(lambda *_:self.timing_changed.emit(self.scan.value(),self.linger.value()))

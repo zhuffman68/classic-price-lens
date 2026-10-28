@@ -90,6 +90,24 @@ class BrandingMotionTests(unittest.TestCase):
             self.assertTrue(tabs.stack.layout().isEnabled())
         finally:tabs.close();tabs.deleteLater();self.app.processEvents()
 
+    def test_slide_keeps_progress_and_visible_pages_when_the_viewport_resizes(self):
+        tabs=AnimatedTabs();tabs.resize(460,700)
+        tabs.addTab(QLabel('Prices'),'Prices');tabs.addTab(QLabel('Tracking'),'Tracking')
+        self.app.setProperty('reduceMotion',False)
+        try:
+            tabs.show();self.app.processEvents();tabs.setCurrentIndex(1)
+            tabs.animation.setCurrentTime(120)
+            page=tabs.widget(1);fraction=page.x()/tabs.stack.width()
+            tabs.resize(560,640);self.app.processEvents()
+            self.assertTrue(tabs.sliding)
+            self.assertGreaterEqual(tabs.animation.currentTime(),120)
+            self.assertAlmostEqual(page.x()/tabs.stack.width(),fraction,delta=.02)
+            self.assertTrue(tabs.widget(0).isVisible());self.assertTrue(page.isVisible())
+            tabs.animation.setCurrentTime(300)
+            self.assertFalse(tabs.sliding)
+            self.assertEqual(page.pos(),tabs.stack.contentsRect().topLeft())
+        finally:tabs.close();tabs.deleteLater();self.app.processEvents()
+
     def test_exp_anchor_uses_game_bottom_left_for_two_and_three_lines(self):
         import json
         window=AnnotationWindow(start_listener=False)

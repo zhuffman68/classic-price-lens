@@ -1,3 +1,19 @@
+# Price latency
+
+## Current behavior: v0.13.1
+
+Prices are local reads from a single MesoWatch full-market snapshot. It refreshes on launch and at the selected 5/15/30/60-minute interval. Individual price API requests, provider-ID lookups, early per-item refresh and their worker queues have been removed. Missing items remain unpriced.
+
+Saved data appears immediately. A successful full refresh replaces the generation atomically; failed updates retain the original check/publication/report ages. Expired data has no deal colors. The larger card's latest observed-sale time is separate from the median reference and snapshot publication.
+
+A Windows VM sampled full downloads at about 2–4 seconds after a cold 8-second run. This work is asynchronous and does not delay a cached item lookup. A compatible installed browser briefly uses Lupin's own profile, then exits. No personal browser, game process or individual-item crawl is used.
+
+Screen capture, OCR and rendering are separate costs. The Windows client drains local frame packets and keeps only the newest completed frame. Live samples after this fix had frame ages around 0.17–0.26 seconds; an example read took about 293 ms. A missing-price OCR retry is limited to the detected shop, requires two strict readings to agree, and caches unchanged patches. These are observations under VM/host load, not latency guarantees.
+
+The historical investigation below describes retired per-item behavior and earlier measurements.
+
+---
+
 # Price lookup timing
 
 Measured on 2026-10-27 against the current NiaMeowDB Classic World API. This is a small diagnostic sample, not a service benchmark or a latency guarantee.

@@ -21,7 +21,7 @@ python scripts/build_linux_packages.py
 
 The notice collector expects the official Rust 1.98.1 source-distribution notice files at `.build-tools/rustc-1.98.1-x86_64-unknown-linux-gnu/rustc/share/doc/rust/`. When using another build layout, stage those notices at that path before packaging. `license-sources.json` pins upstream notices omitted from some crates.io archives. Application/package version comes from `price_lens/__init__.py`; the package builder updates the staged PKGBUILD accordingly. The unchanged OCR reader can retain its own component version across Python/UI releases.
 
-Output: `dist/lupin_VERSION-1_amd64.deb` and `dist/lupin-VERSION-1-x86_64.pkg.tar.zst`. Both install to `/opt/classic-price-lens`, with a launcher in `/usr/bin` and normal application-menu/icon entries. User caches and preferences are kept outside those paths. Neither package adds a daemon, service, autostart entry or custom system Qt libraries.
+Output: `dist/lupin_VERSION-1_amd64.deb` and `dist/lupin-VERSION-1-x86_64.pkg.tar.zst`. Both install to `/opt/lupin`, with a launcher in `/usr/bin` and normal application-menu/icon entries. User caches and preferences are kept outside those paths. Neither package adds a daemon, service, autostart entry or custom system Qt libraries.
 
 The bundled Qt manylinux runtime requires glibc 2.34+, targeting Debian 12+, Ubuntu 22.04+ and current Arch/Manjaro on x86_64. Desktop sharing also needs the installed desktop's portal backend. The package-manager dependency lists supply OS libraries rather than a second system Qt installation.
 
@@ -51,9 +51,11 @@ Install Inno Setup 6.7.3 or newer. `build-tools.json` pins the compiler installe
 python scripts/build_windows_installer.py --iscc 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
 ```
 
-For cross-building on Linux, pass the compiler's filesystem path and an explicit, isolated Wine prefix using `--wine-prefix`. The script never chooses the default Wine prefix. `windows.iss` creates a per-user x64 installer with Start-menu/optional desktop shortcuts, a stable upgrade identifier, and an Apps uninstall entry. Upgrade and uninstall request shutdown only through Classic Price Lens's own local IPC endpoint; no game process is inspected or controlled.
+For cross-building on Linux, pass the compiler's filesystem path and an explicit, isolated Wine prefix using `--wine-prefix`. The script never chooses the default Wine prefix. `windows.iss` creates a per-user x64 installer with Start-menu/optional desktop shortcuts, a stable upgrade identifier, and an Apps uninstall entry. Upgrade and uninstall request shutdown only through Lupin's own local IPC endpoint; no game process is inspected or controlled.
 
 The installed entry point is `runtime/pythonw.exe -B -m price_lens`. It waits for the user's **Start reading** action. `selftest-windows.bat` runs an offline check. `scripts/make_windows_zip.py` can also create a portable ZIP; archives remain unencrypted.
+
+The Windows program folder is `%LOCALAPPDATA%\Programs\Lupin`. Upgrades move the former program directory while preserving additional files, per-user settings and caches. A canceled setup rolls the move back before commit. The shipped reader is named `lupin-screen-reader.exe` (`lupin-screen-reader` on Linux); its unchanged Rust build output retains its component name. Internal settings, IPC and desktop/portal identities stay stable for compatibility.
 
 On Linux, `scripts/test_windows_installer.py --wine-prefix /path/to/isolated-prefix` validates install/upgrade/removal and the installed suite. Never point it at a game or default Wine prefix. Native Windows capture/physical hotkey testing remains separate from Wine verification.
 

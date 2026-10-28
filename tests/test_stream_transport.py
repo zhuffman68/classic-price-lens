@@ -12,7 +12,7 @@ from PySide6.QtCore import QCoreApplication, QEvent, QRect
 from PySide6.QtGui import QColor, QGuiApplication, QImage
 from PySide6.QtWidgets import QApplication
 
-from price_lens.stream import CaptureServer, StreamClient
+from price_lens.stream import CaptureServer, StreamClient, MAX_FRAME_BUFFER
 
 
 class FakeCapture:
@@ -42,6 +42,9 @@ class FakeCapture:
         self.active = True
         self.starts += 1
 
+    def stop(self):
+        self.active = False
+
 
 class FakeFrame:
     def __init__(self, image):
@@ -52,6 +55,21 @@ class FakeFrame:
 
 
 class LocalFrameTransportTests(unittest.TestCase):
+    def test_repeated_full_display_frames_keep_flowing_after_throttle(self):
+        rectangle = QRect(0, 0, 1920, 1029)
+        self.client.start(rectangle, rectangle)
+        self.until(lambda: all(target and target[0] == rectangle for target in self.server.clients.values()))
+        image = QImage(rectangle.size(), QImage.Format.Format_RGBA8888)
+        image.fill(QColor('#1678cc'))
+        for count in range(8):
+            self.until(lambda: all(not socket.bytesToWrite() for socket in self.server.clients))
+            self.server.last_frame = 0
+            self.server.on_frame(FakeFrame(image))
+            self.until(lambda: len(self.received) > count)
+        self.assertEqual(len(self.received), 8)
+        self.assertEqual(self.received[-1][0].size(), image.size())
+        self.assertEqual(self.client.socket.readBufferSize(), MAX_FRAME_BUFFER)
+
     @classmethod
     def setUpClass(cls):
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -78,7 +96,10 @@ class LocalFrameTransportTests(unittest.TestCase):
         while not predicate() and time.monotonic() < end:
             self.app.processEvents()
             time.sleep(0.001)
-        self.assertTrue(predicate(), "Local frame transport did not finish")
+        self.assertTrue(predicate(), f"Local frame transport stalled: received={len(self.received)}, "
+                        f"header={self.client.header_size}, payload={self.client.metadata}, "
+                        f"buffered={self.client.socket.bytesAvailable()}, "
+                        f"pending={[socket.bytesToWrite() for socket in self.server.clients]}")
 
     def tearDown(self):
         self.client.stop(keep_session=True)
@@ -121,6 +142,21 @@ class LocalFrameTransportTests(unittest.TestCase):
         self.server.on_frame(FakeFrame(self.image()))
         self.until(lambda: len(self.received) == 1)
         self.assertEqual(len(self.received), 1)
+
+    def test_delivery_interval_keeps_only_the_newest_completed_frame(self):
+        self.server.on_frame(FakeFrame(self.image()))
+        self.until(lambda:len(self.received)==1)
+        self.client.next_delivery=time.monotonic()+.2
+        for colour in ('#cc4455','#4488cc','#55cc88'):
+            self.until(lambda:all(not socket.bytesToWrite() for socket in self.server.clients))
+            self.server.last_frame=0
+            image=self.image();image.fill(QColor(colour));self.server.on_frame(FakeFrame(image))
+            self.until(lambda:all(not socket.bytesToWrite() for socket in self.server.clients))
+            self.app.processEvents()
+        self.assertEqual(len(self.received),1)
+        self.until(lambda:len(self.received)==2)
+        self.assertEqual(self.received[-1][0].pixelColor(0,0),QColor('#55cc88'))
+        self.assertIsNone(self.client.pending_frame)
 
     def test_new_ui_connection_reuses_the_existing_sharing_session(self):
         self.client.stop(keep_session=True)

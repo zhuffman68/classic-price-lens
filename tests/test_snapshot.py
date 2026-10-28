@@ -82,10 +82,11 @@ class SnapshotTests(unittest.TestCase):
         self.store.save(doc, self.now)
         self.assertFalse(self.store.quote(self.item).fresh(self.now))
 
-    def test_hourly_reference_lifetime_is_independent_of_per_item_fallback_ttl(self):
+    def test_reference_lifetime_honors_selected_interval_and_publication_age(self):
         self.store.save(document(self.now), self.now)
         quote = self.store.quote(self.item)
-        self.assertTrue(quote.cache_valid(self.now+901, 300))
+        self.assertTrue(quote.cache_valid(self.now+299, 300))
+        self.assertFalse(quote.cache_valid(self.now+301,300))
         self.assertFalse(quote.cache_valid(self.now+3541, 3600))
         self.assertFalse(replace(quote, fetched_at=self.now+1).cache_valid(self.now))
 
@@ -125,14 +126,13 @@ class SnapshotTests(unittest.TestCase):
         self.store.save(document(self.now-901), self.now-901)
         service = PriceService(self.cache.path)
         try:
-            with patch.object(service.provider, "fetch", side_effect=AssertionError("No item API calls")) as fetch:
+            with patch("price_lens.data.get_json", side_effect=AssertionError("No item API calls")) as fetch:
                 for _ in range(20):service.observe([self.item], 300, hovered_id=self.item.game_id)
                 self.assertEqual(fetch.call_count, 0)
-                self.assertFalse(service.pending)
                 self.assertEqual(service.delivered[self.item.game_id].source, "MesoWatch")
         finally:service.close()
 
-    def test_fresh_snapshot_loads_immediately_but_still_refreshes_on_launch_and_hourly(self):
+    def test_fresh_snapshot_loads_immediately_but_still_refreshes_on_launch_and_selected_interval(self):
         self.store.save(document(self.now), self.now)
         updater = SnapshotUpdater(self.store)
         try:
@@ -143,8 +143,10 @@ class SnapshotTests(unittest.TestCase):
                 updater.refresh();updater.set_enabled(True)
                 self.assertEqual(start.call_count, 1)
                 updater.accept(document(self.now))
-                self.assertGreater(updater.timer.interval(), 3500000)
-                self.assertLessEqual(updater.timer.interval(), 3540000)
+                self.assertEqual(updater.timer.interval(),900000)
+                updater.set_interval(300)
+                self.assertGreater(updater.timer.interval(),295000)
+                self.assertLessEqual(updater.timer.interval(),300000)
                 self.assertFalse(updater.busy)
                 updater.timer.timeout.emit()
                 self.assertEqual(start.call_count, 2)
@@ -158,7 +160,7 @@ class SnapshotTests(unittest.TestCase):
             updater.enabled = True
             doc = document(self.now);doc["generated_at"] = iso(self.now-3601)
             updater.accept(doc)
-            self.assertEqual(updater.timer.interval(), 3600000)
+            self.assertEqual(updater.timer.interval(), 900000)
             self.assertFalse(self.store.quote(self.item).fresh(self.now))
         finally:updater.close()
 

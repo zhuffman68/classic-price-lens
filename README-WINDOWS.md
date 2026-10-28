@@ -3,10 +3,10 @@
 **Tools for MapleStory Classic World.** Market prices, item search with images, EXP/meso tracking and local Korean translation in both directions.
 
 1. Download the Windows installer from [itch.io](https://zhuffman68.itch.io/lupin) and extract it if wrapped in a ZIP.
-2. Run **Lupin-0.13.0-Windows-x64-Setup.exe**, then open Lupin from Start. Administrator access is not required.
-3. Choose the game's display and click **Start reading**. A real display is preselected; Windows does not need an additional OS sharing dialog. Keep the game's bottom status bar visible.
+2. Run **Lupin-0.13.1-Windows-x64-Setup.exe**, then open Lupin from Start. Administrator access is not required.
+3. Choose the game's display and click **Start reading**. A real display is preselected. Keep the game's bottom status bar visible.
 
-Requires Windows 10/11 x64, about **3 GB free space** for installation, and internet for market updates and uncached item images. Python, Qt, OCR and both translation models are included. Edge, Chrome or Chromium enables the launch/hourly full-market cache; individual lookups work without a compatible browser.
+Requires Windows 10/11 x64, about **3 GB free space** for installation, and internet for market updates and uncached item images. Python, Qt, OCR and both translation models are included. Edge, Chrome or Chromium is required for market updates. The full market refreshes on launch and at the interval selected in Settings. No individual price lookups are made.
 
 **Win + F8** opens the Korean writer. **Win + F9** toggles prices. **Win + F10** starts EXP/meso tracking, then pauses/resumes it. **Win + F11** scans the game window for Korean text. Use **Hotkeys…** to change assignments.
 
@@ -14,7 +14,7 @@ EXP starts stopped. Press **Start tracking** on EXP/Meso Tracking; rates and ETA
 
 Translation has **Read Korean** and **Write Korean** pages. Win + F8 opens a compact writer without screen sharing: type English and press Enter to translate and copy. A notification confirms the copy; paste with Ctrl+V and send yourself. Nothing sends input to the game. Common trade/party shorthand is expanded, known item names are retained, and numeric values/percentages are checked. Review freeform translations before pasting. Both models run locally, without a cloud account or API key.
 
-Search for an item and click **Watch item** to spot it later in shops or item tooltips. A recognized watched item pulses twice, then retains a star; **Watchlist** manages saved items. Reduced motion keeps the marker steady.
+Choose an item’s **☆** star to watch it. **Watched items** on Prices shows thumbnails and cached references, with three rows before scrolling. Click a row for its price card, click it again to deselect, or collapse the list to return to shop prices. Recognized watched items are highlighted in the game and retain a star. Reduced motion keeps the marker steady.
 
 The panel resizes and remembers its size; maximizing is disabled. Minimize sends it to the tray by default. Click its icon to restore, or right-click for controls. Close or Quit ends reading and sharing.
 
@@ -22,6 +22,6 @@ For the portable version, extract the ZIP fully and open **run-windows.bat**. Cl
 
 Windows uses its native certificate trust for market connections. A temporary connection failure gets one automatic catalog retry; persistent failures show their cause. Certificate checking remains enabled.
 
-Windows desktop capture is verified in a Windows VM. Game capture, mixed-DPI alignment and Korean paste in the Windows game still need a physical Windows playtest.
+Display capture and a running Classic World shop are verified in a Windows VM. Physical-PC capture, mixed-DPI alignment and Korean paste still need a physical Windows playtest.
 
 [Everyday use and troubleshooting](README.md) · [Technical details](docs/TECHNICAL.md) · [Credits](THIRD_PARTY.md)

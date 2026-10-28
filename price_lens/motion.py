@@ -4,6 +4,7 @@ from PySide6.QtCore import QEasingCurve,QPoint,Qt,QVariantAnimation,QSize,QRect
 from PySide6.QtGui import QPainter, QPalette
 from PySide6.QtWidgets import QApplication, QGraphicsOpacityEffect, QLabel, QTabWidget, QWidget,QSizePolicy,QStackedWidget
 from .number_motion import NumberRoll
+from . import gui_currency
 
 
 def enabled(widget):
@@ -21,7 +22,7 @@ class MotionLabel(QLabel):
         self.animation.setDuration(110)
         self.animation.setEasingCurve(QEasingCurve.Type.OutCubic)
         self.animation.valueChanged.connect(self._alpha)
-        self.number_roll=NumberRoll(text)
+        self.number_roll=NumberRoll(gui_currency.visual_text(text))
         self.digits=QVariantAnimation(self);self.digits.setDuration(160)
         self.digits.setEasingCurve(QEasingCurve.Type.OutCubic)
         self.digits.valueChanged.connect(self._digits)
@@ -39,11 +40,11 @@ class MotionLabel(QLabel):
         old=self.text()
         shape=lambda text:re.sub(r'\d+(?:[,.]\d+)*','#',text)
         only_numbers=bool(any(c.isdigit() for c in value) and shape(old)==shape(value)
-                          and self.fontMetrics().horizontalAdvance(value)<=self.contentsRect().width())
+                          and gui_currency.line_width(value,self.fontMetrics())<=self.contentsRect().width())
         if animate and not value and self.text():fade_away(self)
         self.animation.stop()
         self.digits.stop()
-        self.number_roll.set_text(value,animate and only_numbers)
+        self.number_roll.set_text(gui_currency.visual_text(value),animate and only_numbers)
         super().setText(value)
         if animate and only_numbers:
             self.alpha=1.0
@@ -61,12 +62,14 @@ class MotionLabel(QLabel):
         # QLabel shaping and per-cell drawing differ in rounding/kerning; swapping
         # between them made the surrounding words move during every roll.
         numeric_line = (any(c.isdigit() for c in self.text()) and '\n' not in self.text()
-                        and self.fontMetrics().horizontalAdvance(self.text())<=self.contentsRect().width())
+                        and gui_currency.line_width(self.text(),self.fontMetrics())<=self.contentsRect().width())
         if numeric_line:
             painter=QPainter(self);painter.setFont(self.font())
             painter.setOpacity(self.alpha)
             painter.setPen(self.palette().color(QPalette.ColorRole.WindowText))
-            self.number_roll.paint(painter,self.contentsRect(),self.alignment());return
+            self.number_roll.paint(painter,self.contentsRect(),self.alignment(),gui_currency.paint_icon);return
+        if self.property('currencyIcon') is not False and gui_currency.PATTERN.search(self.text()):
+            painter=QPainter(self);gui_currency.paint_document(self,painter,self.alpha);return
         if self.alpha >= .999:
             return super().paintEvent(event)
         painter = QPainter(self)
@@ -81,6 +84,12 @@ class MotionLabel(QLabel):
         self.digits.stop();self.number_roll.finish()
         self.alpha = 1.0
         super().hideEvent(event)
+
+    def heightForWidth(self,width):
+        if self.wordWrap() and self.property('currencyIcon') is not False and gui_currency.PATTERN.search(self.text()):
+            doc=gui_currency.document(self).clone();doc.setTextWidth(width)
+            return round(doc.size().height()+self.contentsMargins().top()+self.contentsMargins().bottom())
+        return super().heightForWidth(width)
 
 
 def reveal(widget):
@@ -136,10 +145,10 @@ def visibility(widget, shown):
     widget.setEnabled(shown)
     animation = QVariantAnimation(widget)
     widget._section_animation = animation
-    animation.setDuration(130)
+    animation.setDuration(widget.property('sectionDuration') or 130)
     animation.setStartValue(current)
     animation.setEndValue(target)
-    animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+    animation.setEasingCurve(QEasingCurve.Type.InOutCubic if widget.property('sectionDuration') else QEasingCurve.Type.OutCubic)
     animation.valueChanged.connect(lambda height:widget.setMaximumHeight(round(height)))
     def finish():
         if widget._section_animation is animation:
@@ -150,6 +159,29 @@ def visibility(widget, shown):
         animation.deleteLater()
     animation.finished.connect(finish)
     animation.start()
+
+
+def fading_visibility(widget,shown):
+    """Fade small adornments while their retained-size policy holds alignment."""
+    if getattr(widget,'_fade_target',not widget.isHidden())==shown:return
+    widget._fade_target=shown
+    old=getattr(widget,'_presence_animation',None)
+    if old:old.stop();old.deleteLater()
+    effect=widget.graphicsEffect()
+    start=effect.opacity() if isinstance(effect,QGraphicsOpacityEffect) else (0.0 if widget.isHidden() else 1.0)
+    if not enabled(widget.parentWidget() or widget):
+        widget.setGraphicsEffect(None);widget.setVisible(shown);widget._presence_animation=None;return
+    if not isinstance(effect,QGraphicsOpacityEffect):
+        effect=QGraphicsOpacityEffect(widget);widget.setGraphicsEffect(effect)
+    effect.setOpacity(start);widget.setVisible(True)
+    animation=QVariantAnimation(widget);widget._presence_animation=animation
+    animation.setDuration(140);animation.setStartValue(start);animation.setEndValue(1.0 if shown else 0.0)
+    animation.setEasingCurve(QEasingCurve.Type.OutCubic);animation.valueChanged.connect(effect.setOpacity)
+    def finish():
+        if widget._presence_animation is animation:
+            widget.setVisible(shown);widget.setGraphicsEffect(None);widget._presence_animation=None
+        animation.deleteLater()
+    animation.finished.connect(finish);animation.start()
 
 
 class AnimatedTabs(QTabWidget):
@@ -181,7 +213,7 @@ class AnimatedTabs(QTabWidget):
         if not self.sliding:
             self.stack=stack;self.base=stack.contentsRect();self.slide_width=self.base.width()
             if self.slide_width<=0:return
-            self.scroll=old_index*self.slide_width
+            self.scroll=float(old_index)
             self.layout_enabled=stack.layout().isEnabled()
             stack.layout().setEnabled(False)
             self.sliding=True
@@ -195,7 +227,7 @@ class AnimatedTabs(QTabWidget):
         self.move_pages(self.scroll)
         page.raise_();stack.setUpdatesEnabled(True)
         self.animation.setStartValue(self.scroll)
-        self.animation.setEndValue(index*self.slide_width)
+        self.animation.setEndValue(float(index))
         self.animation.start()
 
     def move_pages(self,value):
@@ -203,7 +235,7 @@ class AnimatedTabs(QTabWidget):
         if not enabled(self):self.finish_slide();return
         self.scroll=float(value)
         for i in range(self.count()):
-            self.widget(i).move(self.base.left()+round(i*self.slide_width-self.scroll),self.base.top())
+            self.widget(i).move(self.base.left()+round((i-self.scroll)*self.slide_width),self.base.top())
 
     def finish_slide(self):
         self.animation.stop()
@@ -222,14 +254,24 @@ class AnimatedTabs(QTabWidget):
         self.finish_slide();super().hideEvent(event)
 
     def resizeEvent(self,event):
-        self.finish_slide();super().resizeEvent(event)
+        super().resizeEvent(event)
+        if self.sliding:
+            # Status text and page layouts can resize the viewport during a tab
+            # change. Scroll in page units so the same animation/easing survives.
+            self.base=self.stack.contentsRect();self.slide_width=self.base.width()
+            if self.slide_width<=0:
+                self.finish_slide();return
+            self.stack.setUpdatesEnabled(False)
+            for i in range(self.count()):self.widget(i).resize(self.base.size())
+            self.move_pages(self.scroll)
+            self.stack.setUpdatesEnabled(True)
 
 
 class RollingLabel(QLabel):
     """Clip and roll changed digits only; semantic text updates immediately."""
     def __init__(self,text="",parent=None):
         super().__init__(text,parent)
-        self.roll=NumberRoll(text)
+        self.roll=NumberRoll(gui_currency.visual_text(text))
         self.animation=QVariantAnimation(self);self.animation.setDuration(160)
         self.animation.setEasingCurve(QEasingCurve.Type.OutCubic)
         self.animation.valueChanged.connect(self.advance)
@@ -248,13 +290,13 @@ class RollingLabel(QLabel):
         if text==self.text():return
         self.animation.stop()
         super().setText(text)
-        if self.roll.set_text(text,enabled(self)):
+        if self.roll.set_text(gui_currency.visual_text(text),enabled(self)):
             self.animation.setStartValue(0.0);self.animation.setEndValue(1.0);self.animation.start()
 
     def paintEvent(self,event):
         painter=QPainter(self);painter.setFont(self.font());painter.setPen(self.palette().color(QPalette.ColorRole.WindowText))
         if not enabled(self):self.roll.finish()
-        self.roll.paint(painter,self.contentsRect(),self.alignment())
+        self.roll.paint(painter,self.contentsRect(),self.alignment(),gui_currency.paint_icon)
 
     def hideEvent(self,event):
         self.animation.stop();self.roll.finish();super().hideEvent(event)

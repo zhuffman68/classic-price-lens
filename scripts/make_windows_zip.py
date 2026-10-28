@@ -13,7 +13,7 @@ from price_lens import __version__
 
 
 def main():
-    required = ["run-windows.bat", "runtime/pythonw.exe", "bin/classic-screen-reader.exe", "bin/libunwind.dll"]
+    required = ["run-windows.bat", "runtime/pythonw.exe", "bin/lupin-screen-reader.exe", "bin/libunwind.dll"]
     for name in required:
         if not (FOLDER / name).is_file():
             raise FileNotFoundError(name)
@@ -24,7 +24,7 @@ def main():
                 "python": "3.14.9", "qt": "6.12.0", "reader_target": "x86_64-pc-windows-gnullvm",
                 "minerva_revision": "7e1aa7d418fb255bd66eb4dce848fc9eb305cd81",
                 "verification": "VERIFICATION.md",
-                "native_windows_game_capture_tested": False, "files": {}}
+                "windows_vm_game_capture_tested": True, "physical_windows_game_capture_tested": False, "files": {}}
     for path in sorted(files):
         with path.open("rb") as stream:
             manifest["files"][path.relative_to(FOLDER).as_posix()] = hashlib.file_digest(stream, "sha256").hexdigest()

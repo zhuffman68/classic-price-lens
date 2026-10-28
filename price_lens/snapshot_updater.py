@@ -1,4 +1,4 @@
-"""Launch/hourly refresh scheduling independent of visible item requests."""
+"""Launch and selected-interval full-market refresh, independent of item views."""
 import time
 import sqlite3
 
@@ -20,6 +20,7 @@ class SnapshotUpdater(QObject):
         self.busy = False
         self.failures = 0
         self.error = ""
+        self.interval = 900
         self.browser = BrowserSnapshot(store.cache.path.parent / "market-browser", self)
         self.browser.ready.connect(self.accept)
         self.browser.failed.connect(self.failed)
@@ -49,6 +50,13 @@ class SnapshotUpdater(QObject):
         self.changed.emit()
         self.browser.start()
 
+    def set_interval(self,seconds):
+        self.interval=max(300,min(3600,int(seconds)))
+        if self.enabled and not self.closed and not self.busy:
+            checked=(self.store.meta or {}).get('checked_at',0)
+            remaining=max(0,checked+self.interval-time.time())
+            self.timer.start(round(remaining*1000))
+
     def accept(self, document):
         if self.closed or not self.enabled:
             return
@@ -60,12 +68,9 @@ class SnapshotUpdater(QObject):
         self.busy = False
         self.failures = 0
         self.error = ""
-        # Published lists can already be several minutes old when checked. Do
-        # not leave a freshness gap before the nominal hourly update. An already
-        # old publication still waits an hour, rather than spinning a browser.
-        remaining = self.store.meta["published_at"] + 3600 - time.time() - 20
-        delay = remaining if 300 <= remaining < 3600 else 3600
-        self.timer.start(int(delay * 1000))
+        # Source publication age stays separate from the next fetch. An old
+        # publication cannot trigger a browser loop or acquire a false new age.
+        self.timer.start(self.interval*1000)
         self.updated.emit()
         self.changed.emit()
 

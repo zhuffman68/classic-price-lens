@@ -1,6 +1,6 @@
 # Generated payload is built by scripts/package_linux.py; no runtime downloads.
 pkgname=lupin
-pkgver=0.13.0
+pkgver=0.13.1
 pkgrel=1
 pkgdesc='Tools for MapleStory Classic World'
 arch=('x86_64')
@@ -22,6 +22,6 @@ options=('!strip' '!debug')
 
 package() {
     cp -a "$startdir/payload/." "$pkgdir/"
-    install -Dm644 "$pkgdir/opt/classic-price-lens/THIRD_PARTY.md" \
+    install -Dm644 "$pkgdir/opt/lupin/THIRD_PARTY.md" \
         "$pkgdir/usr/share/licenses/$pkgname/THIRD_PARTY.md"
 }

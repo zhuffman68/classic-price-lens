@@ -26,7 +26,7 @@ def main():
     os.nice(10)
     stage = ROOT / "dist/linux-root"
     assert_public_tree(stage)
-    if not (stage / "opt/classic-price-lens/runtime/bin/python3").is_file():
+    if not (stage / "opt/lupin/runtime/bin/python3").is_file():
         raise FileNotFoundError("Run scripts/package_linux.py first")
     build = ROOT / ".build-tools/linux-packages"
     build.mkdir(exist_ok=True)

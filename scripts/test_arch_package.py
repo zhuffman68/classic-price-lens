@@ -41,20 +41,19 @@ def main():
             if previous.exists() and previous != package:
                 run([*pacman, "-Udd", str(previous)])
         run([*pacman, "-Udd", str(package)])
-        launcher = folder / "usr/bin/classic-price-lens"
-        alias = folder / "usr/bin/lupin"
-        assert alias.is_symlink() and alias.resolve() == launcher, "Lupin launcher missing"
+        launcher = folder / "usr/bin/lupin"
+        assert launcher.is_file() and not launcher.is_symlink(), "Lupin launcher missing"
+        assert not (folder/'usr/bin/classic-price-lens').exists(), "Legacy launcher remains"
         desktop = folder / "usr/share/applications/io.github.zhuffman68.ClassicPriceLens.desktop"
         assert "Name=Lupin\n" in desktop.read_text(), "Application menu name is stale"
-        run([str(alias), "--version"])
         run([str(launcher), "--version"])
         run([str(launcher), "--self-test"])
-        app = folder / "opt/classic-price-lens"
+        app = folder / "opt/lupin"
+        assert not (folder/'opt/classic-price-lens').exists(), "Legacy install folder remains"
         run([str(app / "runtime/bin/python3"), "-B", "-m", "unittest", "discover", "-s", "tests", "-q"], app)
         run([*pacman, "-Qkk", "lupin"])
         run([*pacman, "-Rdd", "lupin"])
         assert not launcher.exists(), "Uninstall left launcher behind"
-        assert not alias.is_symlink(), "Uninstall left Lupin alias behind"
         assert not app.exists(), "Uninstall left application files behind"
         assert marker.is_file(), "Uninstall removed user data"
     print("PASS: pacman install, launch, offline OCR/overlay, tests, file checks and removal", flush=True)

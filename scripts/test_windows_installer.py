@@ -32,7 +32,8 @@ def main():
         return Path(subprocess.check_output(["winepath", "-u", path], env=env, text=True).strip())
 
     local = subprocess.check_output(["wine", "cmd", "/c", "echo %LOCALAPPDATA%"], env=env, text=True).strip()
-    app = unix_path(local) / "Programs/Classic Price Lens"
+    app = unix_path(local) / "Programs/Lupin"
+    legacy_app = unix_path(local) / "Programs/Classic Price Lens"
     runtime = app / "runtime/python.exe"
     gui_runtime = app / "runtime/pythonw.exe"
     if app.exists() and not runtime.exists():
@@ -49,18 +50,53 @@ def main():
                       "app.setApplicationName('Classic Price Lens'); app.setOrganizationName('LocalTools'); "
                       "print(cache_directory())")
 
-        def cache_marker():
-            cache = subprocess.check_output(["wine", str(runtime), "-B", "-c", cache_code], cwd=app, env=env, text=True).strip()
+        def cache_marker(base=None):
+            base = base or app
+            cache = subprocess.check_output(["wine", str(base/"runtime/python.exe"), "-B", "-c", cache_code], cwd=base, env=env, text=True).strip()
             return unix_path(cache) / "installer-preservation-check.txt"
+
+        def start_ui(base=None):
+            base=base or app
+            own_runtime=base/"runtime/python.exe"
+            own_gui=base/"runtime/pythonw.exe"
+            process = subprocess.Popen(["wine", str(own_gui), "-B", "-m", "price_lens"],
+                                       cwd=base, env=env, stdout=log, stderr=subprocess.STDOUT)
+            script = ("from PySide6.QtCore import QCoreApplication; "
+                      "from price_lens.control import request; app=QCoreApplication([]); "
+                      "app.setApplicationName('Classic Price Lens'); app.setOrganizationName('LocalTools'); "
+                      "raise SystemExit(0 if request('activate', timeout=500) else 1)")
+            deadline = time.monotonic() + 20
+            while time.monotonic() < deadline:
+                assert process.poll() is None, "App exited before becoming ready"
+                probe = subprocess.run(["wine", str(own_runtime), "-B", "-c", script], cwd=base, env=env,
+                                       stdout=log, stderr=subprocess.STDOUT, timeout=5)
+                if probe.returncode == 0:
+                    return process
+                time.sleep(0.1)
+            process.terminate()
+            process.wait(timeout=5)
+            raise RuntimeError("Own app IPC did not become ready")
+
 
         if args.upgrade_from:
             run([args.upgrade_from.resolve(), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", "/TASKS=desktopicon"])
-            legacy_marker = cache_marker()
+            legacy_base=legacy_app if legacy_app.exists() else app
+            legacy_marker = cache_marker(legacy_base)
+            extra=legacy_base/"migration-preserve-extra.txt"
+            extra.write_text("Preserve additional files during the folder rename.\n")
+            legacy_process=start_ui(legacy_base)
             legacy_marker.write_text("Keep user data during upgrade/removal.\n")
         else:
             legacy_marker = None
         run([installer, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-"])
         assert (app / "unins000.exe").is_file(), "Uninstall entry point missing"
+        assert not legacy_app.exists(), "Legacy program folder remains after migration"
+        if args.upgrade_from:
+            assert legacy_process.wait(timeout=30)==0, "Migration did not close the previous app cleanly"
+            moved_extra=app/"migration-preserve-extra.txt"
+            assert moved_extra.read_text()=="Preserve additional files during the folder rename.\n"
+            moved_extra.unlink()
+        assert (app/"bin/lupin-screen-reader.exe").is_file() and not (app/"bin/classic-screen-reader.exe").exists(), "Reader still has its old shipped name"
         trim=json.loads((app/'runtime-trim.json').read_text())
         assert not any((app/entry['path']).exists() for entry in trim['removed']),'Upgrade left unused runtime files behind'
         assert (app/'lupin-scaled.ico').is_file() and not (app/'lupin.ico').exists(),'Icon resource path was not migrated'
@@ -79,24 +115,6 @@ def main():
             assert marker == legacy_marker and marker.is_file(), "Rename changed or removed the user cache"
         marker.write_text("Keep user data during upgrade/removal.\n")
 
-        def start_ui():
-            process = subprocess.Popen(["wine", str(gui_runtime), "-B", "-m", "price_lens"],
-                                       cwd=app, env=env, stdout=log, stderr=subprocess.STDOUT)
-            script = ("from PySide6.QtCore import QCoreApplication; "
-                      "from price_lens.control import request; app=QCoreApplication([]); "
-                      "app.setApplicationName('Classic Price Lens'); app.setOrganizationName('LocalTools'); "
-                      "raise SystemExit(0 if request('activate', timeout=500) else 1)")
-            deadline = time.monotonic() + 20
-            while time.monotonic() < deadline:
-                assert process.poll() is None, "App exited before becoming ready"
-                probe = subprocess.run(["wine", str(runtime), "-B", "-c", script], cwd=app, env=env,
-                                       stdout=log, stderr=subprocess.STDOUT, timeout=5)
-                if probe.returncode == 0:
-                    return process
-                time.sleep(0.1)
-            process.terminate()
-            process.wait(timeout=5)
-            raise RuntimeError("Own app IPC did not become ready")
 
         first = start_ui()
         run([gui_runtime, "-B", "-m", "price_lens", "--minimize"], app, timeout=10)

@@ -13,6 +13,9 @@ from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from .platform_paths import cache_directory, capture_socket_name, capture_lock_path
 from .capture_platform import uses_system_picker, screen_for_rectangle
 
+MAX_FRAME_PIXELS = 16_777_216
+MAX_FRAME_BUFFER = MAX_FRAME_PIXELS * 4 + 4096
+
 
 def socket_name():
     return capture_socket_name()
@@ -42,12 +45,16 @@ class StreamClient(QObject):
         self.socket.connected.connect(self.connected)
         self.socket.readyRead.connect(self.receive)
         self.socket.errorOccurred.connect(self.connection_error)
-        self.socket.setReadBufferSize(65536)
+        # Set the bound once: changing a named-pipe read limit while a large
+        # frame is in flight can suspend Qt's Windows pipe reader. Qt allocates
+        # this buffer as bytes arrive, rather than reserving the whole limit.
+        self.socket.setReadBufferSize(MAX_FRAME_BUFFER)
         self.delivery_interval = 0.15
         self.next_delivery = 0.0
         self.delivery_timer = QTimer(self)
         self.delivery_timer.setSingleShot(True)
-        self.delivery_timer.timeout.connect(self.receive)
+        self.delivery_timer.timeout.connect(self.deliver_pending)
+        self.pending_frame = None
         self.header_size = None
         self.metadata = None
         self.next_delivery = 0.0
@@ -65,6 +72,7 @@ class StreamClient(QObject):
         self.launcher = QProcess(self)
 
     def start(self, screen, desktop):
+        self.pending_frame = None
         self.paused = False
         self.subscription = {"screen": list(screen.getRect()), "desktop": list(desktop.getRect()), "paused": False}
         self.active = True
@@ -120,6 +128,7 @@ class StreamClient(QObject):
         self.header_size = None
         self.metadata = None
         self.next_delivery = 0.0
+        self.pending_frame = None
         self.send_subscription()
 
     def send_subscription(self):
@@ -130,13 +139,8 @@ class StreamClient(QObject):
     def receive(self):
         while True:
             if self.header_size is None:
-                delay = self.next_delivery - time.monotonic()
-                if delay > 0:
-                    if not self.delivery_timer.isActive():
-                        self.delivery_timer.start(max(1, round(delay * 1000)))
-                    return
                 if self.socket.bytesAvailable() < 4:
-                    return
+                    break
                 self.header_size = struct.unpack("!I", bytes(self.socket.read(4)))[0]
                 if self.header_size > 4096:
                     self.status.emit("Invalid local capture header")
@@ -144,33 +148,47 @@ class StreamClient(QObject):
                     return
             if self.metadata is None:
                 if self.socket.bytesAvailable() < self.header_size:
-                    return
+                    break
                 self.metadata = json.loads(bytes(self.socket.read(self.header_size)))
                 if self.metadata.get("error"):
                     self.status.emit(self.metadata["error"])
                     self.header_size = self.metadata = None
                     continue
                 width, height = self.metadata["width"], self.metadata["height"]
-                if not (0 < width <= 16384 and 0 < height <= 16384 and width * height <= 16_777_216):
+                if not (0 < width <= 16384 and 0 < height <= 16384 and width * height <= MAX_FRAME_PIXELS):
                     self.status.emit("Capture dimensions exceed limit")
                     self.stop()
                     return
-                self.socket.setReadBufferSize(width * height * 4 + 4096)
             size = self.metadata["width"] * self.metadata["height"] * 4
             if self.socket.bytesAvailable() < size:
-                return
+                break
             pixels = bytes(self.socket.read(size))
             captured_at = self.metadata["captured_at"]
             wrong_monitor = self.metadata.get("screen") is not None and self.metadata["screen"] != self.subscription["screen"]
             image = None if self.paused or wrong_monitor else QImage(pixels, self.metadata["width"], self.metadata["height"], QImage.Format.Format_RGBA8888).copy()
             self.header_size = self.metadata = None
-            self.socket.setReadBufferSize(65536)
-            self.next_delivery = time.monotonic() + self.delivery_interval
             if self.active and not self.paused and not wrong_monitor:
-                self.frame.emit(image, captured_at)
+                self.pending_frame = image, captured_at
+        self.deliver_pending()
+
+    def deliver_pending(self):
+        # Drain incoming packets immediately and keep one newest frame. Applying
+        # the display interval to socket reads queues old images on Windows.
+        if self.pending_frame is None:return
+        delay = self.next_delivery - time.monotonic()
+        if delay > 0:
+            if not self.delivery_timer.isActive():
+                self.delivery_timer.start(max(1, round(delay * 1000)))
+            return
+        image,captured_at = self.pending_frame
+        self.pending_frame = None
+        self.delivery_timer.stop()
+        self.next_delivery = time.monotonic() + self.delivery_interval
+        if self.active and not self.paused:self.frame.emit(image,captured_at)
 
     def set_paused(self, paused):
         self.paused = paused
+        if paused:self.pending_frame = None
         if self.subscription is not None:
             self.subscription["paused"] = paused
         if self.socket.state() == QLocalSocket.LocalSocketState.ConnectedState:
@@ -178,6 +196,7 @@ class StreamClient(QObject):
 
     def stop(self, keep_session=False):
         self.active = False
+        self.pending_frame = None
         self.retry_timer.stop()
         self.connect_timer.stop()
         self.delivery_timer.stop()
@@ -193,7 +212,6 @@ class StreamClient(QObject):
 class CaptureServer(QObject):
     def __init__(self, app):
         super().__init__(app)
-        from PySide6.QtMultimedia import QMediaCaptureSession, QScreenCapture, QVideoSink
         self.app = app
         self.server = QLocalServer(self)
         self.server.setSocketOptions(QLocalServer.SocketOption.UserAccessOption)
@@ -202,14 +220,22 @@ class CaptureServer(QObject):
         self.paused_clients = set()
         self.closing = False
         self.last_frame = 0.0
-        self.session = QMediaCaptureSession(self)
-        self.capture = QScreenCapture(self)
+        self.session = None
+        self.sink = None
+        if sys.platform == "win32":
+            from .windows_capture import WindowsDesktopCapture
+            self.capture = WindowsDesktopCapture(app, self.has_frame_demand, self)
+            self.capture.image_ready.connect(self.on_image)
+        else:
+            from PySide6.QtMultimedia import QMediaCaptureSession, QScreenCapture, QVideoSink
+            self.session = QMediaCaptureSession(self)
+            self.capture = QScreenCapture(self)
+            self.sink = QVideoSink(self)
+            self.session.setScreenCapture(self.capture)
+            self.session.setVideoSink(self.sink)
+            self.sink.videoFrameChanged.connect(self.on_frame)
         if hasattr(self.capture, "setMaximumFrameRate"):
             self.capture.setMaximumFrameRate(10.0)
-        self.sink = QVideoSink(self)
-        self.session.setScreenCapture(self.capture)
-        self.session.setVideoSink(self.sink)
-        self.sink.videoFrameChanged.connect(self.on_frame)
         self.capture.errorOccurred.connect(self.error)
         self.idle = QTimer(self)
         self.idle.setSingleShot(True)
@@ -261,9 +287,9 @@ class CaptureServer(QObject):
                     return
                 self.clients[socket] = (target, QRect(*data["desktop"]))
                 if not self.capture.isActive():
-                    from PySide6.QtMultimedia import QScreenCapture
                     # Constructor errors happen before errorOccurred is wired.
-                    if self.capture.error() != QScreenCapture.Error.NoError:
+                    error = self.capture.error()
+                    if getattr(error, "value", error):
                         self.send(socket, {"error": "OS capture: " + self.capture.errorString()})
                         return
                     # Set a valid OS screen before starting. The sharing portal
@@ -289,6 +315,12 @@ class CaptureServer(QObject):
         if hasattr(self.capture, "setMaximumFrameRate"):
             paused = bool(self.clients) and all(socket in self.paused_clients for socket in self.clients)
             self.capture.setMaximumFrameRate(1.0 if paused else 10.0)
+        if hasattr(self.capture, "setPaused"):
+            self.capture.setPaused(not self.clients or all(socket in self.paused_clients for socket in self.clients))
+
+    def has_frame_demand(self):
+        return not self.closing and any(target and not socket.bytesToWrite() and socket not in self.paused_clients
+                                        for socket, target in self.clients.items())
 
     @staticmethod
     def send(socket, metadata, pixels=None):
@@ -306,15 +338,21 @@ class CaptureServer(QObject):
             self.send(socket, {"error": "OS capture: " + description})
 
     def on_frame(self, frame):
+        if self.accept_frame():self.deliver_image(frame.toImage(), self.last_frame)
+
+    def on_image(self, image):
+        if not image.isNull() and self.accept_frame():self.deliver_image(image, self.last_frame)
+
+    def accept_frame(self):
         if self.closing:
-            return
+            return False
         captured_at = time.monotonic()
-        if captured_at - self.last_frame < 0.075 or not self.clients or all(s in self.paused_clients for s in self.clients):
-            return
-        if all(socket.bytesToWrite() for socket in self.clients):
-            return
+        if captured_at - self.last_frame < 0.075 or not self.has_frame_demand():return False
         self.last_frame = captured_at
-        image = frame.toImage()
+        return True
+
+    def deliver_image(self, image, captured_at):
+        if image.isNull():return
         for socket, target in list(self.clients.items()):
             if not target or socket.bytesToWrite() or socket in self.paused_clients:
                 continue
@@ -342,11 +380,12 @@ class CaptureServer(QObject):
                 socket.deleteLater()
         self.clients.clear()
         self.paused_clients.clear()
-        capture = self.session.screenCapture()
-        if capture is not None:
-            capture.stop()
-        self.session.setScreenCapture(None)
-        self.session.setVideoSink(None)
+        self.capture.stop()
+        if self.session is not None:
+            capture = self.session.screenCapture()
+            if capture is not None:capture.stop()
+            self.session.setScreenCapture(None)
+            self.session.setVideoSink(None)
 
 
 def main():

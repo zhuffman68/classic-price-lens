@@ -42,10 +42,10 @@ class NumberRoll:
     def finish(self):
         self.progress=1.0;self.before={}
 
-    def paint(self,painter,rect,alignment=Qt.AlignmentFlag.AlignLeft):
+    def paint(self,painter,rect,alignment=Qt.AlignmentFlag.AlignLeft,inline_icon=None):
         painter.save()
         metrics=painter.fontMetrics();cell=metrics.horizontalAdvance('0');height=metrics.height()
-        widths=[cell if key is not None else metrics.horizontalAdvance(c) for key,c in self.columns]
+        widths=[cell if key is not None else max(12,min(18,height-2))+2 if c=='\ufffc' and inline_icon else metrics.horizontalAdvance(c) for key,c in self.columns]
         width=sum(widths)
         if width>rect.width() and rect.width()>0:
             painter.translate(rect.x(),0);painter.scale(rect.width()/width,1)
@@ -56,6 +56,8 @@ class NumberRoll:
         painter.setClipRect(rect,Qt.ClipOperation.IntersectClip)
         for (key,char),w in zip(self.columns,widths):
             box=QRectF(left,top,w,height);left+=w
+            if char=='\ufffc' and inline_icon:
+                inline_icon(painter,box);continue
             if key is None:
                 painter.drawText(box,Qt.AlignmentFlag.AlignCenter,char);continue
             painter.save();painter.setClipRect(box,Qt.ClipOperation.IntersectClip)

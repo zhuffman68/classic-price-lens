@@ -16,8 +16,9 @@ Lupin reads shared screen pixels and draws independent overlays. It never hooks 
 See market references beside player-shop listings, with item names and colors that make lower, similar and higher asking prices easy to compare. Hover inventory or equipped items for their market reference, including while a shop is open.
 
 - Supports equipment, scrolls, materials, consumables and cash/NX resale prices when market reports exist.
+- Shows item images beside shop entries in the Prices page.
 - Keeps shop references visible when an item description overlaps them.
-- Shows when a price was checked and how old its market reports are. Thin or stale data receive no deal rating.
+- Shows when a price was checked and how old its market reports are. The larger item card includes the most recent observed sale time when available. Thin or stale data receive no deal rating.
 - Compares equipment as unscrolled. Individual stat rolls are not priced.
 
 <!-- DEMO: docs/media/shop-prices.gif — open a populated shop and hover a listing. -->
@@ -27,15 +28,15 @@ See market references beside player-shop listings, with item names and colors th
 
 Look up an item without opening a shop or sharing a screen. Type its name, browse matching items with thumbnails, and select one for its market reference. Search gets priority over on-screen results, with those results still available when needed.
 
-Prices share a local cache with the overlay. Saved references appear while updates run; missing market reports are shown separately from an unreadable item name. The full market refreshes on launch and hourly, with cached individual lookups as a fallback.
+Prices share a local cache with the overlay. Saved references appear while updates run; missing market reports are shown separately from an unreadable item name. The full market refreshes on launch and at the interval selected in Settings. The overlay, search and watched items all use this shared snapshot; individual price requests are not used. Items without a reference stay unpriced.
 
 <!-- DEMO: docs/media/item-search.gif — type, select an item, inspect its reference, clear the search. -->
 
 ## Watched items
 
-Search for an item and choose **Watch item**. When Lupin recognizes it in a shop or an item tooltip, its label pulses twice and keeps a star so it is easy to spot, even while its price is loading. Deal colors still show how its asking price compares.
+Search for an item and choose its **☆** star. When Lupin recognizes it in a shop or an item tooltip, it highlights the label and keeps a star so it is easy to spot, even while its price is loading. Deal colors still show how its asking price compares.
 
-Use **Watchlist** on Prices to review or remove saved items. The list survives restarts. Reduced motion uses a steady marker.
+Expand **Watched items** on Prices for thumbnails and saved market references. Three entries fit before the list scrolls. Click an item for its full price card, or click it again to deselect. Collapsing the list clears that card and returns to on-screen items. Stars remove saved entries. The list survives restarts. Reduced motion uses a steady marker.
 
 <!-- DEMO: docs/media/watched-items.gif — watch a searched item, then find it in a real shop. -->
 
@@ -85,7 +86,7 @@ Choose a display and Lupin finds the Classic World area automatically. Windows r
 - Configurable shortcuts for prices, tracking, reading Korean and opening the writer.
 - The current tool's shortcut shown at the bottom of each tab.
 - Minimize to the tray by default, with a notification and right-click controls.
-- Optional always-on-top control panel, reduced motion and independent overlay toggles.
+- Reduced motion and independent overlay toggles.
 
 | Default shortcut | Action |
 | --- | --- |
@@ -105,12 +106,12 @@ Download from **[itch.io](https://zhuffman68.itch.io/lupin)**. Repository collab
 | System | Download | Install |
 | --- | --- | --- |
 | Windows 10/11 x64 | `Windows-x64-Setup.exe` | Run it, then open Lupin from Start. |
-| Arch / Manjaro | `.pkg.tar.zst` | `sudo pacman -U ./lupin-0.13.0-1-x86_64.pkg.tar.zst` |
-| Debian 12+ / Ubuntu 22.04+ | `.deb` | `sudo apt install ./lupin_0.13.0-1_amd64.deb` |
+| Arch / Manjaro | `.pkg.tar.zst` | `sudo pacman -U ./lupin-0.13.1-1-x86_64.pkg.tar.zst` |
+| Debian 12+ / Ubuntu 22.04+ | `.deb` | `sudo apt install ./lupin_0.13.1-1_amd64.deb` |
 
 Extract downloaded ZIPs before running an installer or package command. For the Windows portable build, extract the full folder and open `run-windows.bat`. Updates preserve settings, prices and history; Linux packages replace the former `classic-price-lens` package.
 
-Requirements: a supported 64-bit desktop, about **3 GB free space** for installation, and internet for market updates or uncached item images. Python, Qt, OCR and both translation models are bundled. **Chrome, Edge or Chromium** enables the full-market cache; individual lookups work without it. Linux sharing needs PipeWire and a working desktop sharing portal, normally supplied by KDE or GNOME.
+Requirements: a supported 64-bit desktop, about **3 GB free space** for installation, and internet for market updates or uncached item images. Python, Qt, OCR and both translation models are bundled. **Chrome, Edge or Chromium** is required for market updates. An app-owned browser profile opens briefly in the background and closes afterward; saved prices remain available offline. Linux sharing needs PipeWire and a working desktop sharing portal, normally supplied by KDE or GNOME.
 
 ## Getting started
 

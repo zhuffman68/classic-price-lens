@@ -6,12 +6,15 @@ import time
 import unittest
 from unittest.mock import patch
 
-from PySide6.QtCore import QCoreApplication,QEvent
+from PySide6.QtCore import QCoreApplication,QEvent,QSettings,Qt,QPoint,QObject,Signal
+from PySide6.QtGui import QImage,QColor
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
 from price_lens.domain import Catalog,Item,Quote
 from price_lens.search import PriceSearch
 from price_lens.service import PriceService
+from price_lens.watchlist import Watchlist
 
 
 class PriceSearchTests(unittest.TestCase):
@@ -58,6 +61,51 @@ class PriceSearchTests(unittest.TestCase):
         self.panel.results.setCurrentRow(0)
         self.assertEqual([item.game_id for item in self.requests],[1])
 
+    def test_empty_query_has_no_instruction_but_search_keeps_match_count(self):
+        self.assertEqual(self.panel.hint.text(),'')
+        self.search('Work')
+        self.assertIn('2 matches',self.panel.hint.text())
+
+    def test_inline_watches_request_only_on_selection_and_remove_without_lookup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            watches=Watchlist(QSettings(str(Path(directory)/'settings.ini'),QSettings.Format.IniFormat))
+            self.panel.set_watchlist(watches)
+            watches.toggle(self.catalog.items[0]);watches.toggle(self.catalog.items[2])
+            section=self.panel.watched_items
+            self.assertEqual(section.rows.count(),2)
+            self.assertEqual(self.requests,[])
+            self.panel.resize(420,640);self.panel.show();self.app.processEvents()
+            row=section.rows.item(0)
+            identity=row.data(Qt.ItemDataRole.UserRole)
+            point=section.rows.visualItemRect(row).center()
+            QTest.mouseClick(section.rows.viewport(),Qt.MouseButton.LeftButton,pos=point)
+            self.assertEqual(self.requests[-1].game_id,identity)
+            self.assertGreaterEqual(self.panel.price_view.header.indexOf(self.panel.watch_button),0)
+            self.assertTrue(self.panel.watch_button.isChecked())
+            before=len([r for r in self.requests if r])
+            rectangle=section.rows.visualItemRect(row)
+            QTest.mouseClick(section.rows.viewport(),Qt.MouseButton.LeftButton,
+                             pos=QPoint(rectangle.right()-12,rectangle.center().y()))
+            self.assertNotIn(identity,watches.ids)
+            self.assertEqual(len([r for r in self.requests if r]),before)
+            self.assertEqual(section.rows.count(),1)
+            self.assertFalse(self.panel.watch_button.isChecked())
+
+    def test_watched_rows_reuse_cached_thumbnails_without_a_download_signal(self):
+        class CachedImages(QObject):
+            ready=Signal(int)
+            def image(self,identity):
+                image=QImage(16,16,QImage.Format.Format_RGBA8888);image.fill(QColor('#d9ad66'));return image
+            def observe(self,items):self.items=list(items)
+        with tempfile.TemporaryDirectory() as directory:
+            watches=Watchlist(QSettings(str(Path(directory)/'settings.ini'),QSettings.Format.IniFormat))
+            watches.toggle(self.catalog.items[0]);self.panel.set_watchlist(watches)
+            store=CachedImages();self.panel.set_thumbnails(store)
+            self.panel.resize(420,640);self.panel.show();self.panel.watched_items.set_expanded(True);self.app.processEvents();self.panel.request_thumbnails()
+            image=self.panel.watched_items.rows.item(0).icon().pixmap(28,28).toImage()
+            self.assertEqual(image.pixelColor(14,14),QColor('#d9ad66'))
+            self.assertEqual(self.requests,[])
+
     def test_visible_ellipsis_and_hyphens_can_be_used_in_manual_search(self):
         self.panel.set_catalog(Catalog({'items':[{'id':1112223,'name':'Ink-and-Wash Painting Name Tag Ring'},
                                                 {'id':1112227,'name':'Ink-and-Wash Thought Bubble Ring'}]}))
@@ -90,32 +138,20 @@ class PriceSearchTests(unittest.TestCase):
         self.assertNotIn("Inventory / equipment item",labels)
 
     def test_manual_demand_survives_no_screen_and_obeys_cache_ttl(self):
+        from test_snapshot import document
         with tempfile.TemporaryDirectory() as directory:
-            service=PriceService(Path(directory)/"prices.sqlite")
-            calls=[]
-            now=time.time()
-            def fetch(item):
-                calls.append(item.game_id)
-                return Quote(item.game_id,500,now,now,20,"NiaMeowDB","","24h")
-            service.provider.fetch=fetch
+            service=PriceService(Path(directory)/'prices.sqlite');now=time.time()
+            doc=document(now);doc['items'][0].update(id='basil:00000001',name='Work Gloves')
+            service.snapshot.save(doc,now)
             try:
-                service.set_manual(self.catalog.items[0],900)
-                deadline=time.monotonic()+3
-                while (service.pending or service.identity_pending) and time.monotonic()<deadline:
-                    self.app.processEvents();time.sleep(.001)
-                self.assertFalse(service.pending)
-                for _ in range(500):service.clear_visible()
-                self.assertEqual(calls,[1])
-                with patch("price_lens.service.time.time",return_value=now+901):
-                    service.clear_visible()
-                    deadline=time.monotonic()+3
-                    while service.pending and time.monotonic()<deadline:
-                        self.app.processEvents();time.sleep(.001)
-                self.assertEqual(calls,[1,1],"Expired manual prices must refresh without screen demand")
-                service.set_manual(None)
-                self.assertFalse(service._queued)
-            finally:
-                service.close();service.pool.shutdown(wait=True)
+                with patch('price_lens.data.get_json',side_effect=AssertionError('No individual lookups')):
+                    service.set_manual(self.catalog.items[0],900)
+                    for _ in range(500):service.clear_visible()
+                    quote=service.delivered[1]
+                    self.assertEqual(quote.price,100)
+                    self.assertFalse(quote.cache_valid(now+901,900))
+                    service.set_manual(None)
+            finally:service.close();service.pool.shutdown(wait=True)
 
     def test_duplicate_names_resolve_current_item_before_requesting_price(self):
         self.panel.set_catalog(Catalog({"items":[{"id":10,"name":"Blue Hawkeye","category":"Equipment"},
@@ -139,48 +175,30 @@ class PriceSearchTests(unittest.TestCase):
         self.panel.select_result(self.panel.results.item(0))
         self.assertEqual(self.panel.error,"No unique current match")
 
-    def test_manual_name_resolution_and_quote_share_the_existing_scheduler(self):
+    def test_manual_name_resolution_and_quote_share_the_existing_snapshot(self):
+        from test_snapshot import document
         with tempfile.TemporaryDirectory() as directory:
-            service=PriceService(Path(directory)/"prices.sqlite")
-            calls=[]
-            candidates=(Item(10,"Blue Hawkeye"),Item(20,"Blue Hawkeye"))
-            def resolve(name, choices):
-                calls.append(('identity',name));return choices[1]
-            def fetch(item):
-                calls.append(('quote',item.game_id))
-                return Quote(item.game_id,500,time.time(),time.time(),20,"NiaMeowDB","","24h")
-            service.provider.resolve_name=resolve
-            service.provider.fetch=fetch
+            service=PriceService(Path(directory)/'prices.sqlite');now=time.time()
+            doc=document(now);doc['items'][0].update(id='basil:00000020',name='Blue Hawkeye')
+            service.snapshot.save(doc,now)
             service.identity_ready.connect(lambda identity,item:service.set_manual(item))
             try:
-                service.set_manual(None,identity=("Blue Hawkeye",None),candidates=candidates)
-                deadline=time.monotonic()+3
-                while (service.pending or service.identity_pending) and time.monotonic()<deadline:
-                    self.app.processEvents();time.sleep(.001)
-                self.assertEqual(calls,[('identity','Blue Hawkeye'),('quote',20)])
-                for _ in range(500):service.clear_visible()
-                self.assertEqual(len(calls),2)
-            finally:
-                service.close();service.pool.shutdown(wait=True)
+                with patch('price_lens.data.get_json',side_effect=AssertionError('No individual lookups')):
+                    service.set_manual(None,identity=('Blue Hawkeye',None),candidates=(Item(10,'Blue Hawkeye'),Item(20,'Blue Hawkeye')))
+                    self.assertEqual(service.manual_item.game_id,20)
+                    self.assertEqual(service.delivered[20].price,100)
+            finally:service.close();service.pool.shutdown(wait=True)
 
-    def test_manual_identity_failure_obeys_the_selected_cooldown(self):
+    def test_manual_identity_failure_is_reported_once_per_generation(self):
         with tempfile.TemporaryDirectory() as directory:
-            service=PriceService(Path(directory)/"prices.sqlite")
-            calls=[];errors=[]
-            def resolve(name, choices):
-                calls.append(name);raise ValueError('No unique current match')
-            service.provider.resolve_name=resolve
+            service=PriceService(Path(directory)/'prices.sqlite');errors=[]
             service.identity_error.connect(lambda identity,message:errors.append(message))
             try:
-                service.set_manual(None,identity=("Blue Hawkeye",None),candidates=(Item(10,"Blue Hawkeye"),))
-                deadline=time.monotonic()+3
-                while (service.pending or service.identity_pending) and time.monotonic()<deadline:
-                    self.app.processEvents();time.sleep(.001)
-                for _ in range(500):service.clear_visible()
-                self.assertEqual(calls,['Blue Hawkeye'])
-                self.assertEqual(errors,['No unique current match'])
-            finally:
-                service.close();service.pool.shutdown(wait=True)
+                with patch('price_lens.data.get_json',side_effect=AssertionError('No individual lookups')):
+                    service.set_manual(None,identity=('Blue Hawkeye',None),candidates=(Item(10,'Blue Hawkeye'),))
+                    for _ in range(500):service.clear_visible()
+                self.assertEqual(len(errors),1)
+            finally:service.close();service.pool.shutdown(wait=True)
 
 
 if __name__ == "__main__":unittest.main()
