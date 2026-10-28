@@ -1,7 +1,10 @@
 Local patch status
 
-v0.14.0 adds watch stars to shop/inventory cards, underlined tabs, steadier
-watched/item panels and 509 x 829 defaults while preserving saved sizes.
+v0.14.1 fixes the watched-item/ready-card transition and residual spacing.
+Visible references update with new market generations even while reading is
+paused. Tabs now use plain labels with a filled active background.
+It includes v0.14.0's shop/inventory watch stars, steadier watched/item
+panels and 509 x 829 defaults while preserving saved sizes.
 It fixes tall item descriptions invalidating the game locator, removes the
 legacy covered-row opacity fallback and restores listing amounts only when
 their exact previously read pixels return. It improves clipped/font-variant

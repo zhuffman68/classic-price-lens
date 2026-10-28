@@ -88,14 +88,19 @@ class PriceService(QObject):
         """Exact-ID, name and unit validation, using the in-memory generation only."""
         return self.snapshot.quote(item) if item else None
 
-    def request(self,item,ttl):
-        if self.closed:return
+    def reference(self,item):
+        """Read this generation, including an explicit reference for missing data."""
         quote=self.cached(item)
         if quote is None:
             checked=(self.snapshot.meta or {}).get('checked_at',0)
             published=(self.snapshot.meta or {}).get('published_at')
             quote=Quote(item.game_id,None,checked,None,0,'MesoWatch','https://meso.watch/','no data',
                         basis='No price in the market snapshot',per_set=item.per_set,uncertain=True,published_at=published)
+        return quote
+
+    def request(self,item,ttl):
+        if self.closed:return
+        quote=self.reference(item)
         if self.delivered.get(item.game_id)!=quote:
             self.delivered[item.game_id]=quote;self.quote_ready.emit(item.game_id,quote)
 

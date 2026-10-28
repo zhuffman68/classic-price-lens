@@ -260,7 +260,9 @@ class ContextUiTests(unittest.TestCase):
         self.window.search_panel.query.clear()
         self.assertFalse(self.window.scroll.isHidden())
         self.assertEqual(self.window.card_views,before)
-        self.assertIsNotNone(getattr(self.window.scroll,'_reveal',None))
+        self.assertIsNotNone(self.window.price_content.outgoing)
+        QTest.qWait(180)
+        self.assertIsNone(self.window.price_content.outgoing)
 
     def test_price_search_works_without_starting_capture(self):
         self.window.mode = "idle"
@@ -332,6 +334,67 @@ class ContextUiTests(unittest.TestCase):
                 section.body.animation.setCurrentTime(ms);self.app.processEvents()
                 positions.append(section.body.content.mapTo(w,QPoint()).y())
             self.assertEqual(len(set(positions)),1,positions)
+
+    def test_watched_item_and_ready_panel_share_an_origin_without_a_collapsed_gap(self):
+        from price_lens.domain import Item
+        w=self.window;w.resize(509,829);w.render();w.show();self.app.processEvents()
+        w.watchlist.toggle(Item(1,'Example Hat'))
+        section=w.search_panel.watched_items;QTest.qWait(230)
+        ready=next(iter(w.card_views.values()))
+        ready_top=ready.mapTo(w,QPoint()).y()
+        w.search_panel.select_watched(1);self.app.processEvents()
+        self.assertEqual(w.search_panel.price_view.mapTo(w,QPoint()).y(),ready_top)
+        QTest.qWait(50)
+        w.search_panel.select_watched(None);self.app.processEvents()
+        self.assertEqual(ready.mapTo(w,QPoint()).y(),ready_top)
+        QTest.qWait(180)
+        section.set_expanded(False)
+        for ms in range(0,201,20):
+            section.body.animation.setCurrentTime(ms);self.app.processEvents()
+            gap=ready.mapTo(w,QPoint()).y()-section.mapTo(w,QPoint()).y()-section.height()
+            self.assertEqual(gap,w.prices_layout.spacing())
+        self.assertTrue(w.search_panel.detail_scroll.isHidden())
+        self.assertFalse(w.scroll.isHidden())
+        self.app.setProperty('reduceMotion',True)
+        try:
+            section.set_expanded(True);w.search_panel.select_watched(1)
+            self.assertIsNone(w.price_content.outgoing)
+            w.search_panel.select_watched(None)
+            self.assertIsNone(w.price_content.outgoing)
+        finally:self.app.setProperty('reduceMotion',False)
+
+    def test_market_generation_refreshes_selected_watched_and_paused_shop_cards(self):
+        from price_lens.service import PriceService
+        from test_snapshot import document
+        w=self.window;service=PriceService(Path(self.exp_directory.name)/'refresh.sqlite')
+        previous=w.service;w.service=service
+        service.quote_ready.connect(w.on_quote);service.state_changed.connect(w.on_price_state)
+        now=time.time()
+        def update(price,seconds):
+            doc=document(now+seconds);doc['items'][0].update(id='basil:00000001',name='Example Hat',price=price)
+            service.snapshot.save(doc,now+seconds);service._snapshot_updated()
+        try:
+            update(100,0);w.on_reading(self.reading(shop_hover=True));w.show();self.app.processEvents()
+            item=w.catalog.items[0];w.watchlist.toggle(item)
+            w.search_panel.select_watched(item.game_id)
+            with patch('price_lens.data.get_json',side_effect=AssertionError('No item/network requests')):
+                update(250,1)
+                self.assertEqual(w.search_panel.quote.price,250)
+                self.assertEqual(w.quote_for(item).price,250)
+                reference=w.search_panel.watched_items.rows.item(0).data(Qt.ItemDataRole.UserRole+1)
+                self.assertEqual(reference[0],250)
+                w.search_panel.watched_items.set_expanded(False)
+                w.mode='paused';w.request_prices()
+                self.assertEqual(service._screen_demand[0],[])
+                update(400,2)
+                self.assertEqual(w.quote_for(item).price,400)
+                card=next(iter(w.card_views.values()))
+                self.assertTrue(any('400' in label.text() for label in card.findChildren(QLabel)))
+                service.snapshot.save(document(now+3),now+3);service._snapshot_updated()
+                self.assertIsNone(w.quote_for(item).price)
+                self.assertEqual(w.quote_for(item).basis,'No price in the market snapshot')
+        finally:
+            service.close();service.pool.shutdown(wait=True);w.service=previous
 
     def test_windows_starting_state_does_not_request_a_system_chooser(self):
         self.window.mode='idle'

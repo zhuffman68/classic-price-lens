@@ -15,13 +15,16 @@ from .watchlist_ui import WatchedItems,WatchButton
 
 class PriceSearch(QWidget):
     active_changed=Signal()
+    detail_changing=Signal()
     item_selected = Signal(object)
     identity_selected = Signal(object, object)
     source_requested = Signal(str)
     catalog_retry = Signal()
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, *, inline_detail=True):
         super().__init__(parent)
+        self.inline_detail=inline_detail
+        self.detail_identity=(None,None)
         self.catalog = None
         self.watchlist = None
         self.thumbnails=None
@@ -95,9 +98,10 @@ class PriceSearch(QWidget):
         self.pending_view.hide();self.detail_layout.addWidget(self.pending_view)
         self.detail_layout.addStretch()
         self.detail_scroll.setWidget(self.detail)
-        self.detail_scroll.setProperty('sectionDuration',160)
-        layout.addWidget(self.detail_scroll,1)
-        self.bottom_spacer=layout.count();layout.addStretch(1)
+        self.bottom_spacer=None
+        if inline_detail:
+            layout.addWidget(self.detail_scroll,1)
+            self.bottom_spacer=layout.count();layout.addStretch(1)
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
         self.timer.setInterval(180)
@@ -214,7 +218,6 @@ class PriceSearch(QWidget):
         self.active_changed.emit()
 
     def clear_selection(self):
-        if self.selected is not None and self.selection_source=='watch':fade_away(self.detail_scroll)
         self.selection_source=None
         if self.selected is not None or self.pending_identity is not None:
             self.selected = self.quote = None
@@ -337,9 +340,13 @@ class PriceSearch(QWidget):
         self.render()
 
     def render(self):
+        identity=(self.selected.game_id if self.selected else None,self.pending_identity)
+        changed_identity=identity!=self.detail_identity
+        if changed_identity:self.detail_changing.emit();self.detail_identity=identity
         self.update_watch_controls()
-        visibility(self.detail_scroll,bool(self.selected or self.pending_identity))
-        self.layout().setStretch(self.bottom_spacer,0 if self.selected or self.pending_identity else 1)
+        if self.inline_detail:
+            self.detail_scroll.setVisible(bool(self.selected or self.pending_identity))
+            self.layout().setStretch(self.bottom_spacer,0 if self.selected or self.pending_identity else 1)
         state = (self.selected,self.pending_identity,self.quote,self.error,self.lookup_state,self.ttl,int(time.time()//5))
         if state == self.card_key:return
         self.card_key = state
@@ -361,7 +368,7 @@ class PriceSearch(QWidget):
             card.show()
             if self.thumbnails:
                 card.thumbnail.show();card.thumbnail.set_image(self.thumbnails.image(self.selected.game_id))
-            if changed:reveal(card)
+            if changed and self.inline_detail:reveal(card)
             self.request_thumbnails()
         else:
             if card:card.hide()
@@ -370,3 +377,4 @@ class PriceSearch(QWidget):
             if self.pending_identity:
                 self.pending_name.setText(self.pending_identity[0])
                 self.pending_message.setText("The price source couldn't identify this item. Try again later." if self.error else "Checking market price…")
+        if changed_identity:self.active_changed.emit()

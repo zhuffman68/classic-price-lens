@@ -21,7 +21,7 @@ from .tray import TrayController
 from .experience_ui import ExperiencePanel
 from .platform_paths import data_directory
 from .search import PriceSearch
-from .motion import AnimatedTabs, MotionLabel, reveal, fade_away
+from .motion import AnimatedTabs, ContentArea, MotionLabel, reveal, fade_away
 from .fonts import interface_family
 from .branding import Brand
 from .shop_rows import ShopRows
@@ -112,6 +112,7 @@ class LensWindow(QMainWindow):
         self.shop_open = False
         self.shop_tooltip_rect = None
         self.quotes = {}
+        self.quote_generation = None
         self.errors = {}
         self.mode = "idle"
         self.snapshot_path = snapshot
@@ -321,11 +322,9 @@ class LensWindow(QMainWindow):
         prices_layout = QVBoxLayout(self.prices_page)
         prices_layout.setContentsMargins(0,0,0,0)
         prices_layout.setSpacing(8)
-        prices_layout.addWidget(self.summary)
-        prices_layout.addWidget(self.scroll,1)
         self.card_views = {}
         self.tabs.addTab(self.prices_page, "Prices")
-        self.search_panel = PriceSearch(self)
+        self.search_panel = PriceSearch(self,inline_detail=False)
         self.search_panel.set_watchlist(self.watchlist)
         self.watchlist.changed.connect(self.on_watchlist_changed)
         self.search_panel.ttl = self.ttl
@@ -336,10 +335,20 @@ class LensWindow(QMainWindow):
         self.thumbnails.ready.connect(self.on_shop_thumbnail)
         self.search_panel.catalog_retry.connect(self.retry_catalog)
         self.prices_layout=prices_layout
-        prices_layout.insertWidget(0,self.search_panel)
+        prices_layout.addWidget(self.search_panel)
+        self.price_content=ContentArea()
+        self.price_content_layout=QVBoxLayout(self.price_content)
+        self.price_content_layout.setContentsMargins(0,0,0,0)
+        self.price_content_layout.setSpacing(8)
+        self.price_content_layout.addWidget(self.search_panel.detail_scroll,1)
+        self.search_panel.detail_scroll.hide()
         self.onscreen_button=QPushButton("On-screen items")
         self.onscreen_button.setCheckable(True);self.onscreen_button.toggled.connect(self.update_price_layout)
-        prices_layout.insertWidget(1,self.onscreen_button)
+        self.price_content_layout.addWidget(self.onscreen_button)
+        self.price_content_layout.addWidget(self.summary)
+        self.price_content_layout.addWidget(self.scroll,1)
+        prices_layout.addWidget(self.price_content,1)
+        self.search_panel.detail_changing.connect(self.price_content.begin)
         self.search_panel.active_changed.connect(self.update_price_layout)
         self.search_panel.watched_items.visible_changed.connect(self.update_price_layout)
         self.search_tab_index=0
@@ -532,18 +541,21 @@ class LensWindow(QMainWindow):
         watching=self.search_panel.watched_items.expanded
         detail=bool(self.search_panel.selected or self.search_panel.pending_identity)
         active=bool(self.search_panel.query.text().strip() or detail or self.search_panel.watch_focus)
-        self.onscreen_button.setVisible(active and bool(self.rows))
-        self.onscreen_button.setText(f"On-screen items · {len(self.rows)}"+ (" ▾" if self.onscreen_button.isChecked() else " ▸"))
         show=not active or self.onscreen_button.isChecked()
         if not self.rows and not detail and not self.search_panel.query.text().strip():show=True
-        if self.scroll.isHidden()==show:
-            if not show:fade_away(self.scroll)
-            self.scroll.setVisible(show)
-            if show:reveal(self.scroll)
-        self.scroll.setMaximumHeight(220 if active else 16777215)
-        self.summary.setVisible(not active or self.onscreen_button.isChecked())
-        self.prices_layout.setStretch(self.prices_layout.indexOf(self.search_panel),1 if detail or self.search_panel.query.text().strip() else 0)
-        self.prices_layout.setStretch(self.prices_layout.indexOf(self.scroll),0 if active else 1)
+        content_key=(detail,show)
+        if content_key!=getattr(self,'price_content_key',None):
+            if self.price_content.before is None:self.price_content.begin()
+            self.price_content_key=content_key
+        self.onscreen_button.setVisible(active and bool(self.rows))
+        self.onscreen_button.setText(f"On-screen items · {len(self.rows)}"+ (" ▾" if self.onscreen_button.isChecked() else " ▸"))
+        self.search_panel.detail_scroll.setVisible(detail)
+        self.scroll.setVisible(show)
+        self.scroll.setMaximumHeight(220 if detail else 16777215)
+        self.summary.setVisible(show and bool(self.summary.text()))
+        self.price_content_layout.setStretch(self.price_content_layout.indexOf(self.search_panel.detail_scroll),1 if detail else 0)
+        self.price_content_layout.setStretch(self.price_content_layout.indexOf(self.scroll),0 if detail else 1)
+        self.price_content.complete()
         self.update_shop_thumbnails()
         if watching:self.update_watched_quotes()
 
@@ -1337,6 +1349,18 @@ class LensWindow(QMainWindow):
 
     def on_price_state(self):
         if not self.closing:
+            snapshot=getattr(self.service,'snapshot',None)
+            generation=(snapshot.meta or {}).get('checked_at') if snapshot else None
+            if self.catalog and generation is not None and generation!=self.quote_generation:
+                self.quote_generation=generation
+                selected=self.search_panel.selected
+                identities=set(self.quotes)
+                if selected:identities.add(selected.game_id)
+                for item in self.catalog.items:
+                    if item.game_id not in identities:continue
+                    quote=self.service.reference(item)
+                    self.quotes[item.game_id]=quote
+                    self.search_panel.accept_quote(item.game_id,quote)
             item = self.search_panel.selected
             self.search_panel.set_state(self.service.state_for(item.game_id) if item else "")
             self.update_price_status()

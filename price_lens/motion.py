@@ -2,7 +2,7 @@
 import re
 from PySide6.QtCore import QEasingCurve,QPoint,Qt,QVariantAnimation,QSize,QRect
 from PySide6.QtGui import QPainter, QPalette
-from PySide6.QtWidgets import QApplication, QGraphicsOpacityEffect, QLabel, QTabWidget, QWidget,QSizePolicy,QStackedWidget
+from PySide6.QtWidgets import QApplication, QGraphicsOpacityEffect, QLabel, QTabWidget, QWidget,QSizePolicy,QStackedWidget,QStyle,QStyleOption
 from .number_motion import NumberRoll
 from . import gui_currency
 
@@ -127,6 +127,59 @@ def fade_away(widget):
     snapshot.show();snapshot.raise_();animation.start()
 
 
+class _ContentFrame(QWidget):
+    def __init__(self,before,after,parent):
+        super().__init__(parent);self.before=before;self.after=after;self.progress=0.0
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+
+    def paintEvent(self,event):
+        painter=QPainter(self);option=QStyleOption();option.initFrom(self)
+        self.style().drawPrimitive(QStyle.PrimitiveElement.PE_Widget,option,painter,self)
+        # Fade through the panel background so old/new text never overlaps.
+        painter.setOpacity(abs(2*self.progress-1))
+        painter.drawPixmap(0,0,self.before if self.progress<.5 else self.after)
+
+
+class ContentArea(QWidget):
+    """Replace content in one layout, without animating its height."""
+    def __init__(self,parent=None):
+        super().__init__(parent)
+        self.before=None;self.outgoing=None
+        self.animation=QVariantAnimation(self);self.animation.setDuration(150)
+        self.animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
+        self.animation.valueChanged.connect(self.advance)
+        self.animation.finished.connect(self.finish)
+
+    def begin(self):
+        pixels=self.grab() if enabled(self) and not self.size().isEmpty() else None
+        self.finish();self.before=pixels
+
+    def complete(self):
+        pixels=self.before;self.before=None
+        if pixels is None or not enabled(self):return
+        if self.layout():self.layout().activate()
+        self.outgoing=_ContentFrame(pixels,self.grab(),self)
+        self.outgoing.setGeometry(self.rect())
+        self.outgoing.show();self.outgoing.raise_()
+        self.animation.setStartValue(0.0);self.animation.setEndValue(1.0);self.animation.start()
+
+    def advance(self,progress):
+        if not enabled(self):self.finish();return
+        if self.outgoing:self.outgoing.progress=float(progress);self.outgoing.update()
+
+    def finish(self):
+        self.animation.stop();self.before=None
+        if self.outgoing:
+            self.outgoing.hide();self.outgoing.deleteLater();self.outgoing=None
+
+    def resizeEvent(self,event):
+        super().resizeEvent(event)
+        if self.outgoing:self.outgoing.setGeometry(self.rect())
+
+    def hideEvent(self,event):
+        self.finish();super().hideEvent(event)
+
+
 def visibility(widget, shown):
     """Animate a layout section's height without leaving an invisible input target."""
     if getattr(widget,"_motion_target",not widget.isHidden()) == shown:return
@@ -187,7 +240,6 @@ def fading_visibility(widget,shown):
 class AnimatedTabs(QTabWidget):
     def __init__(self,parent=None):
         super().__init__(parent)
-        font=self.tabBar().font();font.setUnderline(True);self.tabBar().setFont(font)
         self.previous_page=None
         self.previous_index=0
         self.sliding=False
