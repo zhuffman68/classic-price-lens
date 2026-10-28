@@ -11,6 +11,7 @@ from shiboken6 import isValid
 from PySide6.QtGui import QImage
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from .platform_paths import cache_directory, capture_socket_name, capture_lock_path
+from .capture_platform import uses_system_picker, screen_for_rectangle
 
 
 def socket_name():
@@ -123,7 +124,8 @@ class StreamClient(QObject):
 
     def send_subscription(self):
         self.socket.write((json.dumps(self.subscription) + "\n").encode())
-        self.status.emit("OS sharing session connected • full workspace is supported")
+        self.status.emit("OS sharing session connected • full workspace is supported"
+                         if uses_system_picker() else "Display capture connected")
 
     def receive(self):
         while True:
@@ -251,7 +253,13 @@ class CaptureServer(QObject):
                     self.paused_clients.discard(socket)
                 self.update_frame_rate()
             if "screen" in data and "desktop" in data:
-                self.clients[socket] = (QRect(*data["screen"]), QRect(*data["desktop"]))
+                target = QRect(*data["screen"])
+                screen = screen_for_rectangle(self.app.screens(), target)
+                if screen is None:
+                    self.clients[socket] = None
+                    self.send(socket, {"error": "OS capture: The selected display is no longer available. Choose a connected display and start reading again."})
+                    return
+                self.clients[socket] = (target, QRect(*data["desktop"]))
                 if not self.capture.isActive():
                     from PySide6.QtMultimedia import QScreenCapture
                     # Constructor errors happen before errorOccurred is wired.
@@ -260,13 +268,9 @@ class CaptureServer(QObject):
                         return
                     # Set a valid OS screen before starting. The sharing portal
                     # still chooses the actual source and can return a workspace.
-                    target = self.clients[socket][0]
-                    screen = next((s for s in self.app.screens() if s.geometry() == target), self.app.primaryScreen())
                     self.capture.setScreen(screen)
                     self.capture.start()
                 elif sys.platform != "linux":
-                    target = self.clients[socket][0]
-                    screen = next((s for s in self.app.screens() if s.geometry() == target), self.app.primaryScreen())
                     self.capture.setScreen(screen)
 
     def disconnect(self, socket):

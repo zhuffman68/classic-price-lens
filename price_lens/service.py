@@ -4,13 +4,14 @@ from concurrent.futures import CancelledError, ThreadPoolExecutor
 from dataclasses import dataclass, field
 import time
 
-from PySide6.QtCore import QObject, Qt, Signal, Slot
+from PySide6.QtCore import QObject, Qt, QTimer, Signal, Slot
 
 from .data import Cache, MeowProvider, load_catalog
 from .http_json import RequestToken, request_scope
 from .provider_index import load_index
 from .snapshot import SnapshotStore
 from .snapshot_updater import SnapshotUpdater
+from .tls import retryable_catalog_error
 
 
 @dataclass
@@ -56,6 +57,11 @@ class PriceService(QObject):
         self.identity_pending = set()
         self.identity_retry = {}
         self.catalog_pending = False
+        self.catalog_retries = 0
+        self.catalog_retry_timer = QTimer(self)
+        self.catalog_retry_timer.setSingleShot(True)
+        self.catalog_retry_timer.setInterval(1500)
+        self.catalog_retry_timer.timeout.connect(self._retry_catalog)
         self._queued = {}
         self._active = {}
         self._sequence = 0
@@ -74,11 +80,22 @@ class PriceService(QObject):
     def start(self):
         if self.closed or self.catalog_pending:
             return
+        self.catalog_retry_timer.stop()
+        self.catalog_retries = 0
         self._enqueue(("catalog", None), load_catalog, (self.cache,), -10)
         if self.refresh_snapshot:
             self.set_snapshot_enabled(True)
         if self.refresh_index:self._enqueue(("index",None),load_index,(self.cache,),30)
         self._pump()
+
+    @property
+    def catalog_retrying(self):
+        return self.catalog_retry_timer.isActive()
+
+    def _retry_catalog(self):
+        if not self.closed and not self.catalog_pending:
+            self._enqueue(("catalog", None), load_catalog, (self.cache,), -10)
+            self._pump()
 
     def set_snapshot_enabled(self, enabled):
         self.refresh_snapshot = enabled
@@ -323,6 +340,9 @@ class PriceService(QObject):
                                            if job.early and quote else now + 120)
                 self.error.emit(identity, str(error))
             elif kind == "catalog":
+                if self.catalog_retries == 0 and retryable_catalog_error(error):
+                    self.catalog_retries = 1
+                    self.catalog_retry_timer.start()
                 self.error.emit(0, f"Item catalog unavailable: {error}")
             elif kind == "identity":
                 self.identity_error.emit(identity,str(error))
@@ -333,6 +353,7 @@ class PriceService(QObject):
         if self.closed:
             return
         self.closed = True
+        self.catalog_retry_timer.stop()
         if self.snapshot_updater:
             self.snapshot_updater.close()
         for key in list(self._queued):

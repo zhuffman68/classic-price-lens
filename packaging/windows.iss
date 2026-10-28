@@ -1,5 +1,5 @@
 #ifndef AppVersion
-  #define AppVersion "0.11.0"
+  #define AppVersion "0.13.0"
 #endif
 #ifndef StageDir
   #define StageDir "..\dist\Lupin-Windows-x64"

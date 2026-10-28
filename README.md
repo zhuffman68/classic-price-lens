@@ -31,6 +31,14 @@ Prices share a local cache with the overlay. Saved references appear while updat
 
 <!-- DEMO: docs/media/item-search.gif — type, select an item, inspect its reference, clear the search. -->
 
+## Watched items
+
+Search for an item and choose **Watch item**. When Lupin recognizes it in a shop or an item tooltip, its label pulses twice and keeps a star so it is easy to spot, even while its price is loading. Deal colors still show how its asking price compares.
+
+Use **Watchlist** on Prices to review or remove saved items. The list survives restarts. Reduced motion uses a steady marker.
+
+<!-- DEMO: docs/media/watched-items.gif — watch a searched item, then find it in a real shop. -->
+
 ## EXP and meso tracking
 
 Start a session and watch gain, per-minute and per-hour figures in matching columns.
@@ -72,7 +80,7 @@ Both translation directions run locally with the included models. Writing works 
 
 ## Desktop controls
 
-Choose a display and Lupin finds the Classic World area automatically. A manual area selection is available in Settings. The window remembers its size; its default and minimum width are 460 pixels so it can fit beside a 1366-wide game on a 1080p display.
+Choose a display and Lupin finds the Classic World area automatically. Windows reads that display directly; Wayland also asks for OS sharing approval. A manual area selection is available in Settings. The window remembers its size, supports resizing and minimizing, and does not maximize. Its default and minimum width are 460 pixels so it can fit beside a 1366-wide game on a 1080p display.
 
 - Configurable shortcuts for prices, tracking, reading Korean and opening the writer.
 - The current tool's shortcut shown at the bottom of each tab.
@@ -97,8 +105,8 @@ Download from **[itch.io](https://zhuffman68.itch.io/lupin)**. Repository collab
 | System | Download | Install |
 | --- | --- | --- |
 | Windows 10/11 x64 | `Windows-x64-Setup.exe` | Run it, then open Lupin from Start. |
-| Arch / Manjaro | `.pkg.tar.zst` | `sudo pacman -U ./lupin-0.12.0-1-x86_64.pkg.tar.zst` |
-| Debian 12+ / Ubuntu 22.04+ | `.deb` | `sudo apt install ./lupin_0.12.0-1_amd64.deb` |
+| Arch / Manjaro | `.pkg.tar.zst` | `sudo pacman -U ./lupin-0.13.0-1-x86_64.pkg.tar.zst` |
+| Debian 12+ / Ubuntu 22.04+ | `.deb` | `sudo apt install ./lupin_0.13.0-1_amd64.deb` |
 
 Extract downloaded ZIPs before running an installer or package command. For the Windows portable build, extract the full folder and open `run-windows.bat`. Updates preserve settings, prices and history; Linux packages replace the former `classic-price-lens` package.
 
@@ -122,6 +130,6 @@ Screenshots, translations and session history stay on the device. Market request
 - **Meso balance is old:** reopen the item inventory while tracking.
 - **Translation found nothing:** keep the text visible and scan again. The pointer does not limit the scan.
 
-Connection details and capture preview are in Settings. Windows installer behavior is checked under Wine; native Windows capture and mixed-DPI alignment still need a Windows playtest.
+Connection details and capture preview are in Settings. Windows desktop capture is verified in a Windows VM; game capture and mixed-DPI alignment still need a physical Windows playtest.
 
 [Windows help](README-WINDOWS.md) · [Translation](docs/KOREAN_CHAT.md) · [Architecture](ARCHITECTURE.md) · [Technical details](docs/TECHNICAL.md) · [Validation](VERIFICATION.md) · [Credits](THIRD_PARTY.md)

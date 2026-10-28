@@ -77,6 +77,35 @@ class PriceSchedulingTests(unittest.TestCase):
         self.assertEqual(len(self.started), 3)
         self.assertEqual(len(self.service.pending), 13)
 
+    def test_catalog_transient_failure_retries_once_then_stops_until_manual_retry(self):
+        self.service.catalog_retry_timer.setInterval(1)
+        errors=[]
+        self.service.error.connect(lambda identity,message:errors.append((identity,message)))
+        with patch('price_lens.service.load_catalog',side_effect=TimeoutError('temporary')) as fetch:
+            self.service.start()
+            self.until(lambda:len(errors)==2)
+            for _ in range(100):self.app.processEvents();self.service.observe([],900)
+            self.assertEqual(fetch.call_count,2)
+            self.assertFalse(self.service.catalog_retry_timer.isActive())
+            self.service.start()
+            self.until(lambda:len(errors)==4)
+            self.assertEqual(fetch.call_count,4)
+
+    def test_catalog_retry_can_recover_and_format_errors_are_not_retried(self):
+        self.service.catalog_retry_timer.setInterval(1)
+        ready=[]
+        self.service.catalog_ready.connect(ready.append)
+        catalog=object()
+        with patch('price_lens.service.load_catalog',side_effect=[TimeoutError('temporary'),catalog]) as fetch:
+            self.service.start();self.until(lambda:bool(ready))
+            self.assertIs(ready[0],catalog)
+            self.assertEqual(fetch.call_count,2)
+        errors=[];self.service.error.connect(lambda *_:errors.append(True))
+        with patch('price_lens.service.load_catalog',side_effect=ValueError('changed format')) as fetch:
+            self.service.start();self.until(lambda:bool(errors))
+            self.assertFalse(self.service.catalog_retry_timer.isActive())
+            self.assertEqual(fetch.call_count,1)
+
     def test_new_hover_is_promoted_ahead_of_existing_shop_queue(self):
         self.block_workers()
         visible = self.items[:9]

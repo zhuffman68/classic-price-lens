@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (QFrame,QHBoxLayout,QLabel,QLineEdit,QListWidget,
 from .domain import key, item_words, unclipped_name
 from .ui_components import price_card, text_label
 from .motion import reveal, visibility, fade_away
+from .tls import catalog_error_text
 
 
 class PriceSearch(QWidget):
@@ -17,10 +18,12 @@ class PriceSearch(QWidget):
     identity_selected = Signal(object, object)
     source_requested = Signal(str)
     catalog_retry = Signal()
+    watchlist_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.catalog = None
+        self.watchlist = None
         self.thumbnails=None
         self.thumbnail_timer=QTimer(self);self.thumbnail_timer.setSingleShot(True);self.thumbnail_timer.setInterval(0)
         self.thumbnail_timer.timeout.connect(self.request_thumbnails)
@@ -53,6 +56,11 @@ class PriceSearch(QWidget):
         self.matches_button.hide()
         self.matches_button.clicked.connect(lambda:visibility(self.results,self.results.isHidden()))
         hint_row.addWidget(self.matches_button)
+        self.watchlist_button = QPushButton("Watchlist (0)")
+        self.watchlist_button.setObjectName("quiet")
+        self.watchlist_button.setFixedWidth(120)
+        self.watchlist_button.clicked.connect(self.watchlist_requested.emit)
+        hint_row.addWidget(self.watchlist_button)
         layout.addLayout(hint_row)
         self.retry_button = QPushButton("Retry item list")
         self.retry_button.clicked.connect(self.catalog_retry.emit)
@@ -74,6 +82,12 @@ class PriceSearch(QWidget):
         self.detail = QWidget()
         self.detail_layout = QVBoxLayout(self.detail)
         self.detail_layout.setContentsMargins(0,0,0,0)
+        self.watch_button = QPushButton("Watch item", self.detail)
+        self.watch_button.setCheckable(True)
+        self.watch_button.setFixedWidth(100)
+        self.watch_button.setStyleSheet("QPushButton:checked { background: #403525; border: 1px solid #c8a363; color: #f5d798; }")
+        self.watch_button.clicked.connect(self.toggle_watched)
+        self.watch_button.hide()
         self.detail_scroll.setWidget(self.detail)
         layout.addWidget(self.detail_scroll,1)
         self.bottom_spacer=layout.count();layout.addStretch(1)
@@ -84,6 +98,25 @@ class PriceSearch(QWidget):
         self.query.textChanged.connect(self.schedule_search)
         self.query.returnPressed.connect(self.choose_first)
         self.render()
+
+    def set_watchlist(self, watches):
+        self.watchlist = watches
+        watches.changed.connect(self.update_watch_controls)
+        self.update_watch_controls()
+
+    def toggle_watched(self, *_):
+        if self.watchlist is not None and self.selected:
+            self.watchlist.toggle(self.selected)
+
+    def update_watch_controls(self):
+        identities = self.watchlist.ids if self.watchlist is not None else ()
+        self.watchlist_button.setText(f"Watchlist ({len(identities)})")
+        selected = self.selected
+        watched = bool(selected and selected.game_id in identities)
+        self.watch_button.setChecked(watched)
+        self.watch_button.setText("Watching" if watched else "Watch item")
+        self.watch_button.setEnabled(bool(selected and (watched or len(identities) < 512)))
+        self.watch_button.setVisible(bool(selected and self.watchlist is not None))
 
     def set_thumbnails(self,store):
         self.thumbnails=store;store.ready.connect(self.on_thumbnail)
@@ -120,10 +153,10 @@ class PriceSearch(QWidget):
         self.retry_button.hide()
         self.find_items()
 
-    def show_catalog_error(self, message):
+    def show_catalog_error(self, message, retrying=False):
         self.catalog_error = message
-        self.hint.setText("Item names are unavailable. Check your connection and retry.")
-        self.retry_button.show()
+        self.hint.setText("Retrying the item connection once…" if retrying else catalog_error_text(message))
+        self.retry_button.setVisible(not retrying)
 
     def schedule_search(self):
         # Stop demand for the previous result immediately. Typing searches the
@@ -251,6 +284,7 @@ class PriceSearch(QWidget):
         self.render()
 
     def render(self):
+        self.update_watch_controls()
         self.detail_scroll.setVisible(bool(self.selected or self.pending_identity))
         self.layout().setStretch(self.bottom_spacer,0 if self.selected or self.pending_identity else 1)
         state = (self.selected,self.pending_identity,self.quote,self.error,self.lookup_state,self.expanded,self.ttl,int(time.time()//5))
@@ -260,7 +294,7 @@ class PriceSearch(QWidget):
         if self.selected:
             while self.detail_layout.count():
                 widget = self.detail_layout.takeAt(0).widget()
-                if widget and widget is not card:widget.hide();widget.deleteLater()
+                if widget and widget not in (card, self.watch_button):widget.hide();widget.deleteLater()
             data = dict(item=self.selected,row={"name":self.selected.name},quote=self.quote,
                         now=time.time(),ttl=self.ttl,hovered=True,lookup_error=bool(self.error),
                         lookup_state=self.lookup_state,expanded=self.expanded,details_changed=self.show_details,
@@ -269,6 +303,8 @@ class PriceSearch(QWidget):
             if card:card.update_data(**data)
             else:card = self.price_view = price_card(**data)
             self.card_item = self.selected.game_id
+            if self.watchlist is not None:
+                self.detail_layout.addWidget(self.watch_button, 0, Qt.AlignmentFlag.AlignRight)
             self.detail_layout.addWidget(card)
             card.show()
             if self.thumbnails:
@@ -280,7 +316,7 @@ class PriceSearch(QWidget):
                 widget = self.detail_layout.takeAt(0).widget()
                 if widget:
                     widget.hide()
-                    if widget is not card:widget.deleteLater()
+                    if widget not in (card, self.watch_button):widget.deleteLater()
             self.card_item = None
             if self.pending_identity:
                 self.detail_layout.addWidget(text_label(self.pending_identity[0],"font-size: 17px; font-weight: 600"))

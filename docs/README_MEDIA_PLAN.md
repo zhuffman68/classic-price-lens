@@ -16,6 +16,7 @@ The user drives game actions; recording must remain ordinary OS screen capture.
 | Shop prices | Open a populated shop, let references load, hover a listing and move away | `shop-prices.gif` |
 | Inventory/equipment | Hover an inventory item and an equipped item; keep the native name and market card readable | `inventory-equipment.png` |
 | Price search | Type a name, show item thumbnails, select a result, inspect the price age, then clear it | `item-search.gif` |
+| Watched items | Watch a searched item, open a real shop containing it, show two pulses and the persistent star | `watched-items.gif` |
 | EXP/meso tracking | Track real training with a visible wallet; show aligned rates, timer, ETA and bottom-left overlay | `tracking.mp4` |
 | History | Show actual labeled runs, character/map filtering and the CSV export control | `training-history.png` |
 | Read Korean | Show Korean text, activate the scan and capture the English/original popup | `read-korean.gif` |

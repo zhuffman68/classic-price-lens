@@ -62,6 +62,8 @@ def main():
     root = Path(__file__).resolve().parent.parent
     app.setWindowIcon(app_icon(root))
     cache = args.cache or cache_directory() / "prices.sqlite"
+    from .kde_window_policy import ensure_kde_window_policy
+    ensure_kde_window_policy(app.platformName(), cache_directory())
     window = LensWindow(root, cache, args.snapshot, args.capture, args.kde)
     window.closed.connect(app.quit)
     def activate():

@@ -42,6 +42,50 @@ class AnnotationMotionTests(unittest.TestCase):
         self.assertEqual(self.window.last_command, last_command)
         self.assertEqual(self.window.pointer_timer.interval(), 16)
 
+    def test_watched_label_pulses_twice_then_stays_marked_without_restarting(self):
+        row={**self.command['rows'][0],'watched':True,'watch_event':10,'color':'#86ceac'}
+        self.window.read_command(json.dumps({**self.command,'rows':[row]}))
+        active=self.window.rows[0];animation=active['_watch_pulse']
+        for when, expected in ((400,1),(800,0),(1200,1)):
+            animation.setCurrentTime(when)
+            self.assertAlmostEqual(active['_watch_level'],expected,places=5)
+        self.window.read_command(json.dumps({**self.command,'rows':[{**row,'text':'FM 1,200 mesos'}]}))
+        self.assertIs(self.window.rows[0]['_watch_pulse'],animation)
+        animation.setCurrentTime(1600)
+        self.assertIsNone(active['_watch_pulse'])
+        self.assertTrue(active['watched'])
+        self.assertEqual(active['color'],'#86ceac')
+        self.window.read_command(json.dumps({**self.command,'rows':[row]}))
+        self.assertIsNone(self.window.rows[0]['_watch_pulse'])
+
+    def test_short_missing_label_does_not_replay_the_same_watch_event(self):
+        row={**self.command['rows'][0],'watched':True,'watch_event':20}
+        self.window.read_command(json.dumps({**self.command,'rows':[row]}))
+        self.window.read_command(json.dumps({**self.command,'rows':[],'hover_enabled':False}))
+        self.window.read_command(json.dumps({**self.command,'rows':[row]}))
+        self.assertIsNone(self.window.rows[0].get('_watch_pulse'))
+        self.window.read_command(json.dumps({**self.command,'rows':[{**row,'watch_event':21}]}))
+        self.assertIsNotNone(self.window.rows[0].get('_watch_pulse'))
+
+    def test_reduce_motion_keeps_the_watch_marker_without_a_deferred_pulse(self):
+        row={**self.command['rows'][0],'watched':True,'watch_event':30}
+        self.window.read_command(json.dumps({**self.command,'rows':[row],'reduce_motion':True}))
+        self.assertTrue(self.window.rows[0]['watched'])
+        self.assertIsNone(self.window.rows[0].get('_watch_pulse'))
+        self.window.read_command(json.dumps({**self.command,'rows':[row],'reduce_motion':False}))
+        self.assertIsNone(self.window.rows[0].get('_watch_pulse'))
+
+    def test_watched_shop_label_keeps_the_tooltip_occlusion_opacity(self):
+        row={'x':120,'y':90,'name':'Example Hat','key':'shop:0:1','text':'FM 1,000 mesos',
+             'kind':'shop','color':'#86ceac','watched':True,'watch_event':40,'obscured':True}
+        self.window.read_command(json.dumps({**self.command,'rows':[row]}))
+        active=self.window.rows[0]
+        self.assertEqual(active['_target_alpha'],.25)
+        pulse=active['_watch_pulse']
+        self.window.read_command(json.dumps({**self.command,'rows':[row]}))
+        self.assertIs(self.window.rows[0]['_watch_pulse'],pulse)
+        self.assertEqual(self.window.rows[0]['_target_alpha'],.25)
+
     def test_cursor_jump_or_leaving_game_hides_the_old_reference(self):
         row = self.window.rows[0]
         self.assertIsNone(self.window.label_rect(row, QPoint(250, 250)))

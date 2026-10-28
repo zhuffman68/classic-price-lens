@@ -1,6 +1,6 @@
 # Lupin architecture
 
-Lupin provides market prices, EXP/meso tracking and local Korean translation in both directions for MapleStory Classic World. This document describes v0.12.0.
+Lupin provides market prices, EXP/meso tracking and local Korean translation in both directions for MapleStory Classic World. This document describes v0.13.0.
 
 ## Boundaries
 
@@ -46,6 +46,8 @@ flowchart LR
 
 ## Capture and OCR
 
+`capture_platform.py` separates Wayland's OS sharing approval from Windows' direct QScreenCapture display selection. The dropdown contains only actual displays, initially the saved display or primary. Start remains explicit. The helper requires an exact selected geometry; a missing display cannot silently select another screen. Hotplug removes stale capture and asks for a new start.
+
 `stream.py` retains the approved sharing session. Wayland capture uses the desktop ScreenCast portal and PipeWire. The app has one display dropdown; OS sharing consent remains a separate required dialog. A full-workspace share is cropped locally to that display. Windows uses Qt's OS capture backend.
 
 `capture.py` schedules `reader/src/main.rs`, which uses the pinned Minerva headless core. Raw RGBA avoids live PNG compression. Bounded frame delivery, dropped obsolete frames, local shop regions and unchanged-pixel fingerprints reduce work. Fingerprints refer to the submitted frame even when a newer capture arrives during recognition. The complete known shop span remains the crop reference when a native tooltip hides some rows, so those rows can recover after it closes. The worker uses at most two OCR threads.
@@ -80,9 +82,13 @@ SQLite entries are keyed by world, record kind and identity. Catalog/provider ma
 
 Well-supported visible references can refresh before expiry using a stable staggered lead of half to all of `min(30 seconds, 5% of TTL)`. Empty, unsupported, uncertain, thin and old-report results retain the full TTL. Failures back off for two minutes; an early failure may retry at expiry with a ten-second minimum gap. Stationary frames never create repeated requests within a cache cycle. The hourly full-market job is separate; there is no hidden-inventory scan or per-item refresh of every saved record.
 
-`http_json.py` reuses verifying TLS connections per worker with a 30-second idle limit. A stale disconnected connection retries once; timeouts are not automatically repeated. Cancelled direct requests close their sockets and cannot publish obsolete results or create cooldowns. Configured proxies retain the bounded urllib path; cancellation before response headers is not guaranteed. Coverage rejections become cached no-data results. See [price lookup timing](docs/PRICE_LOOKUP_LATENCY.md).
+`tls.py` supplies a Windows-native truststore SSLContext or the normal system context elsewhere, always with hostname/certificate verification. Both direct and proxy requests receive it explicitly. Catalog startup retries a transient network/certificate error once after 1.5 seconds, then exposes the cause; malformed data and ordinary HTTP 4xx responses do not retry. Manual retry starts a new bounded attempt. `http_json.py` reuses verifying TLS connections per worker with a 30-second idle limit. A stale disconnected connection retries once; timeouts are not automatically repeated. Cancelled direct requests close their sockets and cannot publish obsolete results or create cooldowns. Configured proxies retain the bounded urllib path; cancellation before response headers is not guaranteed. Coverage rejections become cached no-data results. See [price lookup timing](docs/PRICE_LOOKUP_LATENCY.md).
 
 ## Panel and overlays
+
+`window_policy.py` keeps the main panel resizable/minimizable and rejects maximization through its own Qt state/native messages. No global input hooks are installed. KDE Wayland needs an additional app-specific KWin rule because Qt's maximize-button hint alone is ignored. `kde_window_policy.py` backs up the original configuration, preserves other rules, and installs only an exact anchored Lupin application-class match for normal windows. It runs only on KDE, writes only when needed, and never changes a game window or GUI backend.
+
+`watchlist.py` stores at most 512 exact game IDs and names in the existing per-user settings. Search toggles never request prices. Recognized shop/hover annotations carry those IDs before quotes arrive. Encounters stay stable through quote updates, movement and short OCR misses; an explicit 1.5-second absence or proven shop-page change rearms them. `shop_rows.py` tracks page revisions independently of window coordinates. `annotations.py` consumes bounded encounter tokens, animates two 800ms pulses, then leaves a star/border without an idle timer. It preserves deal colors, tooltip opacity and reduced motion. `watchlist_ui.py` manages saved items.
 
 The brand, display/status controls, Pause/Resume and Hotkeys remain above three fixed tabs: Prices, EXP/Meso Tracking and Translation. `search.py` searches the local catalog with a short debounce; typing/suggestions never request prices. Selecting an item adds one manual demand to the shared scheduler. Clearing it removes demand and retires results. Search has layout priority over collapsible on-screen results and works without capture. `price_widgets.py` updates cards in place.
 

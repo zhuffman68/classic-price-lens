@@ -27,6 +27,11 @@ def main():
         assert library.load(), "Cannot load " + name + ": " + library.errorString()
         libraries.append(library)
     print("PASS: OS capture and desktop platform plugins load", flush=True)
+    from .tls import make_context
+    import ssl
+    context = make_context()
+    assert context.check_hostname and context.verify_mode == ssl.CERT_REQUIRED
+    print("PASS: HTTPS certificate and hostname verification are enabled", flush=True)
 
     root = Path(__file__).resolve().parent.parent
     binary = reader_binary(root)

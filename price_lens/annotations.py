@@ -1,11 +1,12 @@
 """Independent, input-transparent OS window. Only receives our own drawing commands."""
 import json
+import math
 import sys
 import threading
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal, Qt, QRect, QPoint, QPointF, QTimer, QVariantAnimation, QEasingCurve
-from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPen, QCursor, QRegion,QFontDatabase
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPen, QCursor, QRegion,QFontDatabase,QPolygonF
 from PySide6.QtWidgets import QApplication, QWidget
 from .number_motion import NumberRoll
 
@@ -41,6 +42,9 @@ class AnnotationWindow(QWidget):
         self.last_command = 0
         self.last_pointer = None
         self.reduce_motion = False
+        self.watch_events = {}
+        self.watch_star = QPolygonF([QPointF(math.cos(-math.pi/2+i*math.pi/5)*(5 if i%2==0 else 2.3),
+                                            math.sin(-math.pi/2+i*math.pi/5)*(5 if i%2==0 else 2.3)) for i in range(10)])
         self.price_font = QFont("Noto Sans")
         self.price_font.setPixelSize(12)
         self.name_font = QFont("Noto Sans")
@@ -102,6 +106,7 @@ class AnnotationWindow(QWidget):
                 old_alpha_target=old.get('_target_alpha',1.0) if old else None
                 row = old if old is not None else supplied
                 row.update(supplied)
+                row["watched"] = bool(supplied.get("watched"))
                 row.pop("_retired_rect", None)
                 row["_width"] = min(350, max(230,metrics.horizontalAdvance(row["text"])+20,
                                              max((metrics.horizontalAdvance(line) for line in row.get('extra','').splitlines()),default=0)+20,
@@ -149,6 +154,7 @@ class AnnotationWindow(QWidget):
                 if old_text is not None and old_text != row["text"] and old_content!=row.get('content_id',row['text']) and not self.reduce_motion and not any(c.isdigit() for c in row['text']):
                     self.fade_text(row)
                 self.update_numbers(row)
+                self.update_watch(row)
                 if old is None and not self.reduce_motion:
                     row["_alpha"] = 0.0
                 if row.get("_fading_out") or old is None or old_alpha_target!=target:
@@ -233,6 +239,38 @@ class AnnotationWindow(QWidget):
         if not dirty.isEmpty():
             self.update(dirty)
 
+    def update_watch(self, row):
+        if not row.get("watched") or self.reduce_motion:
+            animation = row.pop("_watch_pulse", None)
+            if animation:animation.stop();animation.deleteLater()
+            row["_watch_level"] = 0.0
+        if not row.get("watched"):
+            return
+        token = (self.row_key(row), row.get("watch_event"))
+        consumed = token in self.watch_events
+        self.watch_events[token] = True
+        while len(self.watch_events) > 512:
+            self.watch_events.pop(next(iter(self.watch_events)))
+        if self.reduce_motion or consumed:
+            return
+        previous = row.pop("_watch_pulse", None)
+        if previous:previous.stop();previous.deleteLater()
+        animation = QVariantAnimation(self)
+        row["_watch_pulse"] = animation
+        animation.setDuration(1600)
+        animation.setStartValue(0.0);animation.setEndValue(1.0)
+        def changed(value):
+            row["_watch_level"] = (1-math.cos(4*math.pi*value))/2
+            self.invalidate_row(row)
+        def finished():
+            if row.get("_watch_pulse") is animation:row["_watch_pulse"] = None
+            row["_watch_level"] = 0.0
+            self.invalidate_row(row)
+            animation.deleteLater()
+        animation.valueChanged.connect(changed)
+        animation.finished.connect(finished)
+        animation.start()
+
     def fade(self, row, target):
         if self.reduce_motion:
             row["_alpha"] = target
@@ -313,7 +351,7 @@ class AnnotationWindow(QWidget):
 
     @staticmethod
     def dispose_row(row):
-        for key in ("_move", "_fade", "_text_fade"):
+        for key in ("_move", "_fade", "_text_fade", "_watch_pulse"):
             animation = row.get(key)
             if animation is not None:
                 animation.stop()
@@ -392,12 +430,14 @@ class AnnotationWindow(QWidget):
         pointer = QCursor.pos()
         for row in self.rows + self.retiring:
             box = self.label_rect(row, pointer)
-            if box is None:
+            if box is None or not box.intersects(event.rect()):
                 continue
             painter.setOpacity(float(row.get("_alpha", 1.0)))
             x, y, width = box.x(), box.y() + 5, box.width()
             painter.setFont(self.price_font)
-            painter.setPen(QPen(QColor(92, 103, 119, 160), 1))
+            watched = bool(row.get("watched"))
+            border = QColor(238, 190, 99, round(145+110*float(row.get("_watch_level",0)))) if watched else QColor(92, 103, 119, 160)
+            painter.setPen(QPen(border, 1.5 if watched else 1))
             painter.setBrush(QColor(22, 28, 38, 247))
             painter.drawRoundedRect(box, 5, 5)
             if row.get("kind")=="translation":
@@ -427,9 +467,14 @@ class AnnotationWindow(QWidget):
             painter.setFont(self.name_font)
             if row.get("kind")=="experience":painter.setFont(self.price_font)
             painter.setPen(QColor("#c4cbd6"))
-            name_width=width-18-(64 if row.get("deal_delta") else 0)
+            name_inset = 14 if watched else 0
+            if watched:
+                painter.save();painter.translate(x+14,box.y()+10)
+                painter.setPen(Qt.PenStyle.NoPen);painter.setBrush(QColor("#f1c66f"));painter.drawPolygon(self.watch_star)
+                painter.restore()
+            name_width=width-18-(64 if row.get("deal_delta") else 0)-name_inset
             name = painter.fontMetrics().elidedText(row.get("name", "Unresolved item"), Qt.TextElideMode.ElideRight, name_width)
-            self.paint_number(painter,row,'name',QRect(x+9,y-3,name_width,14),name)
+            self.paint_number(painter,row,'name',QRect(x+9+name_inset,y-3,name_width,14),name)
             painter.setFont(self.price_font)
             painter.setOpacity(float(row.get("_alpha",1.0))*float(row.get("_text_alpha",1.0)))
             painter.setPen(QColor(row.get("color", "#dce1e8")))

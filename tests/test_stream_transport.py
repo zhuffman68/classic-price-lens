@@ -62,6 +62,8 @@ class LocalFrameTransportTests(unittest.TestCase):
         name = "ClassicPriceLens-test-" + uuid.uuid4().hex if sys.platform == "win32" else str(Path(self.directory.name) / "test-socket")
         self.patcher = patch("price_lens.stream.socket_name", return_value=name)
         self.patcher.start()
+        self.screen_patcher = patch("price_lens.stream.screen_for_rectangle", return_value=self.app.primaryScreen())
+        self.screen_patcher.start()
         self.server = CaptureServer(self.app)
         self.fake_capture = FakeCapture()
         self.server.capture = self.fake_capture
@@ -87,6 +89,7 @@ class LocalFrameTransportTests(unittest.TestCase):
         QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
         self.app.processEvents()
         self.patcher.stop()
+        self.screen_patcher.stop()
         self.directory.cleanup()
 
     def image(self):
@@ -101,6 +104,16 @@ class LocalFrameTransportTests(unittest.TestCase):
         self.assertEqual((image.width(), image.height()), (10, 6))
         self.assertEqual(image.pixelColor(4, 4), QColor("#1234ab"))
         self.assertLess(time.monotonic() - captured, 1)
+
+    def test_disconnected_display_is_rejected_without_delivering_another_monitor(self):
+        messages=[];self.client.status.connect(messages.append)
+        with patch('price_lens.stream.screen_for_rectangle',return_value=None):
+            self.client.start(QRect(300,0,10,6),QRect(0,0,310,6))
+            self.until(lambda:any('no longer available' in message for message in messages))
+        self.assertTrue(all(value is None for value in self.server.clients.values()))
+        self.server.on_frame(FakeFrame(self.image()))
+        self.app.processEvents()
+        self.assertEqual(self.received,[])
 
     def test_slow_consumer_drops_older_frames_instead_of_queuing_them(self):
         self.server.on_frame(FakeFrame(self.image()))

@@ -10,6 +10,7 @@ class ShopRows:
     def __init__(self,identity=None):self.resolve_identity=identity;self.reset()
 
     def reset(self):
+        self.page_revision=getattr(self,'page_revision',0)
         self.area=None;self.guards=[];self.rows={};self.active=False;self.last_verified=0
 
     @staticmethod
@@ -88,6 +89,12 @@ class ShopRows:
         # unverified covered listing; restore it when the same page is visible.
         all_verified=bool(clean and len(clean)==len(raw) and close and not contradiction)
         if not close or contradiction:
+            # Compare proven listing identities/prices, never tooltip pixels or
+            # absolute coordinates: moving the same shop is not a new page.
+            previous=[(self.identity(row),row.get('price')) for row,_ in sorted(self.rows.values(),key=lambda saved:self.slot(saved[0])[1])]
+            current=[(self.identity(row),row.get('price')) for row in sorted(clean,key=lambda row:self.slot(row)[1])]
+            if contradiction or (previous and clean and len(clean)==len(raw) and previous!=current):
+                self.page_revision+=1
             self.rows={};self.area=dict(area);self.set_guards(area,image,exclude)
         elif all_verified:
             self.set_guards(area,image,exclude);same=True

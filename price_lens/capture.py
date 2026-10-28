@@ -12,6 +12,7 @@ from PySide6.QtGui import QImage
 import json
 from .stream import StreamClient, screen_pixels
 from .platform_paths import reader_binary
+from .capture_platform import uses_system_picker
 
 
 class PixelReader(QObject):
@@ -104,7 +105,8 @@ class PixelReader(QObject):
         self.shop_rect = self.shop_fingerprint = None
         self.shop_context = None
         self.tooltip_rect = self.tooltip_fingerprint = None
-        self.status.emit("Capturing the selected monitor" if sys.platform == "win32" else "Choose a monitor or full workspace in the OS sharing dialog")
+        self.status.emit("Choose a monitor or full workspace in the system sharing dialog"
+                         if uses_system_picker() else "Capturing the selected display")
         self.stream.start(screen, desktop)
 
     def pause(self, keep_stream=False):

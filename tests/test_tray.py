@@ -77,7 +77,7 @@ class TrayTests(unittest.TestCase):
         self.assertFalse(self.window.labels_enabled)
         self.window.tray.labels.trigger()
         self.assertTrue(self.window.labels_enabled)
-        self.window.monitor.setCurrentIndex(0)
+        self.window.monitor.setCurrentIndex(-1)
         self.assertFalse(self.window.tray.toggle.isEnabled())
 
     def test_quit_closes_hidden_app_and_cancels_scheduled_minimize(self):

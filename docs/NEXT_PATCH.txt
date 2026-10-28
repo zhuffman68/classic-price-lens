@@ -1,8 +1,8 @@
 Local patch status
 
-v0.12.0 implements window-size memory, EXP/Meso Tracking, tab shortcut footers,
-translation control/notification layout, numerical motion and equipped-item
-recognition improvements. Build and validation details are in VERIFICATION.md.
+v0.13.0 adds persistent watched items, two-pulse item markers, real-display-only
+selection, native Windows TLS trust with a bounded catalog retry, and a resizable
+panel with maximization disabled. Build and validation details are in VERIFICATION.md.
 
 Uploads remain on hold at the user's request. Do not push source, create a
 GitHub release or upload itch.io channels until publication is authorized again.

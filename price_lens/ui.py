@@ -33,6 +33,11 @@ from .composer_ui import ComposerDialog
 from .thumbnails import ThumbnailCache
 from .shortcut_defaults import load as load_shortcuts, label as shortcut_label
 from . import window_size
+from .capture_platform import uses_system_picker
+from .window_policy import NormalWindow, is_maximize_message
+from .tls import catalog_error_text
+from .watchlist import Watchlist, WatchEncounters
+from .watchlist_ui import WatchlistDialog
 from . import APP_NAME, LEGACY_APP_NAME
 
 COLORS = {"green": "#86ceac", "red": "#ed9394", "amber": "#e4bd7b", "blue": "#9ebde3", "muted": "#98a3b1"}
@@ -123,7 +128,10 @@ class LensWindow(QMainWindow):
         self.keep_capture = False
         self.closing = False
         self.settings = QSettings("LocalTools", LEGACY_APP_NAME)
+        self.watchlist = Watchlist(self.settings, self)
+        self.watch_encounters = WatchEncounters()
         window_size.restore(self, self.settings)
+        self.normal_window = NormalWindow(self)
         shortcuts=load_shortcuts(self.settings)
         self.first_price_seen = self.settings.value("first-price-seen", False, type=bool)
         self.labels_enabled = self.settings.value("show-prices", True, type=bool)
@@ -260,14 +268,18 @@ class LensWindow(QMainWindow):
         self.monitor.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
         self.monitor.setMinimumContentsLength(12)
         self.monitor.setAccessibleName("Display containing Classic World")
-        self.monitor.addItem("Choose the display containing Classic World…", None)
         selected = self.settings.value("monitor-name", "")
+        saved_screen_selected = False
+        primary = QApplication.primaryScreen()
+        self.screen_index = self.screens.index(primary) if primary in self.screens else 0 if self.screens else None
         for index, (screen, description) in enumerate(zip(self.screens, display_labels(self.screens))):
             self.monitor.addItem(description, index)
-            self.monitor.setItemData(index + 1, screen.name(), Qt.ItemDataRole.ToolTipRole)
+            self.monitor.setItemData(index, screen.name(), Qt.ItemDataRole.ToolTipRole)
             if selected and selected == screen.name():
                 self.screen_index = index
-        self.monitor.setCurrentIndex(self.screen_index + 1 if self.screen_index is not None else 0)
+                saved_screen_selected = True
+        self.monitor.setCurrentIndex(self.screen_index if self.screen_index is not None else -1)
+        self.monitor.setPlaceholderText("No displays available")
         self.monitor.currentIndexChanged.connect(self.set_screen)
         capture_header.addWidget(self.monitor,1)
         actions = QHBoxLayout()
@@ -318,6 +330,9 @@ class LensWindow(QMainWindow):
         self.card_views = {}
         self.tabs.addTab(self.prices_page, "Prices")
         self.search_panel = PriceSearch(self)
+        self.search_panel.set_watchlist(self.watchlist)
+        self.search_panel.watchlist_requested.connect(self.open_watchlist)
+        self.watchlist.changed.connect(self.on_watchlist_changed)
         self.search_panel.ttl = self.ttl
         self.search_panel.item_selected.connect(self.on_search_item)
         self.search_panel.identity_selected.connect(self.on_search_identity)
@@ -396,7 +411,7 @@ class LensWindow(QMainWindow):
         self.service.start()
         if snapshot:
             QTimer.singleShot(300, lambda: self.load_screenshot(snapshot))
-        elif (auto_capture or kde_capture) and self.screen_index is not None:
+        elif (auto_capture or kde_capture) and saved_screen_selected and self.screen_index is not None:
             QTimer.singleShot(500, self.start_kde if kde_capture else self.start_capture)
         self.render()
         QApplication.instance().screenAdded.connect(self.refresh_monitors)
@@ -694,6 +709,14 @@ class LensWindow(QMainWindow):
         if item and item.game_id in self.quotes:
             self.search_panel.accept_quote(item.game_id,self.quotes[item.game_id])
 
+    def open_watchlist(self):
+        dialog = WatchlistDialog(self.watchlist, self)
+        dialog.exec()
+        dialog.deleteLater()
+
+    def on_watchlist_changed(self):
+        self.draw_labels(time.time(), time.time()-self.last_screen > 3)
+
     def on_search_identity(self, identity, candidates):
         if self.tabs.currentIndex() == self.search_tab_index:
             self.service.set_manual(None,self.ttl,identity=identity,candidates=candidates)
@@ -762,6 +785,11 @@ class LensWindow(QMainWindow):
         if (event.type() == QEvent.Type.WindowStateChange and self.isMinimized()
                 and hasattr(self, "tray")):
             self.tray.schedule_minimize()
+
+    def nativeEvent(self, event_type, message):
+        if is_maximize_message(message):
+            return True, 0
+        return super().nativeEvent(event_type, message)
 
     def set_labels(self, enabled):
         self.labels_enabled = enabled
@@ -835,7 +863,7 @@ class LensWindow(QMainWindow):
     def selected_display(self):
         if self.screen_index is None or self.screen_index >= len(self.screens):
             return "your display"
-        return self.monitor.itemText(self.screen_index + 1).split(" · ")[0]
+        return self.monitor.itemText(self.screen_index).split(" · ")[0]
 
     def image_matches_screen(self):
         if self.screen_index is None or self.reader.image.isNull():
@@ -849,15 +877,17 @@ class LensWindow(QMainWindow):
         if self.mode == "screenshot":
             return ("Saved screenshot", "These items come from a saved image. Start reading to follow the game on your display.", "blue", "")
         if self.screen_index is None:
-            return ("Choose a display", self.setup_notice or "Choose the display containing Classic World to enable Start reading.", "amber", "")
+            return ("No display available", "Connect a display to start reading.", "amber", "")
         display = self.selected_display()
         if self.capture_error:
-            return ("Sharing needs attention", self.capture_error, "amber", "Reconnect display")
+            return ("Screen reading needs attention", self.capture_error, "amber", "Reconnect display")
         if self.capture_starting:
-            hint = f"In the OS sharing chooser, select {display}. Full-workspace sharing also works."
-            if time.monotonic() - self.starting_at > 10:
-                hint += " The chooser may be behind another window; finish it or cancel setup below."
-            return ("Waiting for screen sharing", hint, "amber", "")
+            if uses_system_picker():
+                hint = f"In the system sharing dialog, select {display}. Full-workspace sharing also works."
+                if time.monotonic() - self.starting_at > 10:
+                    hint += " The dialog may be behind another window; finish it or cancel setup below."
+                return ("Waiting for screen sharing", hint, "amber", "")
+            return ("Starting screen reading", f"Connecting to {display}. No additional system sharing dialog is needed.", "amber", "")
         if self.mode == "paused":
             return ("Paused", "Labels are hidden and price lookups are paused. Resume reuses your sharing session." if self.session_available else "Labels are hidden. Resume will reconnect your display.", "muted", "")
         if self.mode == "live":
@@ -872,12 +902,14 @@ class LensWindow(QMainWindow):
             if not self.labels_enabled:
                 return ("Reading · labels hidden", "Price labels are disabled. Item prices still appear in this panel; enable labels to show them beside the game.", "blue", "Show price labels")
             return ("Classic World identified" if self.reader.auto_active else "Reading selected area", "Game area located on " + display + ".", "green", "")
-        return ("Ready to start", self.setup_notice or f"Click Start reading, then choose {display} in the OS sharing chooser. This app reads screen pixels only.", "blue", "")
+        instruction = (f"Click Start reading, then approve {display} in the system sharing dialog."
+                       if uses_system_picker() else f"Click Start reading to read {display}.")
+        return ("Ready to start", self.setup_notice or instruction, "blue", "")
 
     def show_status(self, message):
         self.last_diagnostic = message
         if message.startswith(("Screen sharing stopped", "OS capture:", "KDE screen capture failed", "Capture dimensions", "Invalid local capture")):
-            self.capture_error = "Screen sharing ended or could not start. Reconnect when ready and select the display containing Classic World."
+            self.capture_error = "Screen capture stopped or could not start. Check the selected display, then reconnect."
             self.capture_starting = False
             self.session_available = False
             self.mode = "paused" if self.last_screen else "idle"
@@ -900,7 +932,7 @@ class LensWindow(QMainWindow):
         if self.monitor.minimumWidth()!=display_width:self.monitor.setMinimumWidth(display_width)
         self.monitor.setToolTip(self.monitor.currentText())
         self.share.setEnabled(valid and not self.capture_starting)
-        self.share.setText("Waiting for sharing…" if self.capture_starting else "Pause reading" if self.mode == "live" else "Resume reading" if self.mode == "paused" and self.session_available else "Start reading")
+        self.share.setText("Starting reading…" if self.capture_starting else "Pause reading" if self.mode == "live" else "Resume reading" if self.mode == "paused" and self.session_available else "Start reading")
         self.share.setToolTip("Choose a display first" if not valid else "Toggle screen reading")
         self.monitor.setEnabled(not self.capture_starting)
         self.monitor.setVisible(True)
@@ -970,6 +1002,7 @@ class LensWindow(QMainWindow):
     def start_capture(self):
         if self.screen_index is None:
             return
+        self.settings.setValue("monitor-name", self.screens[self.screen_index].name())
         resume = self.mode == "paused" and self.session_available
         self.capture_starting = True
         self.starting_at = time.monotonic()
@@ -1013,28 +1046,35 @@ class LensWindow(QMainWindow):
         self.render()
 
     def refresh_monitors(self, *args):
-        selected_name = self.settings.value("monitor-name", "") if self.screen_index is not None else ""
+        previously_selected = self.screen_index is not None and 0 <= self.screen_index < len(self.screens)
+        selected_name = self.settings.value("monitor-name", "")
+        if previously_selected:
+            try:selected_name = self.screens[self.screen_index].name()
+            except RuntimeError:pass
         was_live = self.mode == "live"
         self.screens = sorted(QApplication.screens(), key=lambda screen: (screen.geometry().x(), screen.geometry().y()))
         self.monitor.blockSignals(True)
         self.monitor.clear()
-        self.monitor.addItem("Choose the display containing Classic World…", None)
         chosen = None
         for index, (screen, description) in enumerate(zip(self.screens, display_labels(self.screens))):
             self.monitor.addItem(description, index)
-            self.monitor.setItemData(index + 1, screen.name(), Qt.ItemDataRole.ToolTipRole)
-            if screen.name() == selected_name and selected_name:
+            self.monitor.setItemData(index, screen.name(), Qt.ItemDataRole.ToolTipRole)
+            if screen.name() == selected_name and (previously_selected or selected_name):
                 chosen = index
-        self.monitor.setCurrentIndex(chosen + 1 if chosen is not None else 0)
+        lost_selection = previously_selected and chosen is None
+        if chosen is None:
+            primary = QApplication.primaryScreen()
+            chosen = self.screens.index(primary) if primary in self.screens else 0 if self.screens else None
+        self.monitor.setCurrentIndex(chosen if chosen is not None else -1)
         self.monitor.blockSignals(False)
         self.screen_index = chosen
-        if chosen is None and self.mode in ("live", "paused"):
+        if (lost_selection or chosen is None) and self.mode in ("live", "paused"):
             self.reader.pause(keep_stream=False)
             self.mode = "idle"
             self.capture_starting = self.session_available = False
             self.rows = []
             self.tooltip_result = None
-            self.setup_notice = "The selected display is no longer connected. Choose another display to continue."
+            self.setup_notice = "The previous display disconnected. Check the selected display, then click Start reading."
         elif was_live:
             self.start_kde() if self.capture_kind == "kde" else self.start_capture()
         self.render()
@@ -1286,9 +1326,10 @@ class LensWindow(QMainWindow):
         self.last_diagnostic = message
         self.search_panel.accept_error(item_id,message)
         if not item_id:
-            self.catalog_loading = False
-            self.catalog_error = "Item names could not be loaded. Check your internet connection, then retry."
-            self.search_panel.show_catalog_error(message)
+            retrying = getattr(self.service, "catalog_retrying", False)
+            self.catalog_loading = retrying
+            self.catalog_error = "" if retrying else catalog_error_text(message)
+            self.search_panel.show_catalog_error(message, retrying=retrying)
         self.update_price_status()
         self.render()
 
@@ -1447,6 +1488,7 @@ class LensWindow(QMainWindow):
 
     def draw_labels(self, now, screen_old):
         if self.screen_index is None:
+            self.watch_encounters.apply([], self.watchlist.ids)
             self.overlay.update([0, 0, 1, 1], [], hover_enabled=False)
             return
         geometry = self.screens[self.screen_index].geometry()
@@ -1495,6 +1537,7 @@ class LensWindow(QMainWindow):
                                     "name": item.name if item else row.get("name") or "Unresolved item",
                                     "text": text, "color": COLORS[verdict.tone],
                                     "key": f"shop:{index}:{item.game_id if item else row.get('name')}",
+                                    "item_id": item.game_id if item else None,
                                     "content_id":[item.game_id if item else row.get('name'),quote.price if quote else None],
                                     "animate_move": True,"kind":"shop",
                                     "obscured":bool(row.get('covered') and (self.shop_tooltip_rect is None or self.shop_tooltip_clipped)),
@@ -1531,6 +1574,7 @@ class LensWindow(QMainWindow):
             if item and point is not None:
                 region = self.reader.game_area if self.reader.auto_active else self.reader.crop or image.rect()
                 annotations.append({"name": item.name, "key": item.game_id,
+                                    "kind": "item", "item_id": item.game_id,
                                     "content_id":[item.game_id,quote.price if quote else None],
                                     "text": text, "color": COLORS["blue" if fresh else "muted"],
                                     "x": round((area["x"] + ox) * sx),
@@ -1556,6 +1600,7 @@ class LensWindow(QMainWindow):
                 bounds=[round(area.x()*sx),round(area.y()*sy),round(area.width()*sx),round(area.height()*sy)]
                 # Shop and EXP references paint above a manually requested chat card.
                 annotations=self.chat.annotations(image,sx,sy,bounds,occupied=annotations)+annotations
+        self.watch_encounters.apply(annotations, self.watchlist.ids, page=self.shop_rows.page_revision)
         self.overlay.update(list(geometry.getRect()), annotations, hover_enabled=self.prices_enabled and self.labels_enabled and self.mode == "live" and game_visible and screen_matches and not screen_old)
         if (annotations and ready_price and not self.first_price_seen):
             self.first_price_seen = True

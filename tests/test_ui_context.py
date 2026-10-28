@@ -198,6 +198,49 @@ class ContextUiTests(unittest.TestCase):
         self.window.tabs.setCurrentIndex(self.window.exp_tab_index)
         self.assertIsNone(self.window.service.manual_item)
 
+    def test_watch_toggle_needs_no_price_request_and_marks_a_pending_reference(self):
+        from price_lens.domain import Item
+        before=list(self.window.service.requests)
+        self.window.watchlist.toggle(Item(1,'Example Hat'))
+        self.assertEqual(self.window.service.requests,before)
+        self.window.on_reading(self.reading(shop_hover=True))
+        row=self.window.overlay.rows[0]
+        self.assertTrue(row['watched'])
+        event=row['watch_event']
+        self.window.on_quote(1,Quote(1,1000,time.time(),time.time(),20,'Test','','24h'))
+        self.assertEqual(self.window.overlay.rows[0]['watch_event'],event)
+        self.window.watchlist.remove(1)
+        self.assertFalse(self.window.overlay.rows[0]['watched'])
+
+    def test_windows_starting_state_does_not_request_a_system_chooser(self):
+        self.window.mode='idle'
+        with patch('price_lens.ui.uses_system_picker',return_value=False):
+            self.window.start_capture()
+            self.assertEqual(self.window.status_badge.text(),'Starting screen reading')
+            self.assertIn('No additional system sharing dialog',self.window.capture_info.text())
+            self.assertNotIn('behind another window',self.window.capture_info.text())
+
+    def test_wayland_starting_state_still_requests_the_system_picker(self):
+        self.window.mode='idle'
+        with patch('price_lens.ui.uses_system_picker',return_value=True):
+            self.window.start_capture()
+            self.assertEqual(self.window.status_badge.text(),'Waiting for screen sharing')
+            self.assertIn('system sharing dialog',self.window.capture_info.text())
+
+    def test_no_displays_disables_start_without_a_selectable_placeholder(self):
+        with patch('price_lens.ui.QApplication.screens',return_value=[]):
+            self.window.refresh_monitors()
+        self.assertEqual(self.window.monitor.count(),0)
+        self.assertIsNone(self.window.screen_index)
+        self.assertFalse(self.window.share.isEnabled())
+        self.assertEqual(self.window.status_badge.text(),'No display available')
+
+    def test_catalog_certificate_error_keeps_the_diagnostic_and_explains_the_failure(self):
+        message='Item catalog unavailable: [SSL: CERTIFICATE_VERIFY_FAILED] unable to get local issuer certificate'
+        self.window.on_error(0,message)
+        self.assertEqual(self.window.last_diagnostic,message)
+        self.assertIn('secure item connection',self.window.search_panel.hint.text())
+
     @classmethod
     def setUpClass(cls):
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -215,7 +258,7 @@ class ContextUiTests(unittest.TestCase):
         self.tray_show = patch("price_lens.tray.QSystemTrayIcon.show")
         self.tray_show.start()
         self.window = LensWindow(Path.cwd(), Path("unused-cache"))
-        self.window.monitor.setCurrentIndex(1)
+        self.window.monitor.setCurrentIndex(0)
         self.window.on_catalog(Catalog({"items": [{"id": 1, "name": "Example Hat"}], "scrolls": []}))
         self.window.mode = "live"
         self.window.last_screen = time.time()
@@ -401,18 +444,18 @@ class ContextUiTests(unittest.TestCase):
     def test_one_button_covers_monitor_selection_start_pause_and_resume(self):
         fresh = LensWindow(Path.cwd(), Path("unused-cache"))
         try:
-            self.assertIsNone(fresh.screen_index)
-            self.assertFalse(fresh.share.isEnabled())
+            self.assertIsNotNone(fresh.screen_index)
+            self.assertTrue(fresh.share.isEnabled())
+            self.assertEqual(fresh.monitor.count(), len(fresh.screens))
             self.assertFalse(fresh.crop_button.isEnabled())
-            fresh.toggle_capture()
             self.assertEqual(fresh.reader.starts, 0)
-            fresh.monitor.setCurrentIndex(1)
+            fresh.monitor.setCurrentIndex(0)
             self.assertTrue(fresh.share.isEnabled())
             self.assertEqual(fresh.share.text(), "Start reading")
             fresh.share.click()
             self.assertEqual(fresh.reader.starts, 1)
             self.assertFalse(fresh.share.isEnabled())
-            self.assertEqual(fresh.share.text(), "Waiting for sharing…")
+            self.assertEqual(fresh.share.text(), "Starting reading…")
             fresh.reader.image = QImage(800, 800, QImage.Format.Format_RGBA8888)
             fresh.on_image(fresh.reader.image)
             self.assertTrue(fresh.share.isEnabled())
@@ -464,7 +507,7 @@ class ContextUiTests(unittest.TestCase):
     def test_first_run_display_selection_waits_for_explicit_start(self):
         fresh = LensWindow(Path.cwd(), Path("unused-cache"), auto_capture=True)
         try:
-            fresh.monitor.setCurrentIndex(1)
+            fresh.monitor.setCurrentIndex(0)
             self.app.processEvents()
             self.assertEqual(fresh.reader.starts, 0)
             self.assertEqual(fresh.mode, "idle")
@@ -479,7 +522,8 @@ class ContextUiTests(unittest.TestCase):
     def test_sharing_setup_can_be_canceled_and_late_readings_are_ignored(self):
         self.window.mode = "idle"
         self.window.start_capture()
-        self.assertEqual(self.window.status_badge.text(), "Waiting for screen sharing")
+        from price_lens.capture_platform import uses_system_picker
+        self.assertEqual(self.window.status_badge.text(), "Waiting for screen sharing" if uses_system_picker() else "Starting screen reading")
         self.assertFalse(self.window.cancel_setup.isHidden())
         self.window.cancel_setup.click()
         self.window.on_reading(self.reading(shop_hover=True))
@@ -491,13 +535,15 @@ class ContextUiTests(unittest.TestCase):
     def test_lost_sharing_waits_for_explicit_reconnect(self):
         self.window.show_status("OS capture: user stopped sharing")
         self.assertEqual(self.window.reader.starts, 0)
-        self.assertEqual(self.window.status_badge.text(), "Sharing needs attention")
+        self.assertEqual(self.window.status_badge.text(), "Screen reading needs attention")
         self.assertFalse(self.window.recovery_button.isHidden())
         self.window.recovery_button.click()
         self.assertEqual(self.window.reader.starts, 1)
 
     def test_changing_display_stops_the_old_source_without_opening_another_picker(self):
-        self.window.monitor.setCurrentIndex(0)
+        from types import SimpleNamespace
+        self.window.screens.append(SimpleNamespace(name=lambda:'Other',geometry=lambda:QRect(800,0,800,800),devicePixelRatio=lambda:1))
+        self.window.monitor.addItem('Other display',1)
         self.window.monitor.setCurrentIndex(1)
         self.assertEqual(self.window.mode, "idle")
         self.assertEqual(self.window.reader.starts, 0)
@@ -530,7 +576,7 @@ class ContextUiTests(unittest.TestCase):
         self.assertEqual(self.window.overlay.rows[-1]["text"], "FM • source has no market data")
 
     def test_saved_screenshot_is_labeled_even_without_a_display_selected(self):
-        self.window.monitor.setCurrentIndex(0)
+        self.window.monitor.setCurrentIndex(-1)
         self.window.mode = "screenshot"
         self.window.render()
         self.assertEqual(self.window.status_badge.text(), "Saved screenshot")
@@ -629,7 +675,7 @@ class ContextUiTests(unittest.TestCase):
 
     def test_single_display_dropdown_and_three_feature_tabs(self):
         self.assertFalse(hasattr(self.window,'display_map'))
-        self.window.monitor.setCurrentIndex(1)
+        self.window.monitor.setCurrentIndex(0)
         self.assertIsNotNone(self.window.screen_index)
         self.assertEqual([self.window.tabs.tabText(i) for i in range(3)],['Prices','EXP/Meso Tracking','Translation'])
         self.assertEqual(self.window.search_panel.parentWidget(),self.window.prices_page)

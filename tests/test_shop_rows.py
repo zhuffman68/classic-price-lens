@@ -23,6 +23,18 @@ class ShopRowsTests(unittest.TestCase):
         self.assertIsNone(result["price"])
         self.assertTrue(result["retained"])
 
+    def test_watch_page_revision_changes_for_another_listing_but_not_occlusion_or_drag(self):
+        initial=self.memory.page_revision
+        self.memory.observe(self.covered(),self.image,1)
+        self.assertEqual(self.memory.page_revision,initial)
+        moved=deepcopy(self.shop)
+        moved['area']['x']+=30;moved['rows'][0]['area']['x']+=30
+        self.memory.observe(moved,self.image,2)
+        self.assertEqual(self.memory.page_revision,initial)
+        changed=deepcopy(moved);changed['rows'][0]['name']='Another item'
+        self.memory.observe(changed,self.image,3)
+        self.assertGreater(self.memory.page_revision,initial)
+
     def test_long_occlusion_keeps_reference_identity_without_a_deal_rating(self):
         result=self.memory.observe(self.covered(),self.image,4)[0]
         self.assertEqual(result["name"],"Work Gloves")

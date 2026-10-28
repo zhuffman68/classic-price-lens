@@ -16,6 +16,7 @@ import urllib.parse
 import urllib.request
 
 from . import APP_NAME, __version__
+from .tls import make_context
 
 MAX_RESPONSE = 8*1024*1024
 USER_AGENT = f"{APP_NAME}/{__version__} (Classic World screen-only companion)"
@@ -128,17 +129,17 @@ class JsonTransport:
         if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
             raise ValueError("A public HTTPS URL is required")
         headers = {"User-Agent":USER_AGENT,"Accept":"application/json"}
+        if self.context is None:
+            with self.context_lock:
+                if self.context is None:self.context = make_context()
         # Keep the operating system/user proxy behavior of urllib intact.
         proxies = urllib.request.getproxies()
         if (proxies.get("https") or proxies.get("all")) and not urllib.request.proxy_bypass(parsed.hostname):
-            with urllib.request.urlopen(urllib.request.Request(url,headers=headers),timeout=12) as response:
+            with urllib.request.urlopen(urllib.request.Request(url,headers=headers),timeout=12,context=self.context) as response:
                 body = response.read(MAX_RESPONSE+1)
             if len(body)>MAX_RESPONSE:raise ValueError("Data response exceeds size limit")
             if token:token.check()
             return json.loads(body) if decode else body
-        if self.context is None:
-            with self.context_lock:
-                if self.context is None:self.context = ssl.create_default_context()
         connections = getattr(self.local,"connections",None)
         if connections is None:
             connections = self.local.connections = OrderedDict()
