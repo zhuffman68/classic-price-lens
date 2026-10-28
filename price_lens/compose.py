@@ -99,7 +99,7 @@ class KoreanComposer(QObject):
         process.readyReadStandardError.connect(lambda:process.readAllStandardError())
         process.finished.connect(lambda *_:self.finished(process))
         process.errorOccurred.connect(lambda *_:self.worker_error(process))
-        process.start(sys.executable,['-B','-m','price_lens.compose_worker',str(models)]);self.deadline.start()
+        process.start(sys.executable,['-B','-m','price_lens.compose_worker',str(models)]);self.deadline.start(60000)
 
     def worker_error(self,process):
         if self.process is process:
@@ -109,7 +109,7 @@ class KoreanComposer(QObject):
         if not self.ready or self.inflight or not self.queued:return
         self.inflight=self.queued;self.queued=None;identity,prepared=self.inflight
         self.process.write((json.dumps({'id':identity,'text':prepared.masked},ensure_ascii=False)+'\n').encode('utf-8'))
-        self.deadline.start()
+        self.deadline.start(12000)
 
     def receive(self):
         if self.process is None:return
@@ -138,7 +138,8 @@ class KoreanComposer(QObject):
         self.error=message;self.copy_pending=None;self.result='';self.result_id=None;self.changed.emit()
 
     def timed_out(self):
-        self.failed('The local translator took too long. Try again with a shorter message.');self.unload()
+        self.failed('The local translator took too long. Try again with a shorter message.' if self.ready else
+                    'The local Korean writer could not finish loading. Try again.');self.unload()
 
     def finished(self,process):
         if self.process is not process:return

@@ -1,5 +1,13 @@
 # Verification — 2026-10-28
 
+## Lupin v0.13.3 Windows installer follow-up
+
+- The unmodified v0.13.2 installer completed on a clean Windows 11 linked clone under a normal user, without a registered system Visual C++ runtime. Setup returned 0, registered the correct version/path, created the desktop shortcut and required no reboot. The recorded completed transaction took about 82 seconds. Its installed OCR/overlay/media/certificate checks and native WebView2 local-page check passed; the regular desktop shortcut opened the actual application.
+- That clean environment exposed the outgoing translation worker's missing C++ DLL search path. Its original standalone worker exited 1 before readiness. The corrected worker reuses the DLLs already included with PySide6 and reached readiness/exit 0 without installing system runtimes or copying additional DLLs. The incoming Korean worker also reached readiness/exit 0. These were background-only model checks with no clipboard, desktop input or game access.
+- Cold model loading in that busy VM took approximately 40 seconds for the writer and 32 seconds for the reader. Writer startup now permits 60 seconds, separately from the unchanged 12-second inference deadline. Those observations are not performance guarantees.
+- The v0.13.3 upgrade was completed through the normal interactive Windows installer, including its existing-folder confirmation and completion page. The desktop shortcut then opened the installed GUI. This launch displayed a market-refresh warning and retained saved references; it does not establish a successful fresh fetch. The test VM remains visible for manual testing. The 347-test source suite passes with three skips; the packaged Wine suite passes with eight skips and its install/upgrade/removal transactions pass.
+- The clean snapshot already included WebView2. Its missing-runtime bootstrapper branch remains a separate acceptance boundary. Uploads remain on hold.
+
 ## Lupin v0.13.2
 
 - The 346-test source suite passes with three platform/offscreen skips, and seven publisher tests pass without uploading. Native helper tests exercise local HTML/Korean Unicode; process tests cover UTF-8 chunks, malformed/oversized output, deadlines, cancelled/late output, restart after failed startup, coalescing and shutdown. Snapshot tests also exclude unverified source aliases without blocking exact items, while preserving strict malformed/duplicate/world validation and last-good generations.

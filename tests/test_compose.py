@@ -113,6 +113,20 @@ class ComposerTests(unittest.TestCase):
         self.assertTrue(self.c.idle.isActive());self.assertEqual(self.c.result,'감사합니다.')
         self.assertEqual(p.requests,[]);self.clipboard.setText.assert_not_called()
 
+    def test_cold_model_loading_has_a_separate_deadline_from_translation(self):
+        with patch('price_lens.compose.QProcess.start'):
+            self.c.start_worker()
+        self.assertEqual(self.c.deadline.interval(),60000)
+        self.c.unload()
+        p=self.pipe();self.c.ready=False
+        self.c.set_text('Please come here');self.c.timer.stop();self.c.preview()
+        self.assertFalse(p.requests)
+        p.output=b'{"ready":true}\n';self.c.receive()
+        self.assertEqual(len(p.requests),1)
+        self.assertEqual(self.c.deadline.interval(),12000)
+        self.assertFalse(self.c.error)
+        self.clipboard.setText.assert_not_called()
+
     def test_model_cannot_invent_an_unstated_currency(self):
         p=self.pipe();self.c.set_text('Can you accept 250');self.c.request_copy()
         # Keep all protected values but introduce an unstated currency.

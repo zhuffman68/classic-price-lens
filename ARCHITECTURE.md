@@ -1,6 +1,6 @@
 # Lupin architecture
 
-Lupin v0.13.2 provides market references, EXP/meso tracking and local Korean translation for MapleStory Classic World.
+Lupin v0.13.3 provides market references, EXP/meso tracking and local Korean translation for MapleStory Classic World.
 
 ## Observation boundary
 
@@ -83,3 +83,5 @@ Inter is bundled for consistent interface/price typography. The GUI uses a small
 Maximization and control-panel pinning are disabled. Fresh default geometry is measured from compact controls, including active tracking fields, and bounded to the display. Normal user sizes persist; desktop-sized/maximized geometry cannot replace a compact preference. Long item/history lists can scroll independently.
 
 Programs install to `/opt/lupin` or `%LOCALAPPDATA%\\Programs\\Lupin`; launchers/readers use Lupin names. Windows upgrades move the old program directory, preserve additional files, remove obsolete shipped modules and support rollback before commit. Shutdown sends Quit through Lupin's own local pipe and waits for that specific server process to finish unloading; synchronization-only access comes from the pipe's server PID, with no process enumeration or termination. Stable settings/socket/portal IDs preserve data and approved sharing. The WebView2 SDK, loader and official setup bootstrapper have pinned download hashes. Windows setup checks/prepares the shared runtime before closing an existing installation; Linux package dependencies provide WebKitGTK. The browser engine is not bundled. Both runtime/model manifests are pinned; install roots stay read-only in normal use. Private evidence, credentials, screenshots and caches are excluded. See [packaging](packaging/README.md) and [verification](VERIFICATION.md).
+
+The Windows Korean writer registers the existing PySide6 DLL directory before loading CTranslate2, retaining its directory handle for the worker lifetime. This reuses the bundled Microsoft C++ runtime without importing Qt or requiring a system Visual C++ installation. Cold writer startup has a 60-second deadline; individual inference requests retain their 12-second deadline.

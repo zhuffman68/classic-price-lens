@@ -14,6 +14,13 @@ def main():
     os.environ['OPENBLAS_NUM_THREADS']='1';os.environ['OMP_NUM_THREADS']='2';os.environ['OMP_WAIT_POLICY']='PASSIVE'
     if hasattr(os,'nice'):os.nice(10)
     try:
+        # Qt already supplies the Microsoft C++ runtime used by CTranslate2.
+        # This worker runs without Qt, so register that exact bundled directory
+        # before loading inference DLLs. Keep its handle for the worker lifetime.
+        dll_directory=None
+        if sys.platform=='win32':
+            from importlib.util import find_spec
+            dll_directory=os.add_dll_directory(str(Path(find_spec('PySide6').origin).parent))
         import ctranslate2,sentencepiece
         root=Path(sys.argv[1])
         source=sentencepiece.SentencePieceProcessor(model_file=str(root/'source.spm'))

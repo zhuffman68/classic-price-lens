@@ -1,11 +1,13 @@
 Local patch status
 
-v0.13.2 replaces installed-browser discovery and DevTools transport with a
+v0.13.3 replaces installed-browser discovery and DevTools transport with a
 short-lived native market helper. Linux uses system WebKitGTK; Windows uses
 the shared production WebView2 runtime, prepared by setup if needed. No browser
 application or personal browser profile is required. All prices still come
 from one local full-market snapshot, refreshed at launch and the selected TTL.
-Both translation model bundles and existing settings are retained.
+Both translation model bundles and existing settings are retained. The Windows
+writer now finds the C++ DLLs already bundled with Qt, and model startup has
+a separate grace period from individual translation requests.
 Build and validation details are in VERIFICATION.md.
 
 Uploads remain on hold at the user's request. Do not push source, create a
