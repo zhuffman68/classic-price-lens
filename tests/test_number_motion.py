@@ -70,7 +70,7 @@ class WindowSizeTests(unittest.TestCase):
             def value(self,key,default=None):
                 return QSize(1896,948) if key=='window-size' else default
         window=QWidget();window_size.restore(window,Settings())
-        self.assertEqual(window.width(),460)
+        self.assertEqual(window.width(),509)
         self.assertLess(window.width(),self.app.primaryScreen().availableGeometry().width()*.95)
         window.close();window.deleteLater()
 

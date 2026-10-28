@@ -102,6 +102,8 @@ class AnnotationWindow(QWidget):
                 old_content=old.get('content_id',old_text) if old else None
                 old_alpha_target=old.get('_target_alpha',1.0) if old else None
                 row = old if old is not None else supplied
+                if 'follow_pointer' not in supplied:
+                    for field in ('follow_pointer','pointer_region','_cursor_offset'):row.pop(field,None)
                 row.update(supplied)
                 row["watched"] = bool(supplied.get("watched"))
                 row.pop("_retired_rect", None)
@@ -144,7 +146,7 @@ class AnnotationWindow(QWidget):
                 self.rows.append(row)
                 box=self.label_rect(row,QCursor.pos())
                 occlusion=row.get('occlusion')
-                covered=row.get('obscured') or bool(occlusion and box and box.intersects(QRect(*occlusion)))
+                covered=bool(occlusion and box and box.intersects(QRect(*occlusion)))
                 target=.25 if row.get('kind')=='shop' and covered else 1.0
                 row['_target_alpha']=target
                 if self.reduce_motion:row['_alpha']=target
@@ -417,6 +419,11 @@ class AnnotationWindow(QWidget):
             left=bounds.left()+4 if row['anchor']=='bottom_left' else bounds.right()-width-3
             top=max(bounds.top()+4,bounds.bottom()-height-3-int(row.get('bottom_offset',0)))
             return QRect(left,top,width,height)
+        if row.get('kind')=='item' and row.get('bounds'):
+            bounds=QRect(*row['bounds']).intersected(self.rect())
+            width=min(width,max(1,bounds.width()-4))
+            return QRect(max(bounds.left()+2,min(x,bounds.right()-width-2)),
+                         max(bounds.top()+2,min(y-5,bounds.bottom()-height-2)),width,height)
         x = min(max(2, x), max(2, self.width() - width - 2))
         y = min(max(7, y), max(7, self.height() - 33))
         return QRect(x, y - 5, width, height)

@@ -69,10 +69,11 @@ def description_bounds(image,area,exclude=()):
 
 def still_present(image,rect):
     if rect is None or not image.rect().contains(rect):return False
+    matches=0
     for fraction in (.2,.5,.8):
         c=image.pixelColor(min(rect.right(),rect.left()+6),round(rect.top()+rect.height()*fraction))
-        if c.blue()>max(c.red(),c.green())+18:return True
-    return False
+        if c.red()<=155 and c.green()<=160 and c.blue()>max(c.red(),c.green())+18:matches+=1
+    return matches>=2
 
 
 class TooltipReference:

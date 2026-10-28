@@ -28,7 +28,11 @@ def glyph_key(name):
     aliases={'soroll':'scroll','seroll':'scroll','scroil':'scroll','scroii':'scroll','scr0ll':'scroll',
              'arrnor':'armor','mushroorn':'mushroom','helrnet':'helmet','whlte':'white',
              'sllver':'silver','lron':'iron','0range':'orange','b1ue':'blue'}
-    return re.sub(r'\b[\w]+\b',lambda m:aliases.get(m[0],m[0]),key(name)).replace("v", "y")
+    text = re.sub(r'\b[\w]+\b',lambda m:aliases.get(m[0],m[0]),key(name))
+    # These confusions occur in the small game font (I/l and g/q, including
+    # "Kitty Chat Rinq"). Exact spelling wins first; a collision stays ambiguous.
+    text = re.sub(r'(?<=[a-z])1(?=[a-z])', 'i', text)
+    return text.translate(str.maketrans({'v':'y','l':'i','q':'g'}))
 
 
 def item_words(name):
@@ -37,7 +41,11 @@ def item_words(name):
 
 
 def unclipped_name(name):
-    return re.sub(r"(?:[.\u2026]\s*)+$", "", key(name)).rstrip()
+    return re.sub(r"(?:[.\u2026]\s*)+(?:[,\u00b7]\s*)?$", "", key(name)).rstrip()
+
+
+def clipped_name(name):
+    return bool(re.search(r"[.\u2026](?:[.\u2026\s,\u00b7])*$", key(name)))
 
 
 @dataclass(frozen=True)
@@ -96,7 +104,7 @@ class Catalog:
                           or self.glyph_names.get(glyph_key(item_words(base)), []))
             expected = 'male' if suffix == 'm' else 'female'
             return [i for i in candidates if i.equipment and i.gender == expected]
-        if not re.search(r"[.\u2026]$", name):
+        if not clipped_name(name):
             words=item_words(name)
             return (self.read_names.get(words) or self.glyph_names.get(glyph_key(words), [])) if len(words)>=6 else []
         prefix = item_words(unclipped_name(name))

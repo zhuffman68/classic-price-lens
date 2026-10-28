@@ -97,6 +97,15 @@ class GameAreaTests(unittest.TestCase):
             self.assertEqual(result["gameArea"],first["gameArea"])
             self.assertEqual(len(result["gameGuards"]),2)
 
+    def test_tall_description_crossing_footer_keeps_only_verified_window_bounds(self):
+        image=game_frame();self.assert_area(self.read(image),120,90,960,600)
+        painter=QPainter(image);painter.fillRect(500,580,240,110,QColor('#444477'));painter.end()
+        self.assert_area(self.read(image),120,90,960,600)
+        # The popup may hide the footer rim, but losing the independent level
+        # anchor must still remove the game area immediately.
+        painter=QPainter(image);painter.fillRect(195,645,90,45,QColor('#171c25'));painter.end()
+        self.assertIsNone(self.read(image)['gameArea'])
+
     def test_fps_overlay_is_optional_and_never_an_anchor(self):
         # Start with the corner covered, forcing a fresh search with an FPS-like
         # overlay present; then move the game and search again without it.

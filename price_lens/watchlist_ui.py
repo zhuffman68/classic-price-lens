@@ -2,10 +2,40 @@
 from PySide6.QtCore import QRect,QRectF,QSize,Qt,Signal,QVariantAnimation,QEasingCurve
 from PySide6.QtGui import QColor,QFont,QIcon,QPainter,QPixmap,QPalette,QBrush
 from PySide6.QtWidgets import (QFrame,QHBoxLayout,QLabel,QListWidget,QListWidgetItem,
-    QStyledItemDelegate,QStyleOptionViewItem,QStyle,QToolButton,QVBoxLayout,QWidget)
+    QStyledItemDelegate,QStyleOptionViewItem,QStyle,QToolButton,QPushButton,QVBoxLayout,QWidget)
 from .motion import RollingLabel,enabled
 from .gui_currency import paint_icon
 from .domain import age_text
+
+
+class WatchButton(QPushButton):
+    """One exact-item watch control shared by search, shop and inventory cards."""
+    def __init__(self,parent=None):
+        super().__init__('☆',parent);self.watches=None;self.item=None
+        self.setCheckable(True);self.setFixedSize(32,32)
+        self.setStyleSheet('QPushButton {background:transparent;border:1px solid transparent;font-size:20px;color:#b5c1d2;border-radius:6px;} QPushButton:hover {background:#303c4e;border-color:#53647b;} QPushButton:checked {background:#403525;border-color:#c8a363;color:#f5d798;}')
+        self.clicked.connect(self.toggle_item);self.hide()
+
+    def bind(self,watches):
+        if self.watches is watches:return
+        if self.watches:self.watches.changed.disconnect(self.refresh)
+        self.watches=watches
+        if watches:watches.changed.connect(self.refresh)
+        self.refresh()
+
+    def set_item(self,item):
+        self.item=item;self.refresh()
+
+    def toggle_item(self):
+        if self.watches and self.item:self.watches.toggle(self.item)
+
+    def refresh(self):
+        watched=bool(self.item and self.watches and self.item.game_id in self.watches.ids)
+        self.setChecked(watched);self.setText('★' if watched else '☆')
+        self.setToolTip('Stop watching this item' if watched else 'Watch this item')
+        self.setAccessibleName('Stop watching item' if watched else 'Watch item')
+        self.setEnabled(bool(self.item and self.watches and (watched or len(self.watches.ids)<512)))
+        self.setVisible(bool(self.item and self.watches is not None))
 
 
 class ClippedSection(QWidget):
@@ -14,22 +44,44 @@ class ClippedSection(QWidget):
         super().__init__(parent);self.content=QWidget(self);self.expanded=False
         self.animation=QVariantAnimation(self);self.animation.setDuration(200)
         self.animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
-        self.animation.valueChanged.connect(lambda value:self.setFixedHeight(round(value)))
-        self.setFixedHeight(0)
+        self.animation.valueChanged.connect(self.advance)
+        self.animation.finished.connect(self.finish)
+        self.full_height=0;self.setFixedHeight(0)
+
+    def advance(self,value):
+        self.setFixedHeight(round(value))
+        # Qt otherwise paints a frame with the old ancestor height, squeezing
+        # the header/body apart before the queued layout request catches up.
+        chain=[];parent=self.parentWidget()
+        while parent is not None:
+            chain.append(parent);parent.updateGeometry()
+            if parent.layout():parent.layout().invalidate()
+            parent=parent.parentWidget()
+        for parent in reversed(chain):
+            if parent.layout() and parent.layout().isEnabled():parent.layout().activate()
+        self.update()
+
+    def finish(self):
+        self.content.setVisible(self.expanded);self.update()
 
     def set_expanded(self,shown):
         self.expanded=shown;self.content.layout().activate()
-        full=self.content.sizeHint().height();self.content.resize(self.width(),full)
+        full=self.content.sizeHint().height();self.full_height=full
+        if self.content.size()!=QSize(self.width(),full):self.content.resize(self.width(),full)
         target=full if shown else 0
         if self.animation.state()==self.animation.State.Running and self.animation.endValue()==target:return
         self.animation.stop()
-        if self.height()==target:return
-        if not enabled(self.parentWidget() or self):self.setFixedHeight(target);return
+        if self.height()==target:self.finish();return
+        if not enabled(self.parentWidget() or self):self.setFixedHeight(target);self.finish();return
+        self.content.show()
         self.animation.setStartValue(self.height());self.animation.setEndValue(target);self.animation.start()
 
     def resizeEvent(self,event):
         super().resizeEvent(event)
-        if self.content.layout():self.content.resize(self.width(),self.content.sizeHint().height())
+        # Height changes clip a fixed canvas. Relaying them to the children
+        # made wrapped text/list geometry recalculate during every frame.
+        if self.content.layout() and self.content.width()!=self.width():
+            self.content.resize(self.width(),self.full_height or self.content.sizeHint().height())
 
 
 class WatchDelegate(QStyledItemDelegate):
@@ -67,6 +119,7 @@ class WatchRows(QListWidget):
     def __init__(self,parent=None):
         super().__init__(parent);self.removing=None;self.previous=None;self.active_identity=None
         self.setItemDelegate(WatchDelegate(self));self.setIconSize(QSize(28,28))
+        self.setMouseTracking(True);self.viewport().setMouseTracking(True)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setTextElideMode(Qt.TextElideMode.ElideRight);self.setAccessibleName('Watched items')
 

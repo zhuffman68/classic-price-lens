@@ -61,6 +61,15 @@ class PriceSearchTests(unittest.TestCase):
         self.panel.results.setCurrentRow(0)
         self.assertEqual([item.game_id for item in self.requests],[1])
 
+    def test_refining_the_same_results_retains_rows_and_does_not_restart_reveal(self):
+        self.panel.resize(509,650);self.panel.show();self.app.processEvents()
+        with patch('price_lens.search.reveal') as reveal:
+            self.search('wo');rows=[self.panel.results.item(i) for i in range(self.panel.results.count())]
+            self.search('work')
+            self.assertEqual([self.panel.results.item(i) for i in range(self.panel.results.count())],rows)
+            self.assertEqual(reveal.call_count,1)
+        self.assertTrue(self.panel.results.isEnabled());self.assertEqual(self.requests,[])
+
     def test_empty_query_has_no_instruction_but_search_keeps_match_count(self):
         self.assertEqual(self.panel.hint.text(),'')
         self.search('Work')

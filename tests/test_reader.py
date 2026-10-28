@@ -71,6 +71,19 @@ class ShopReaderTests(unittest.TestCase):
                             timeout=20, env={**os.environ, "RAYON_NUM_THREADS": "2"}, check=True)
         self.assertEqual(json.loads(on.stdout)["tooltip"]["found"]["name"], "Screw")
 
+    def test_open_item_description_far_from_pointer_uses_pixels_only(self):
+        from PySide6.QtGui import QImage,QPainter,QColor
+        image=QImage(1600,900,QImage.Format.Format_RGBA8888);image.fill(QColor('#eeeeee'))
+        painter=QPainter(image)
+        painter.drawImage(1150,160,QImage(str(ROOT/'vendor/minerva/samples/item-tooltip/screw@60,20.png')))
+        painter.end()
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'popup.png';image.save(str(path))
+            request={'path':str(path),'at_ms':123,'pointer':{'x':20,'y':800},'tooltip':True}
+            result=subprocess.run([str(BINARY)],input=json.dumps(request)+'\n',text=True,capture_output=True,timeout=20,check=True)
+        found=json.loads(result.stdout)['tooltip']['found']
+        self.assertEqual(found['name'],'Screw');self.assertTrue(found['pinned'])
+
     def test_small_shop_capture_keeps_desktop_coordinates(self):
         path = ROOT / "vendor/minerva/samples/player-shop/gems-and-ores.png"
         request = {"path": str(path), "at_ms": 123, "pointer": None, "origin": {"x": 140, "y": 80}}

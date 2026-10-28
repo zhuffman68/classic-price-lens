@@ -28,6 +28,7 @@ pub struct Locator {
     world: RgbaImage,
     corner: RgbaImage,
     last: Option<Located>,
+    last_footer: Option<(u32,u32)>,
     last_scan: std::time::Instant,
 }
 
@@ -49,6 +50,7 @@ impl Locator {
                 "../../price_lens/resources/hud/map-left-edge.png"
             )),
             last: None,
+            last_footer: None,
             last_scan: std::time::Instant::now(),
         }
     }
@@ -132,8 +134,19 @@ impl Locator {
             }
         }
         let mut found: Vec<Located> = Vec::new();
+        let mut found_footer = None;
         for (_, lv, scale) in levels {
-            let Some((left, right)) = footer_span(image, lv, scale) else {
+            // A tall item description can cross the white footer rim. The
+            // already-proven bounds remain usable only while the independent
+            // LV anchor and OS caption are still visible at those coordinates.
+            let span=footer_span(image, lv, scale).or_else(|| {
+                let last=previous.as_ref()?;
+                let old=*last.guards.get(1)?;
+                if old.x.abs_diff(lv.x)>3 || old.y.abs_diff(lv.y)>3
+                    || score(image,&self.level,old)>=24.0 || !caption_still_present(image,last.area) {return None}
+                self.last_footer
+            });
+            let Some((left, right)) = span else {
                 continue;
             };
             let ui_scale = (right - left) as f32 / 798.0;
@@ -223,9 +236,11 @@ impl Locator {
                     area,
                     guards: vec![guard, lv],
                 });
+                found_footer=Some((left,right));
             }
         }
         self.last = if found.len() == 1 { found.pop() } else { None };
+        self.last_footer=if self.last.is_some() {found_footer} else {None};
         if debug {
             eprintln!("Game area: {:?}", self.last.as_ref().map(|l| l.area));
         }
@@ -269,7 +284,9 @@ fn caption_bounds(
     }
     let centre = (bar_left + bar_right) / 2;
     let seed = centre.saturating_sub((bar_right - bar_left) / 4);
-    let near = |a: [u8; 4], b: [u8; 4]| (0..3).all(|i| a[i].abs_diff(b[i]) <= 8);
+    // Mild compositor/video colour variation must not split a flat caption.
+    // Width, symmetry, multiple rows and the independent HUD remain required.
+    let near = |a: [u8; 4], b: [u8; 4]| (0..3).all(|i| a[i].abs_diff(b[i]) <= 12);
     let mut groups: Vec<(u32, u32, u32, u32, u32)> = Vec::new();
     for y in 0..bottom - 400 {
         let color = image.get_pixel(seed, y).0;

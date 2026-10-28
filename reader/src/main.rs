@@ -148,15 +148,20 @@ fn main() {
             let mut value = serde_json::to_value(shop_reading)?;
             if request.tooltip {
                 if let Some(pointer) = request.pointer {
-                    let tooltip_capture = ItemCapture {
+                    let mut tooltip_capture = ItemCapture {
                         frame: capture.frame,
                         origin: capture.origin,
                         pointer,
                     };
-                    let reading = tooltip_reader
-                        .get_or_insert_with(ItemTooltipReader::bundled)
-                        .read(&tooltip_capture);
+                    let tooltip_reader=tooltip_reader.get_or_insert_with(ItemTooltipReader::bundled);
+                    let reading = tooltip_reader.read(&tooltip_capture);
                     value["tooltip"] = serde_json::to_value(reading.tooltip)?;
+                    if !value["tooltip"]["found"]["name"].is_string() {
+                        if let Some(popup)=tooltip_text::popup(tooltip_reader,&mut tooltip_capture) {
+                            value["tooltip"]=serde_json::to_value(popup)?;
+                            value["tooltip"]["found"]["pinned"]=serde_json::json!(true);
+                        }
+                    }
                     if request.tooltip_retry {
                         let found=&value["tooltip"]["found"];
                         if found.is_object() {

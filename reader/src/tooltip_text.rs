@@ -1,7 +1,29 @@
 //! A bounded second look at an already located name line, never a scene text search.
 use image::{GrayImage,Luma,imageops::FilterType};
-use minerva_core::{Frame,ScreenPoint};
+use minerva_core::{Frame,ScreenPoint,ItemCapture,ItemTooltip,ItemTooltipReader};
 use serde_json::Value;
+
+/// A clicked item link can open its description far from the pointer. Probe
+/// captured pixels only; the UI also validates its name and description panel.
+pub fn popup(reader:&ItemTooltipReader,capture:&mut ItemCapture)->Option<ItemTooltip> {
+    let original=capture.pointer;
+    let centers=|length:u32|->Vec<i32> {
+        if length<=1280 {return vec![(length/2) as i32]}
+        let mut points:Vec<i32>=(640..length).step_by(1280).map(|x|x as i32).collect();
+        let end=length.saturating_sub(640) as i32;
+        if points.last().copied()!=Some(end) {points.push(end)}
+        points
+    };
+    let mut result=None;
+    'search:for y in centers(capture.frame.height).into_iter().take(3) {
+        for x in centers(capture.frame.width).into_iter().take(3) {
+            capture.pointer=ScreenPoint{x:x+capture.origin.x,y:y+capture.origin.y};
+            let candidate=reader.read(capture).tooltip;
+            if matches!(&candidate,ItemTooltip::Found{name:Some(_),..}) {result=Some(candidate);break 'search}
+        }
+    }
+    capture.pointer=original;result
+}
 
 pub fn alternatives(frame:&Frame,origin:ScreenPoint,found:&Value)->Vec<String> {
     let read = || -> Option<Vec<String>> {

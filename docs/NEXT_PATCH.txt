@@ -1,13 +1,14 @@
 Local patch status
 
-v0.13.3 replaces installed-browser discovery and DevTools transport with a
-short-lived native market helper. Linux uses system WebKitGTK; Windows uses
-the shared production WebView2 runtime, prepared by setup if needed. No browser
-application or personal browser profile is required. All prices still come
-from one local full-market snapshot, refreshed at launch and the selected TTL.
-Both translation model bundles and existing settings are retained. The Windows
-writer now finds the C++ DLLs already bundled with Qt, and model startup has
-a separate grace period from individual translation requests.
+v0.14.0 adds watch stars to shop/inventory cards, underlined tabs, steadier
+watched/item panels and 509 x 829 defaults while preserving saved sizes.
+It fixes tall item descriptions invalidating the game locator, removes the
+legacy covered-row opacity fallback and restores listing amounts only when
+their exact previously read pixels return. It improves clipped/font-variant
+names and can locate item-link descriptions away from the real cursor.
+Market failures retain bounded diagnostics and get one short startup retry
+before normal backoff. All prices still use one shared local snapshot.
+Both translation model bundles and existing settings are retained.
 Build and validation details are in VERIFICATION.md.
 
 Uploads remain on hold at the user's request. Do not push source, create a

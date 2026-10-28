@@ -41,6 +41,20 @@ class ShopRowsTests(unittest.TestCase):
         self.assertIsNone(result["price"])
         self.assertTrue(result["listing_old"])
 
+    def test_unreadable_selected_name_keeps_reference_with_no_assumed_listing(self):
+        selected=deepcopy(self.shop);selected['rows'][0].update(name=None,price=None,covered=False)
+        row=self.memory.observe(selected,self.image,1)[0]
+        self.assertEqual(row['name'],'Work Gloves');self.assertFalse(row['covered'])
+        self.assertIsNone(row['price']);self.assertTrue(row['reference_only'])
+
+    def test_listing_returns_without_ocr_only_when_the_exact_visible_pixels_return(self):
+        rows=self.memory.observe(self.covered(),self.image,1)
+        changed=self.image.copy();changed.setPixelColor(180,180,QColor('white'))
+        self.assertIsNone(self.memory.restore_visible(changed,rows)[0]['price'])
+        restored=self.memory.restore_visible(self.image,rows)[0]
+        self.assertEqual(restored['price']['mesos'],100)
+        self.assertFalse(restored.get('covered'))
+
     def test_changed_scrollbar_invalidates_covered_rows(self):
         self.image.setPixelColor(363,160,QColor("white"))
         result=self.memory.observe(self.covered(),self.image,1)[0]

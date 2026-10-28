@@ -187,6 +187,7 @@ def fading_visibility(widget,shown):
 class AnimatedTabs(QTabWidget):
     def __init__(self,parent=None):
         super().__init__(parent)
+        font=self.tabBar().font();font.setUnderline(True);self.tabBar().setFont(font)
         self.previous_page=None
         self.previous_index=0
         self.sliding=False

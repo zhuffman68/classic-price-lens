@@ -11,7 +11,7 @@ class ShopRows:
 
     def reset(self):
         self.page_revision=getattr(self,'page_revision',0)
-        self.area=None;self.guards=[];self.rows={};self.active=False;self.last_verified=0
+        self.area=None;self.guards=[];self.rows={};self.row_pixels={};self.active=False;self.last_verified=0
 
     @staticmethod
     def slot(row):
@@ -95,10 +95,14 @@ class ShopRows:
             current=[(self.identity(row),row.get('price')) for row in sorted(clean,key=lambda row:self.slot(row)[1])]
             if contradiction or (previous and clean and len(clean)==len(raw) and previous!=current):
                 self.page_revision+=1
-            self.rows={};self.area=dict(area);self.set_guards(area,image,exclude)
+            self.rows={};self.row_pixels={};self.area=dict(area);self.set_guards(area,image,exclude)
         elif all_verified:
             self.set_guards(area,image,exclude);same=True
-        for row in clean:self.rows[self.slot(row)]=(deepcopy(row),now)
+        for row in clean:
+            slot=self.slot(row);self.rows[slot]=(deepcopy(row),now)
+            rect=QRect(*slot)
+            if image is not None and image.rect().contains(rect):
+                self.row_pixels[slot]=image.copy(rect).convertToFormat(QImage.Format.Format_RGBA8888)
         if clean or same:self.last_verified=now
         references=bool(close and not contradiction and (guard_ok or guard_safe))
         if references:
@@ -110,10 +114,24 @@ class ShopRows:
         result=[]
         for row in raw:
             saved=self.rows.get(self.slot(row))
-            if references and row.get('covered') and saved:
-                row=deepcopy(saved[0]);row.update(retained=True,covered=True,reference_only=True,listing_old=True,price=None)
+            if references and (row.get('covered') or not row.get('name')) and saved:
+                covered=bool(row.get('covered'))
+                row=deepcopy(saved[0]);row.update(retained=True,covered=covered,reference_only=True,listing_old=True,price=None)
             elif row.get('covered'):
                 # Identity remains unknown when the page cannot be verified.
                 row['price']=None
+            result.append(row)
+        return result
+
+    def restore_visible(self,image,rows):
+        """Restore a listing only when its exact, previously read pixels return."""
+        if not self.guards or not all(self.guard_matches(image,r,v) for r,v in self.guards):return rows
+        result=[]
+        for row in rows:
+            slot=self.slot(row);pixels=self.row_pixels.get(slot);saved=self.rows.get(slot)
+            if (saved and pixels is not None and (row.get('covered') or row.get('listing_old'))
+                    and image.rect().contains(QRect(*slot))
+                    and image.copy(QRect(*slot)).convertToFormat(QImage.Format.Format_RGBA8888)==pixels):
+                row=deepcopy(saved[0])
             result.append(row)
         return result

@@ -3,13 +3,14 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFrame,QHBoxLayout,QPushButton,QVBoxLayout,QWidget
 
 from .domain import WORLD,age_text,compare
-from .motion import RollingLabel
+from .motion import RollingLabel,visibility
 from .ui_components import COLORS,mesos,text_label
 from .thumbnails import ItemImage
+from .watchlist_ui import WatchButton
 
 
 class PriceCard(QFrame):
-    def __init__(self,**data):
+    def __init__(self,watchlist=None,watch_button=None,**data):
         super().__init__()
         self.setObjectName("card")
         layout=QVBoxLayout(self)
@@ -27,7 +28,10 @@ class PriceCard(QFrame):
         names=QVBoxLayout();names.setContentsMargins(0,0,0,0);names.setSpacing(4)
         field("name",names,"font-size: 14px; font-weight: 650")
         field("context",names,"font-size: 10px; color: #98a3b1")
-        header.addLayout(names,1);layout.addLayout(header)
+        header.addLayout(names,1)
+        self.watch_button=watch_button if watch_button is not None else WatchButton(self)
+        if watchlist is not None:self.watch_button.bind(watchlist)
+        header.addWidget(self.watch_button,0,Qt.AlignmentFlag.AlignTop);layout.addLayout(header)
         field("status",layout)
         numbers=QHBoxLayout()
         self.store=QWidget()
@@ -50,7 +54,7 @@ class PriceCard(QFrame):
     def put(self,name,text,style=None):
         label=self.fields[name]
         label.setText(text)
-        label.setVisible(bool(text))
+        visibility(label,bool(text))
         if style and label.styleSheet()!=style:label.setStyleSheet(style)
 
     def visit_source(self):
@@ -62,6 +66,7 @@ class PriceCard(QFrame):
                     lookup_state="",open_source=None,
                     hovered=False,example=False,context_name=None):
         self.data={"open_source":open_source,"quote":quote}
+        self.watch_button.set_item(item)
         price=row.get("price") or {}
         verdict=compare(item,price.get("quantity"),price.get("mesos"),quote,now,ttl)
         compatible=bool(item and quote and quote.game_id==item.game_id and quote.world==WORLD

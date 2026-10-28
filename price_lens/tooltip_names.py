@@ -3,6 +3,7 @@ import hashlib
 import re
 from PySide6.QtCore import QRect
 from PySide6.QtGui import QImage
+from .domain import glyph_key,item_words
 
 
 def name_key(found, image):
@@ -33,10 +34,11 @@ class TooltipNames:
         for text in found.get('alternatives') or []:
             if not isinstance(text,str):continue
             item=catalog.resolve(text,found.get('tier'))
-            if item and roles_agree(found.get('name') or '',text,item):matches[item.game_id]=(text,item)
+            if item:matches[item.game_id]=(text,item)
         # No closest-name guess. Competing valid versions remain unresolved.
         if len(matches)!=1:return found
         text,item=next(iter(matches.values()))
+        if not roles_agree(found.get('name') or '',text,item):return found
         if len(self.proofs)>=64:self.proofs.clear()
         self.proofs[key]=(text,item.game_id)
         return {**found,'name':text}
@@ -44,6 +46,9 @@ class TooltipNames:
 
 def roles_agree(original, alternative, item):
     """A second read cannot silently change clearly read stat/tier/color roles."""
+    first_words=set(glyph_key(item_words(original)).split())
+    second_words=set(glyph_key(item_words(alternative)).split())
+    if not any(len(word)>=3 for word in first_words & second_words):return False
     for pattern in (r'\b(?:lesser|intermediate|greater|chaos)\b',r'\b(?:str|dex|int|luk)\b',r'\d+(?:\.\d+)?\s*%'):
         before=re.findall(pattern,original.casefold())
         if before and before!=re.findall(pattern,alternative.casefold()):return False

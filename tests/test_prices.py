@@ -86,6 +86,11 @@ class IdentityTests(unittest.TestCase):
                         'Ink and Wash Painting N…','Ink-and-Wash Painting Nametag Ring'):
             self.assertEqual(catalog.resolve(visible).game_id,1112223)
         self.assertIsNone(catalog.resolve('Ink-and-Wash...'))
+        for visible in ('lnk-and-Wash Painting N...', 'Ink-and-Wash Paintinq N..,',
+                        'Ink-and-Wash Painting N. . .'):
+            self.assertEqual(catalog.resolve(visible).game_id,1112223)
+        collision=Catalog({'items':[{'id':1,'name':'Example File Ring'},{'id':2,'name':'Example Fiie Ring'}]})
+        self.assertIsNone(collision.resolve('Example Flle Rinq'))
 
     def test_small_font_y_v_confusion_needs_one_unique_catalog_name(self):
         catalog = Catalog({"items": [{"id": 1, "name": "Blue Hawkeye"}, {"id": 2, "name": "Horny Mushroom Cap"}]})

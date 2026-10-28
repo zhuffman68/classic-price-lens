@@ -76,6 +76,17 @@ class SnapshotFetcherTests(unittest.TestCase):
         self.assertIn("installer", self.errors[0])
         self.assertFalse(self.ready)
 
+    def test_native_timeout_retains_only_bounded_stage_diagnostics(self):
+        self.command("import sys;print('Market helper: controller (0x80004005)',file=sys.stderr);"
+                     "print('private page or user text',file=sys.stderr);raise SystemExit(20)")
+        self.fetcher.start();self.until(lambda:bool(self.errors))
+        self.assertEqual(self.fetcher.failure_kind,'timeout')
+        saved=json.loads((Path(self.directory.name)/'market-last-error.json').read_text())
+        self.assertEqual(saved['exit_code'],20)
+        self.assertEqual(saved['stages'],[['controller','0x80004005']])
+        self.assertNotIn('private',json.dumps(saved))
+        self.assertIn('too long',self.errors[0]);self.assertFalse(self.ready)
+
     def test_cancelled_start_failure_cannot_kill_a_later_request(self):
         self.fetcher.command = lambda: [str(Path(self.directory.name)/"missing-helper")]
         self.fetcher.start()

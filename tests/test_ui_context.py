@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from PySide6.QtCore import QCoreApplication, QEvent, QObject, QRect, Qt, QTimer, Signal
+from PySide6.QtCore import QCoreApplication, QEvent, QObject, QRect, Qt, QTimer, Signal,QPoint
 from PySide6.QtGui import QColor, QImage, QKeySequence, QMouseEvent
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialog, QDialogButtonBox, QKeySequenceEdit, QLabel, QPushButton
@@ -156,6 +156,9 @@ class ContextUiTests(unittest.TestCase):
             self.assertTrue(w.tabs.sliding)
             self.assertGreater(w.tabs.animation.currentTime(),0)
             QTest.qWait(260)
+            for _ in range(10):
+                if not w.tabs.sliding:break
+                QTest.qWait(25)
             self.assertFalse(w.tabs.sliding)
 
     def test_display_resolution_fits_at_460_pixel_width(self):
@@ -230,6 +233,21 @@ class ContextUiTests(unittest.TestCase):
         self.window.resize(460,960);self.window.show();self.app.processEvents()
         self.assertLess(card.thumbnail.x(),card.fields['name'].mapTo(card,card.fields['name'].rect().topLeft()).x())
         self.assertIn(1,[item.game_id for item in self.window.thumbnails.items])
+
+    def test_shop_and_inventory_cards_can_watch_the_exact_item_without_lookup(self):
+        w=self.window;w.on_reading(self.reading(shop_hover=True))
+        card=next(iter(w.card_views.values()));before=list(w.service.requests)
+        self.assertFalse(card.watch_button.isHidden());card.watch_button.click()
+        self.assertIn(1,w.watchlist.ids);self.assertTrue(card.watch_button.isChecked())
+        self.assertEqual(w.service.requests,before)
+        card.watch_button.click();self.assertNotIn(1,w.watchlist.ids)
+
+    def test_inventory_appearing_before_shop_cards_does_not_recreate_the_shop_cards(self):
+        w=self.window;w.on_reading(self.reading(shop_hover=True))
+        old=next(iter(w.card_views.values()))
+        w.tooltip_result={'name':'Example Hat','area':dict(x=100,y=100,width=120,height=16)}
+        w.render()
+        self.assertIn(old,w.card_views.values())
 
     def test_search_transitions_preserve_shop_cards_and_animate_their_return(self):
         self.window.on_reading(self.reading(shop_hover=True))
@@ -308,6 +326,12 @@ class ContextUiTests(unittest.TestCase):
         self.assertEqual(section.body.height(),middle)
         section.body.animation.setCurrentTime(200)
         self.assertEqual(section.body.height(),full)
+        for expanded in (False,True):
+            section.set_expanded(expanded);positions=[]
+            for ms in range(0,201,20):
+                section.body.animation.setCurrentTime(ms);self.app.processEvents()
+                positions.append(section.body.content.mapTo(w,QPoint()).y())
+            self.assertEqual(len(set(positions)),1,positions)
 
     def test_windows_starting_state_does_not_request_a_system_chooser(self):
         self.window.mode='idle'
@@ -427,7 +451,7 @@ class ContextUiTests(unittest.TestCase):
         self.window.reader.image.fill(QColor('#171c25'))
         count=len(self.window.service.requests)
         self.window.on_image(self.window.reader.image)
-        self.assertFalse(self.window.overlay.rows[0]['obscured'])
+        self.assertNotIn('obscured',self.window.overlay.rows[0])
         self.assertIsNone(self.window.overlay.rows[0]['occlusion'])
         self.assertEqual(len(self.window.service.requests),count)
 
@@ -436,6 +460,18 @@ class ContextUiTests(unittest.TestCase):
         self.window.on_reading(self.reading(shop_hover=False))
         self.assertEqual(self.window.tooltip_result["name"], "Example Hat")
         self.assertEqual(len(self.window.overlay.rows), 1)
+
+    def test_linked_item_far_from_pointer_requires_a_visible_description_panel(self):
+        from PySide6.QtGui import QPainter
+        w=self.window;w.reader.pointer=(10,790)
+        reading=self.reading(shop_hover=False)
+        found=reading['tooltip']['found'];found['area']=dict(x=690,y=100,width=100,height=18);found['pinned']=True
+        self.window.on_reading(reading);self.assertIsNone(w.tooltip_result)
+        painter=QPainter(w.reader.image);painter.fillRect(675,80,125,260,QColor('#464b78'));painter.end()
+        w.on_reading(reading)
+        self.assertIsNotNone(w.tooltip_result)
+        self.assertNotIn('follow_pointer',w.overlay.rows[-1])
+        self.assertEqual(w.overlay.rows[-1]['name'],'Example Hat')
 
     def test_absent_tooltip_enums_do_not_interrupt_shop_close_or_next_inventory_read(self):
         reading = self.reading(shop_hover=True)
@@ -499,11 +535,11 @@ class ContextUiTests(unittest.TestCase):
         reading = self.reading(shop_hover=True)
         reading["hover"]["tooltip"] = {"found": reading["tooltip"]["found"]}
         self.window.on_reading(reading)
-        self.assertTrue(self.window.shop_tooltip_active)
+        self.assertTrue(self.window.shop_open)
         self.assertEqual(len(self.window.overlay.rows), 1)
         self.assertEqual(self.window.overlay.rows[0]["kind"],"shop")
         self.window.on_reading(self.reading(shop_hover=True))
-        self.assertFalse(self.window.shop_tooltip_active)
+        self.assertTrue(self.window.shop_open)
         self.assertEqual(len(self.window.overlay.rows), 1)
 
     def test_covered_shop_rows_do_not_draw_unreadable_price_badges(self):

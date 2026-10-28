@@ -77,7 +77,7 @@ class AnnotationMotionTests(unittest.TestCase):
 
     def test_watched_shop_label_keeps_the_tooltip_occlusion_opacity(self):
         row={'x':120,'y':90,'name':'Example Hat','key':'shop:0:1','text':'FM 1,000 mesos',
-             'kind':'shop','color':'#86ceac','watched':True,'watch_event':40,'obscured':True}
+             'kind':'shop','color':'#86ceac','watched':True,'watch_event':40,'occlusion':[110,80,300,100]}
         self.window.read_command(json.dumps({**self.command,'rows':[row]}))
         active=self.window.rows[0]
         self.assertEqual(active['_target_alpha'],.25)
@@ -98,6 +98,16 @@ class AnnotationMotionTests(unittest.TestCase):
             with patch.object(self.window, "update") as repaint:
                 self.window.report_pointer()
             repaint.assert_not_called()
+
+    def test_linked_description_replaces_cursor_tracking_and_stays_inside_game_bounds(self):
+        old=self.window.rows[0]
+        fixed={k:v for k,v in self.command['rows'][0].items() if k not in ('follow_pointer','pointer_region')}
+        fixed.update(kind='item',x=490,y=490,bounds=[20,20,480,480])
+        self.window.read_command(json.dumps({**self.command,'rows':[fixed],'reduce_motion':True}))
+        row=self.window.rows[0]
+        self.assertIs(row,old);self.assertNotIn('follow_pointer',row)
+        box=self.window.label_rect(row,QPoint(900,900))
+        self.assertLess(box.right(),500);self.assertLess(box.bottom(),500)
 
     def test_shop_label_positions_stay_fixed(self):
         row = {"x": 120, "y": 90, "_width": 230}

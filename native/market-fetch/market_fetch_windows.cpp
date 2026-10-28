@@ -230,6 +230,8 @@ public:
                 BOOL success=FALSE;args->get_IsSuccess(&success);
                 COREWEBVIEW2_WEB_ERROR_STATUS error;args->get_WebErrorStatus(&error);
                 diagnostic(success ? "page loaded" : "navigation failed",static_cast<HRESULT>(error));
+                if (!success && error != COREWEBVIEW2_WEB_ERROR_STATUS_OPERATION_CANCELED)
+                    finish(22,"The market connection failed.");
                 ComPtr<ICoreWebView2NavigationCompletedEventArgs2> response;
                 if (SUCCEEDED(args->QueryInterface(IID_PPV_ARGS(&response)))) {
                     int status=0;response->get_HttpStatusCode(&status);diagnostic("HTTP response",static_cast<HRESULT>(status));

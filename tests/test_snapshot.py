@@ -192,3 +192,14 @@ class SnapshotTests(unittest.TestCase):
             updater.accept(document(self.now+60))
             self.assertEqual(self.store.meta, original)
         finally:updater.close()
+
+    def test_one_startup_retry_precedes_normal_backoff_and_never_discards_prices(self):
+        self.store.save(document(self.now),self.now);original=self.store.meta.copy()
+        updater=SnapshotUpdater(self.store)
+        try:
+            updater.enabled=True;updater.startup_pending=True;updater.fetcher.failure_kind='timeout'
+            for expected in (15000,300000,900000,3600000):
+                updater.failed('Connection took too long')
+                self.assertEqual(updater.timer.interval(),expected)
+                self.assertEqual(self.store.meta,original)
+        finally:updater.close()
