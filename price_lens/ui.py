@@ -38,6 +38,8 @@ from .capture_platform import uses_system_picker
 from .window_policy import NormalWindow, is_maximize_message
 from .tls import catalog_error_text
 from .watchlist import Watchlist, WatchEncounters
+from .reference_service import ReferenceService
+from .reference_ui import DatabasePanel
 from . import APP_NAME, LEGACY_APP_NAME
 
 COLORS = {"green": "#86ceac", "red": "#ed9394", "amber": "#e4bd7b", "blue": "#9ebde3", "muted": "#98a3b1"}
@@ -208,6 +210,7 @@ class LensWindow(QMainWindow):
         self.tooltip_result = None
         self.service = PriceService(cache_path, self)
         self.thumbnails=ThumbnailCache(Path(cache_path).parent/'item-thumbnails-v1',self)
+        self.reference=ReferenceService(data_directory()/'reference-v1.sqlite',self)
         self.service.refresh_snapshot = True
         self.service.set_refresh_interval(self.ttl)
         self.reader = PixelReader(root, self)
@@ -367,6 +370,12 @@ class LensWindow(QMainWindow):
         self.chat_check=self.translation_panel.enabled_check
         self.chat_status_label=self.translation_panel.status_label
         self.translation_tab_index=self.tabs.addTab(self.translation_panel,"Translation")
+        self.database_panel=DatabasePanel(self.reference,data_directory()/'reference-images-v1',self)
+        self.database_panel.set_watchlist(self.watchlist)
+        self.database_panel.set_market(self.service,self.ttl)
+        self.database_panel.source_requested.connect(self.open_source)
+        self.database_panel.price_requested.connect(self.on_database_price)
+        self.database_tab_index=self.tabs.addTab(self.database_panel,'Database')
         self.tabs.currentChanged.connect(self.on_tab_changed)
         layout.addWidget(self.tabs, 1)
         self.shortcut_footer = label('', 'color:#a6b1bf;font-size:11px')
@@ -423,6 +432,7 @@ class LensWindow(QMainWindow):
         self.timer.timeout.connect(self.tick)
         self.timer.start()
         self.service.start()
+        self.reference.start()
         if snapshot:
             QTimer.singleShot(300, lambda: self.load_screenshot(snapshot))
         elif (auto_capture or kde_capture) and saved_screen_selected and self.screen_index is not None:
@@ -493,7 +503,7 @@ class LensWindow(QMainWindow):
         def open_translation():
             self.settings_dialog.close();self.tabs.setCurrentIndex(self.translation_tab_index)
         translation_settings.clicked.connect(open_translation);layout.addWidget(translation_settings)
-        layout.addWidget(label("Downloads the full market on launch, then at the interval below. Chrome, Edge or Chromium is required and closes after each update. Saved references remain available if an update fails.", "font-size: 11px; color: #a6b1bf", True))
+        layout.addWidget(label("Downloads the full market on launch, then at the interval below. Its system web view closes after each update. Saved references remain available if an update fails.", "font-size: 11px; color: #a6b1bf", True))
         layout.addWidget(label("Refresh all prices every", "font-size: 13px; font-weight: 650"))
         self.ttl_combo = QComboBox()
         for minutes in (5, 15, 30, 60):
@@ -714,6 +724,7 @@ class LensWindow(QMainWindow):
         self.render()
 
     def on_tab_changed(self, index):
+        if hasattr(self,'database_panel'):self.database_panel.set_active(index==self.database_tab_index)
         self.update_shortcut_footer()
         self.update_price_layout()
         if hasattr(self,"search_panel"):
@@ -732,9 +743,20 @@ class LensWindow(QMainWindow):
             writing = self.translation_panel.modes.currentIndex() == 1
             chord = self.write_hotkey_description if writing else self.chat_hotkey_description
             action = 'Open Korean writer' if writing else 'Scan Korean text'
+        elif index == self.database_tab_index:
+            chord,action='Ctrl+F','Search database'
         else:
             chord, action = self.hotkey_description or shortcut_label(self.hotkey_sequence), 'Pause / resume prices'
         self.shortcut_footer.setText(f'{shortcut_label(chord)}  ·  {action}')
+
+    def on_database_price(self,item_id):
+        item=next((item for item in self.catalog.items if item.game_id==item_id),None) if self.catalog else None
+        if item is None:return
+        self.tabs.setCurrentIndex(self.search_tab_index)
+        self.search_panel.query.setText(item.name);self.search_panel.timer.stop();self.search_panel.find_items()
+        for index in range(self.search_panel.results.count()):
+            row=self.search_panel.results.item(index);candidate=row.data(Qt.ItemDataRole.UserRole)
+            if getattr(candidate,'game_id',None)==item_id:self.search_panel.results.setCurrentItem(row);break
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -786,6 +808,7 @@ class LensWindow(QMainWindow):
         QApplication.instance().setProperty("reduceMotion",reduced)
         self.overlay.reduce_motion = reduced
         self.brand.sync()
+        self.database_panel.sync_motion()
         self.render()
 
     def set_minimize_to_tray(self, enabled):
@@ -1301,6 +1324,7 @@ class LensWindow(QMainWindow):
         self.catalog_loading = False
         self.catalog_error = ""
         self.search_panel.set_catalog(catalog)
+        self.database_panel.set_catalog(catalog)
         self.composer.set_names(catalog.items)
         if catalog.warning:
             self.last_diagnostic = catalog.warning
@@ -1349,6 +1373,7 @@ class LensWindow(QMainWindow):
 
     def on_price_state(self):
         if not self.closing:
+            self.database_panel.update_market()
             snapshot=getattr(self.service,'snapshot',None)
             generation=(snapshot.meta or {}).get('checked_at') if snapshot else None
             if self.catalog and generation is not None and generation!=self.quote_generation:
@@ -1370,6 +1395,7 @@ class LensWindow(QMainWindow):
         self.quotes[item_id] = quote
         self.errors.pop(item_id, None)
         self.search_panel.accept_quote(item_id,quote)
+        self.database_panel.update_market()
         self.update_price_status()
         self.render()
 
@@ -1410,6 +1436,7 @@ class LensWindow(QMainWindow):
         self.ttl = value
         self.settings.setValue("cache-ttl", value)
         self.search_panel.ttl = value
+        self.database_panel.ttl=value;self.database_panel.update_market()
         self.service.set_refresh_interval(value)
         if self.tabs.currentIndex() == self.search_tab_index:
             panel = self.search_panel
@@ -1741,6 +1768,7 @@ class LensWindow(QMainWindow):
         self.reader.close(keep_stream=self.keep_capture)
         self.service.close()
         self.thumbnails.close()
+        self.reference.close();self.database_panel.close()
         self.overlay.close()
         if hasattr(self, "tray"):
             self.tray.close()

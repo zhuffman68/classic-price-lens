@@ -1,16 +1,13 @@
 Local patch status
 
-v0.14.3 places the larger tracking timer on the left and its controls on the
-right, above EXP and MESO. It adds hours without dropping seconds. On-screen item cards share the Prices page content
-transition; price updates keep their existing cards. Overlay references show
-last-sale ages with explicit refresh warnings.
+v0.15.0 adds Database as the fourth tab: items, monsters, locations, drop reports
+and skills, with cached images, native-timed monster sprites and linked navigation.
+References refresh in the background and remain available offline. Items share
+existing watch controls and the full-market snapshot. Community reports and dated
+observations retain their source and units. Skill presentation rules and research
+are documented in docs/DATABASE_SOURCES.md.
 
-Native description-frame validation accommodates warm chat showing through
-translucent panels and colored upgraded equipment names. Comparison panels
-remain separate. Centered, wrapped cash-item titles without a cyan marker use
-their complete native frame and header instead. Exact equipment names retain the existing unscrolled-price
-assumption. Vendor OCR and both translation models are unchanged.
-
+Vendor OCR and both translation models are unchanged.
 Build and validation details are in VERIFICATION.md.
 Uploads remain on hold at the user's request. Do not push source, create a
 GitHub release or upload itch.io channels until publication is authorized again.

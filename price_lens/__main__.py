@@ -97,6 +97,8 @@ def main():
         # Keep installer IPC alive until in-flight network workers have exited.
         # Normal window closure has already stopped capture/OCR/annotations.
         window.service.pool.shutdown(wait=True, cancel_futures=True)
+        window.reference.pool.shutdown(wait=True,cancel_futures=True)
+        window.reference.extra.pool.shutdown(wait=True,cancel_futures=True)
         return result
     finally:
         control.close()

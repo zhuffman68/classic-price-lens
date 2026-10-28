@@ -4,7 +4,7 @@
 
 **Tools for MapleStory Classic World.**
 
-Market prices, EXP and meso tracking, and local Korean translation beside the game.
+Market prices, EXP and meso tracking, local Korean translation, and a searchable Classic World database beside the game.
 Lupin reads shared screen pixels and draws independent overlays. It never hooks into MapleStory or sends game input.
 
 [Download and install](#download-and-install) · [Getting started](#getting-started) · [Help](#help)
@@ -80,6 +80,18 @@ Both translation directions run locally with the included models. Writing works 
 
 <!-- DEMO: docs/media/write-korean.gif — draft, preview, Translate & Copy and copied notification. -->
 
+## Database
+
+Browse **Items**, **Monsters** and **Skills** without sharing a screen. Search by name, narrow the category or job, and follow links between related entries.
+
+- **Items:** images, base stats, requirements, potion/scroll effects, reported drops, and saved market references with watch controls.
+- **Monsters:** stats, map locations, drop tables and animated sprites where available.
+- **Skills:** job filters, prerequisites and a rank slider for costs and effects.
+
+The database updates in the background and remains available offline after its first download. Drop percentages describe dated community samples; other community reports show no invented rate. Source links and dataset dates are included. [Data sources and accuracy](docs/DATABASE_SOURCES.md).
+
+<!-- DEMO: docs/media/database.gif — search a monster, preview its sprite and maps, follow a drop to its item card, then browse skill ranks. -->
+
 ## Desktop controls
 
 Choose a display and Lupin finds the Classic World area automatically. Windows reads that display directly; Wayland also asks for OS sharing approval. A manual area selection is available in Settings. The window remembers its size, supports resizing and minimizing, and does not maximize. New installations start at 509 × 829 pixels, bounded to the display. The minimum width is 460 pixels.
@@ -107,12 +119,12 @@ Download from **[itch.io](https://zhuffman68.itch.io/lupin)**. Repository collab
 | System | Download | Install |
 | --- | --- | --- |
 | Windows 10/11 x64 | `Windows-x64-Setup.exe` | Run it, then open Lupin from Start. |
-| Arch / Manjaro | `.pkg.tar.zst` | `sudo pacman -U ./lupin-0.14.3-1-x86_64.pkg.tar.zst` |
-| Debian 12+ / Ubuntu 22.04+ | `.deb` | `sudo apt install ./lupin_0.14.3-1_amd64.deb` |
+| Arch / Manjaro | `.pkg.tar.zst` | `sudo pacman -U ./lupin-0.15.0-1-x86_64.pkg.tar.zst` |
+| Debian 12+ / Ubuntu 22.04+ | `.deb` | `sudo apt install ./lupin_0.15.0-1_amd64.deb` |
 
 Extract downloaded ZIPs before running an installer or package command. For the Windows portable build, extract the full folder and open `run-windows.bat`. Updates preserve settings, prices and history; Linux packages replace the former `classic-price-lens` package.
 
-Requirements: a supported 64-bit desktop, about **3 GB free space** for installation, and internet for market updates or uncached item images. Python, Qt, OCR and both translation models are bundled. No Chrome, Edge or Chromium installation is needed. Market updates use a short-lived system web view, which closes after updating. Windows setup prepares the shared WebView2 runtime when needed; Linux packages install WebKitGTK through the package manager. Saved prices remain available offline. Linux sharing needs PipeWire and a working desktop sharing portal, normally supplied by KDE or GNOME.
+Requirements: a supported 64-bit desktop, about **3 GB free space** for installation, and internet for market/database updates or uncached images. Python, Qt, OCR and both translation models are bundled. No Chrome, Edge or Chromium installation is needed. Market updates use a short-lived system web view, which closes after updating. Windows setup prepares the shared WebView2 runtime when needed; Linux packages install WebKitGTK through the package manager. Saved prices remain available offline. Linux sharing needs PipeWire and a working desktop sharing portal, normally supplied by KDE or GNOME.
 
 ## Getting started
 
@@ -121,6 +133,7 @@ Requirements: a supported 64-bit desktop, about **3 GB free space** for installa
 3. Open a shop, hover an item or use **Prices** to search by name.
 4. Open **EXP/Meso Tracking** and press **Start tracking**. Open the item inventory to read the wallet.
 5. Use **Translation → Read Korean** for incoming text, or **Write Korean** for a reply to copy.
+6. Open **Database** to browse items, monsters, locations, drops and skills. Screen sharing is optional for this tab.
 
 Screenshots, translations and session history stay on the device. Market requests contain item information, never screenshots. Cached references guide comparisons and do not guarantee a sale.
 

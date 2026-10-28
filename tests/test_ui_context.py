@@ -146,6 +146,19 @@ class FakeThumbnails(QObject):
 
 
 class ContextUiTests(unittest.TestCase):
+    def test_database_is_the_fourth_tab_and_browsing_needs_no_capture_or_price_request(self):
+        from test_reference import generation
+        w=self.window;w.reference.store.replace(*generation())
+        w.on_catalog(Catalog({'items':[{'id':1001,'name':'Leaf Earrings','category':'Equipment'}]}))
+        w.database_panel.reloaded();w.tabs.setCurrentIndex(w.database_tab_index)
+        self.assertEqual(w.database_tab_index,3);self.assertEqual(w.tabs.tabText(3),'Database')
+        w.database_panel.query.setText('leaf');w.database_panel.open_first()
+        self.assertEqual(w.database_panel.selected.id,1001);self.assertEqual(w.reader.starts,0)
+        self.assertEqual(w.service.requests,[])
+        w.database_panel.market_button.click();self.assertEqual(w.tabs.currentIndex(),w.search_tab_index)
+        self.assertEqual(w.search_panel.selected.game_id,1001)
+        self.assertEqual(w.reader.starts,0);self.assertEqual(w.service.requests,[])
+
     def test_real_panel_keeps_the_slide_running_after_page_layout_updates(self):
         w=self.window;w.resize(460,960);w.show();self.app.processEvents()
         self.app.setProperty('reduceMotion',False)
@@ -456,6 +469,8 @@ class ContextUiTests(unittest.TestCase):
             patcher.start()
         self.tray_show = patch("price_lens.tray.QSystemTrayIcon.show")
         self.tray_show.start()
+        self.reference_start_patch=patch('price_lens.ui.ReferenceService.start');self.reference_start_patch.start()
+        self.addCleanup(self.reference_start_patch.stop)
         self.window = LensWindow(Path.cwd(), Path("unused-cache"))
         self.window.monitor.setCurrentIndex(0)
         self.window.on_catalog(Catalog({"items": [{"id": 1, "name": "Example Hat"}], "scrolls": []}))

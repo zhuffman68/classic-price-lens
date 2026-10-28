@@ -1,6 +1,6 @@
 # Lupin architecture
 
-Lupin v0.14.3 provides market references, EXP/meso tracking and local Korean translation for MapleStory Classic World.
+Lupin v0.15.0 provides market references, EXP/meso tracking, local Korean translation and a searchable Classic World database for MapleStory Classic World.
 
 ## Observation boundary
 
@@ -92,14 +92,16 @@ Programs install to `/opt/lupin` or `%LOCALAPPDATA%\\Programs\\Lupin`; launchers
 
 The Windows Korean writer registers the existing PySide6 DLL directory before loading CTranslate2, retaining its directory handle for the worker lifetime. This reuses the bundled Microsoft C++ runtime without importing Qt or requiring a system Visual C++ installation. Cold writer startup has a 60-second deadline; individual inference requests retain their 12-second deadline.
 
-## Proposed local reference tab — research only
+## Local reference database
 
-Checked October 28, 2026. OSMS Data Explorer has a [documented bulk API](https://osmsdataexplorer.com/data/api/v1/README.md) with a [version/hash manifest](https://osmsdataexplorer.com/data/api/v1/meta.json). The October 26 dataset contains 2,259 item records, 117 monster records and 99 skills: 93 job skills plus six crafting disciplines. Icons have explicit URLs; skills include values and descriptions for each rank. These are Classic World release records, not original MapleStory or COT2 tables.
+Database is the fourth tab, with Items / Monsters / Skills, job/category filters, local prefix search, images and linked details. Item cards share exact-ID market references and watch controls. Monster cards link maps and drops; skill cards have rank selectors and prerequisite links. An inner detail scrollbar and section links keep the main window compact. Navigation uses the existing interruptible content transition and Reduce motion preference.
 
-The three JSON files total 1,119,571 bytes. A disposable SQLite/FTS5 prototype storing their complete records and a name index used 1,609,728 bytes, excluding images. Its warm prefix-query median was about 0.035 ms locally; this does not measure a finished UI. Both shipped runtimes successfully created FTS5 tables, so no database dependency/server/browser is needed.
+`reference_data.py` stores verified source blobs, entities and an FTS5 index in a separate per-user SQLite WAL database. `reference_service.py` checks the OSMS Classic World version/hash manifest asynchronously on launch and daily. It downloads only changed items/cash/monsters/skills/maps files and commits a complete validated generation atomically. Wrong-world, hash, count, shape, duplicate and identity failures keep last-good data. Empty client placeholders are omitted from search. No new database runtime or server is required.
 
-Recommended fourth tab: **Database**, with Items / Monsters / Skills selectors, thumbnail results and a compact details view. Item records can share the existing exact-ID market references and watch controls. Monster details can link map names through the additional maps dataset. Skills can filter by job and show a rank selector.
+Wiki Cargo observations refresh daily in the same worker. Their own monster/drop/item page joins must match both canonical IDs and names. Sample percentage/counts/version/date/interval remain attached; missing rates stay unknown. `reference_community.py` supplements only an explicitly selected monster/item with NiaMeowDB reports, cached for 24 hours with a 30-minute error cache. Monster IDs require public index name/level/HP proof; items require exact canonical icon ID/name. Votes never become rates. Each of the two reference workers has one thread, cancellable requests, bounded pages/rows and GUI-thread result delivery. Repeated selection and idle browsing do not poll.
 
-Keep reference data in a separate, versioned local database. Check the manifest asynchronously on launch and daily; download only changed files, verify hashes, and replace one complete generation atomically. Preserve the last-good copy offline. Cache static icons on demand outside the installer, with an optional complete image download later. Keep price refresh timing separate.
+`reference_skills.py` keeps raw records intact while presenting the documented Arrow Bomb explosion stage and reconciling identified stale English rank descriptions with cross-checked numeric data. It uses exact ID/name/rank/value guards, never interpolated progressions. Source evidence and limitations are recorded in [Database sources](docs/DATABASE_SOURCES.md).
 
-The dataset does not supply monster drops or authoritative server respawn timing. Missing relationships and content availability remain unknown rather than importing original-game assumptions. This proposal is not an implemented fourth tab.
+`reference_media.py` uses QtNetwork with at most two image downloads, 64 memory thumbnails, a 64 MiB/1,024-file disk limit, 30-day freshness and six-hour negative caching. Only HTTPS OSMS dataset PNG/WebP routes are accepted. File/decoded-image/frame limits bound memory. Only visible rows request images; one selected monster movie uses native frame timing without a frame cache and pauses hidden/minimized/clipped or under Reduce motion. Downloaded data and images are outside installers and source.
+
+`reference_ui.py` retains search rows during refinements and uses `reference_details.py` for linked cards. Market prices read the existing shared snapshot locally and refresh through its normal signals; database navigation never creates individual price requests. Core/drop refresh timing stays separate from market timing. Saved data works offline, with source date and status visible. Monster location counts mean spawn points, not respawn timing. Community observations are not authoritative server probabilities.
