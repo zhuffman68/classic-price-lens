@@ -3,7 +3,7 @@
 **Tools for MapleStory Classic World.** Market prices, item search with images, EXP/meso tracking and local Korean translation in both directions.
 
 1. Download the Windows installer from [itch.io](https://zhuffman68.itch.io/lupin) and extract it if wrapped in a ZIP.
-2. Run **Lupin-0.14.1-Windows-x64-Setup.exe**, then open Lupin from Start. Administrator access is not required.
+2. Run **Lupin-0.14.2-Windows-x64-Setup.exe**, then open Lupin from Start. Administrator access is not required.
 3. Choose the game's display and click **Start reading**. A real display is preselected. Keep the game's bottom status bar visible.
 
 Requires Windows 10/11 x64, about **3 GB free space** for installation, and internet for market updates and uncached item images. Python, Qt, OCR and both translation models are included. A browser installation is not required. Setup prepares the shared WebView2 runtime when needed; the first installation may need an internet connection. The full market refreshes on launch and at the interval selected in Settings. No individual price lookups are made.

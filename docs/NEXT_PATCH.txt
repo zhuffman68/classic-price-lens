@@ -1,17 +1,12 @@
 Local patch status
 
-v0.14.1 fixes the watched-item/ready-card transition and residual spacing.
-Visible references update with new market generations even while reading is
-paused. Tabs now use plain labels with a filled active background.
-It includes v0.14.0's shop/inventory watch stars, steadier watched/item
-panels and 509 x 829 defaults while preserving saved sizes.
-It fixes tall item descriptions invalidating the game locator, removes the
-legacy covered-row opacity fallback and restores listing amounts only when
-their exact previously read pixels return. It improves clipped/font-variant
-names and can locate item-link descriptions away from the real cursor.
-Market failures retain bounded diagnostics and get one short startup retry
-before normal backoff. All prices still use one shared local snapshot.
-Both translation model bundles and existing settings are retained.
+v0.14.2 reads darker orange selected shop rows directly from their current
+pixels. The correction is limited to a verified shop band, keeps glyphs and
+occluders intact, reuses the current OCR engine and caches unchanged results.
+The shared tracking timer now sits in a compact row above EXP and MESO.
+It retains v0.14.1's smoother watched-item transitions, compact ready-panel
+spacing, plain tabs and refreshes of retained item details.
+Both translation bundles, existing settings and sharing sessions are retained.
 Build and validation details are in VERIFICATION.md.
 
 Uploads remain on hold at the user's request. Do not push source, create a

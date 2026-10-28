@@ -12,6 +12,7 @@ mod text;
 mod wallet;
 mod tooltip_text;
 mod shop_prices;
+mod shop_selection;
 use game_area::{Locator, Rect};
 
 #[derive(Deserialize)]
@@ -141,10 +142,9 @@ fn main() {
                 origin,
                 pointer: request.pointer,
             };
-            let mut shop_reading = reader
-                    .get_or_insert_with(PlayerShopReader::bundled)
-                    .read(&capture);
-            price_recovery.apply(&capture,&mut shop_reading);
+            let shop_reader=reader.get_or_insert_with(PlayerShopReader::bundled);
+            let mut shop_reading=shop_reader.read(&capture);
+            price_recovery.apply(&capture,&mut shop_reading,shop_reader);
             let mut value = serde_json::to_value(shop_reading)?;
             if request.tooltip {
                 if let Some(pointer) = request.pointer {

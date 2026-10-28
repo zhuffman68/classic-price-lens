@@ -39,6 +39,58 @@ class ShopReaderTests(unittest.TestCase):
         expected = json.loads((ROOT / "vendor/minerva/samples/player-shop" / (name + ".json")).read_text())
         self.assertEqual([{ "name": r["name"], **r["price"] } for r in rows], expected)
 
+    def selected_image(self,rows,index,tint=(231,153,41),price_from=None):
+        from PySide6.QtCore import QPoint,QRect
+        from PySide6.QtGui import QImage,QColor,QPainter
+        image=QImage(str(ROOT/'vendor/minerva/samples/player-shop/gems-and-ores.png'))
+        area=rows[index]['area'];x,y,w,h=(area[k] for k in ('x','y','width','height'))
+        if price_from is not None:
+            other=rows[price_from]['area'];patch=image.copy(QRect(other['x'],other['y']+27,w,h-27))
+            painter=QPainter(image);painter.drawImage(QPoint(x,y+27),patch);painter.end()
+        blue=(202,213,223)
+        # Render the same public glyphs on the game's darker selected palette,
+        # preserving each text pixel's coverage and its light separator rule.
+        for yy in range(y,y+h):
+            for xx in range(x,x+w):
+                p=image.pixelColor(xx,yy).getRgb()[:3]
+                if p==(222,223,223):colour=(247,192,110)
+                else:
+                    k=sum(p[i]*blue[i] for i in range(3))/sum(c*c for c in blue)
+                    if not (k<=1.08 and all(abs(p[i]-blue[i]*k)<=14 for i in range(3))):continue
+                    colour=tuple(min(255,max(0,round(v*k))) for v in tint)
+                image.setPixelColor(xx,yy,QColor(*colour))
+        return image
+
+    def test_dark_selected_rows_are_read_cold_in_first_middle_and_last_slots(self):
+        rows=self.read('gems-and-ores');expected=[(r['name'],r['price']) for r in rows]
+        with tempfile.TemporaryDirectory() as directory:
+            for index,tint in ((0,(231,153,41)),(2,(221,145,38)),(len(rows)-1,(235,157,43))):
+                with self.subTest(index=index,tint=tint):
+                    path=Path(directory)/'selected.png';self.selected_image(rows,index,tint).save(str(path))
+                    result=subprocess.run([str(BINARY)],input=json.dumps({'path':str(path)})+'\n',text=True,
+                        capture_output=True,check=True,timeout=20,env={**os.environ,'RAYON_NUM_THREADS':'2'})
+                    actual=json.loads(result.stdout)['shop']['rows']
+                    self.assertEqual([(r['name'],r['price']) for r in actual],expected)
+
+    def test_selected_cache_reads_changed_amounts_and_never_fills_a_covered_price(self):
+        from PySide6.QtGui import QPainter,QColor
+        rows=self.read('gems-and-ores');index=2;area=rows[index]['area']
+        first=self.selected_image(rows,index)
+        changed=self.selected_image(rows,index,price_from=len(rows)-1)
+        covered=changed.copy();painter=QPainter(covered)
+        painter.fillRect(area['x']+70,area['y']+34,12,12,QColor('#442255'));painter.end()
+        with tempfile.TemporaryDirectory() as directory:
+            requests=[]
+            for n,image in enumerate((first,changed,covered)):
+                path=Path(directory)/f'selected-{n}.png';image.save(str(path));requests.append(json.dumps({'path':str(path)}))
+            result=subprocess.run([str(BINARY)],input='\n'.join(requests)+'\n',text=True,capture_output=True,
+                check=True,timeout=20,env={**os.environ,'RAYON_NUM_THREADS':'2'})
+        readings=[json.loads(line)['shop']['rows'] for line in result.stdout.splitlines()]
+        selected=lambda data:[r for r in data if abs(r['area']['y']-area['y'])<5]
+        self.assertEqual(selected(readings[0])[0]['price'],rows[index]['price'])
+        self.assertEqual(selected(readings[1])[0]['price'],rows[-1]['price'])
+        self.assertTrue(all(r.get('price') is None for r in selected(readings[2])))
+
     def test_fast_rgba_input_matches_the_png_reader(self):
         from PySide6.QtGui import QImage
         path = ROOT / "vendor/minerva/samples/player-shop/gems-and-ores.png"

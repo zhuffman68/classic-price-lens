@@ -1,7 +1,7 @@
 //! Retry unread prices through the existing strict shop reader at two resamplings.
 //! Never infer a number, relax its parser, or replace an already-read price.
 use image::{RgbaImage,imageops::{self,FilterType}};
-use minerva_core::{Frame,ListedPrice,PlayerShopReader,ScreenPoint,ShopCapture,ShopReading};
+use minerva_core::{Frame,ListedPrice,PlayerShopReader,ScreenPoint,ShopCapture,ShopReading,ShopRow};
 use std::collections::HashMap;
 
 type Recovered = Vec<(i32,String,ListedPrice)>;
@@ -11,10 +11,12 @@ pub struct PriceRecovery {
     reader: Option<PlayerShopReader>,
     // Include the whole shop patch: another row's tooltip can change detection.
     cache: HashMap<Vec<u8>,Recovered>,
+    selected_cache: HashMap<Vec<u8>,Vec<ShopRow>>,
 }
 
 impl PriceRecovery {
-    pub fn apply(&mut self,capture:&ShopCapture,reading:&mut ShopReading) {
+    pub fn apply(&mut self,capture:&ShopCapture,reading:&mut ShopReading,reader:&mut PlayerShopReader) {
+        self.selected(capture,reading,reader);
         let Some(shop)=reading.shop.as_mut() else {return};
         if !shop.rows.iter().any(|r|!r.covered && r.name.is_some() && r.price.is_none()) {return}
         let frame=&capture.frame;
@@ -49,6 +51,33 @@ impl PriceRecovery {
             if let Some((_,_,price))=values.iter().find(|(top,name,_)|top.abs_diff(local_y)<=3 && row.name.as_ref()==Some(name)) {
                 row.price=Some(*price);
             }
+        }
+    }
+
+    fn selected(&mut self,capture:&ShopCapture,reading:&mut ShopReading,reader:&mut PlayerShopReader) {
+        let Some(shop)=reading.shop.as_mut() else {return};
+        let Some(plan)=crate::shop_selection::plan(capture,shop) else {return};
+        let rows=if let Some(rows)=self.selected_cache.get(&plan.key) {rows.clone()} else {
+            let corrected=plan.corrected(capture);
+            let retry=reader.read(&corrected);
+            let rows=retry.shop.filter(|other|other.area.x.abs_diff(shop.area.x)<=3 && other.area.width.abs_diff(shop.area.width)<=3)
+                .map(|other|other.rows.into_iter().filter(|row|!row.covered && row.name.is_some() && row.price.is_some()
+                    && crate::shop_selection::in_band(plan.area,row)).collect::<Vec<_>>()).unwrap_or_default();
+            if self.selected_cache.len()>=8 {self.selected_cache.clear()}
+            self.selected_cache.insert(plan.key,rows.clone());rows
+        };
+        for row in rows {
+            if let Some(previous)=shop.rows.iter_mut().find(|old|old.area.y.abs_diff(row.area.y)<=3) {
+                if previous.name.is_some() && previous.name!=row.name {continue}
+                if previous.price.is_some() && previous.price!=row.price {continue}
+                if previous.name.is_none() || previous.price.is_none() || previous.covered {*previous=row}
+            } else {shop.rows.push(row)}
+        }
+        shop.rows.sort_by_key(|r|r.area.y);
+        for row in &shop.rows {
+            let top=shop.area.y.min(row.area.y);
+            let bottom=shop.area.bottom().max(row.area.bottom());
+            shop.area.y=top;shop.area.height=(bottom-top as i64) as u32;
         }
     }
 }

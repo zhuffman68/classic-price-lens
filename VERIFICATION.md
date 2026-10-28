@@ -1,5 +1,16 @@
 # Verification — 2026-10-28
 
+## Lupin v0.14.2
+
+- The 362-test source suite passes with three platform/offscreen skips; both Rust unit checks pass. A fresh image from the preserved live sharing session confirms that the orange Skull Beanie now has its FM 40,000 reference and +67 percent comparison alongside all other listings.
+- The existing shared capture showed the orange Skull Beanie listing omitted from the raw reader output. Its fill was darker than the pinned reader's selected palette, independently of the normal bands' brightness. A bounded background adjustment recovers all six actual listings, including 1 for 66,666, without changing the other names or amounts. Private captures stay outside source and packages.
+- The primary OCR engine is reused; only recognized selected-background pixels inside a verified shop band are adjusted in a copy. Glyphs, separator rules and foreign/occluding pixels remain intact, and the original strict name/price reading still decides the result. Up to eight pixel-keyed results are cached; list, amount, position and occluder changes invalidate reuse. No previous listing amount is assumed.
+- Public fixtures generate darker selected bands in the first, middle and final slots and pass cold-reader checks. Another same-process check changes the amount, then covers its digits, proving the cached price changes and is not reused for covered text. The focused reader/UI/tracking suite passes 85 checks.
+- Replaying the saved full-display frame took about 516 ms initially and 54/38 ms for subsequent same-frame reads in one process. These are dated local samples, not end-to-end or cross-machine guarantees. The vendor/model remain unchanged.
+- The existing rolling tracking timer is moved into a restrained, borderless row above EXP and MESO. A rendered 509 × 829 panel has no vertical overflow; existing rate-column and timer/accounting checks pass.
+- GNU/Linux, musl and Windows readers build successfully. The Windows binary also recovers all six listings from the same private frame under Wine. Installed Windows/Wine checks pass 362 tests with eight platform skips, plus install/upgrade/removal and cache retention. Arch, Debian 12 and Ubuntu 22.04 package transactions, installed tests and file checks pass; seven publisher tests pass without publishing. Both model bundles retain their verified hashes.
+- The live Linux preview retains the approved capture helper. The v0.14.2 installer is on the Windows test VM desktop; that VM's installed application remains v0.14.1. Native Windows v0.14.2 game capture is a separate acceptance check. Uploads remain on hold.
+
 ## Lupin v0.14.1
 
 - The 360-test source suite passes with three platform/offscreen skips. The user confirmed the new watched-selection transition and collapsed spacing in the live Linux preview. Tabs now use the approved plain-label style with the filled active background.

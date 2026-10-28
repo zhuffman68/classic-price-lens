@@ -59,6 +59,10 @@ def build(panel,layout,enabled,window_minutes=None):
     layout.setContentsMargins(0,8,0,0);layout.setSpacing(8)
     panel.character=label('', 'expIdentity');panel.map_label=label('', 'expMap')
     layout.addWidget(panel.character);layout.addWidget(panel.map_label)
+    clock=QHBoxLayout();clock.setContentsMargins(16,0,16,0)
+    clock.addWidget(label('Time watching','expMuted'));clock.addStretch()
+    panel.elapsed=number('—','expMetric');panel.elapsed.setAlignment(Qt.AlignmentFlag.AlignRight|Qt.AlignmentFlag.AlignVCenter)
+    clock.addWidget(panel.elapsed);layout.addLayout(clock)
     hero=QFrame();hero.setObjectName("expHero")
     hero_layout=QVBoxLayout(hero);hero_layout.setContentsMargins(16,12,16,12);hero_layout.setSpacing(8)
     panel.exp_heading=label('EXP','trackingHeading');hero_layout.addWidget(panel.exp_heading)
@@ -74,10 +78,8 @@ def build(panel,layout,enabled,window_minutes=None):
     hero_layout.addLayout(rate_row)
     panel.raw_hint=label("","expMuted");panel.raw_hint.hide();hero_layout.addWidget(panel.raw_hint)
     panel.observation=label("","expMuted");hero_layout.addWidget(panel.observation)
-    metrics=QHBoxLayout()
-    panel.elapsed,panel.eta=[number("—","expMetric") for _ in range(2)]
-    for title,widget in zip(("TIME WATCHING","NEXT LEVEL"),(panel.elapsed,panel.eta)):
-        column=QVBoxLayout();column.setSpacing(5);column.addWidget(label(title,"expEyebrow"));column.addWidget(widget);metrics.addLayout(column,1)
+    metrics=QHBoxLayout();metrics.addWidget(label('Next level','expMuted'))
+    panel.eta=number('—','expPosition');metrics.addWidget(panel.eta);metrics.addStretch()
     hero_layout.addLayout(metrics)
     layout.addWidget(hero)
     money=QFrame();money.setObjectName('expHero')
