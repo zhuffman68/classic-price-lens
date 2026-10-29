@@ -1,19 +1,30 @@
 Local patch status
 
-v0.17.2 makes the tracking cards fit the empty HUD corner, aligns their totals
+v0.17.3 is built and verified locally. It adds bounded EXP numerical
+recovery, distinct unreadable/checking statuses and clear-reading warmup wording.
+Tracking cards have bold headings and large gain totals beside smaller rate lines,
+with dedicated timers/ETA and a Last 5 min rolling-window label. The stack is now
+114 pixels tall, staying in the empty left HUD corner. The source preview keeps
+the existing sharing helper. The previous real session was saved before a fresh
+live startup test. No original failing frame was available; that outage is not
+claimed reproduced. The complete 486-test suite passes in source and installed
+Windows/Wine, pacman, Debian 12 and Ubuntu 22.04 environments. All four artifacts
+have verified SHA-256 checksums. Permanent installation is deferred to the command
+in docs/PATCH_0.17.3.md. Uploads remain on hold.
+
+The preceding v0.17.2 patch made the tracking cards fit the empty HUD corner, aligned their totals
 and symbols, shares two-second GUI/overlay numbers and freezes paused-session
 identity, map, pickups and displayed ETA. It also fixes NPC inventory-hover
 suppression and history-row/number-animation flicker.
 See docs/PATCH_0.17.2.md for changes, limits and install commands.
-All four artifacts are built and pass their isolated installed-package checks.
-The user deferred live follow-up checks. The updated preview preserves the
+Its NPC and history fixes remain included. The current preview preserves the
 approved sharing helper; permanent installation remains deferred.
 Uploads remain on hold: do not push source, publish a GitHub release, or upload
 itch.io channels until the user authorizes publication again.
 
 EXP and meso gain have compact fixed-grid overlays stacked beside the native
 HUD where space permits, with independent checkboxes and shared two-second
-numeric updates. The pair is 66 logical pixels tall; a narrow corner falls back
+numeric updates. The pair is 114 logical pixels tall; a narrow corner falls back
 above the HUD. The meso coin aligns with the EXP percent symbol. Coverage-gap
 counts remain in the GUI. Pause keeps the last shown pace/ETA and rejects another
 client's identity/map until the original character is reconfirmed.

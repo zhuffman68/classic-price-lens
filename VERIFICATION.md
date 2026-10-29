@@ -1,5 +1,19 @@
 # Verification — 2026-10-29
 
+## Lupin v0.17.3
+
+- All 486 source tests pass with three platform/offscreen skips; all 45 focused tracking checks pass. The earlier implementation fails the new initial-misread/recovery tests. Coverage includes mutually compatible changing numerical evidence, duplicate and unchanged rejection, occasional compatible observations that formerly retained a wrong total, preserved confirmed gains, context boundaries, differentiated waiting states and explicit warmup/rolling-window labels.
+- Both cards use a large rolling gain beside two smaller rate lines, bold headings, aligned percent/16-pixel coin units, dedicated timers and an ETA footer. The 114-pixel stack occupies the same verified empty left corner. Actual painted overlays preserve the native game locator at four UI/window scales; exceptional 15-digit totals fit without overlapping their units, clocks or rate column.
+- A fresh live Linux start uses the existing helper 1984295 without changing its start time. The previous session is saved in local history. The new preview is 1998973. EXP samples are accepted immediately and a pace appears after about 31 clear seconds; the stationary character correctly produces zero rates and no positive-gain ETA. Private bounded diagnostics/captures are excluded from staging. The earlier transient outage was not caught and its original cause is not claimed proven. Numerical recovery and positive ETA are covered separately by tests.
+- OCR binaries, pinned vendor source and both verified translation models are unchanged. No game input, process access, memory/file/packet inspection or hook is used. Post-build installed checks and artifact hashes are supplied beside the final builds. No upload/publication is authorized.
+
+Post-build checks:
+
+- Windows/Wine, pacman, Debian 12 and Ubuntu 22.04 pass all 486 installed application tests, with eight/four/five/five platform skips. Per-user Windows installation, offline OCR/overlay, second launch, running-app upgrade/removal and cache retention pass. Linux package transactions, file checks and cache preservation pass; Debian/Ubuntu also pass isolated X11 and native market-helper checks. These are separate from physical Windows gameplay, which was not tested for this patch.
+- The bounded live trial retains 93 of 93 accepted EXP samples over about 143 tracked seconds. First response arrives about 2.34 seconds after capture; the first numerical rate exists at 31 clear seconds and displays by about 32.8 seconds. Median capture-to-feed latency is about 314 ms under the concurrent desktop load. A later real frame at 5:52 shows Last 5 min beside the continuing session timer; native pixel detection still finds the exact original game area and reads 52,489 EXP / 54.85%. No missed reading is reproduced in this trial.
+- All four artifact SHA-256 checks pass in dist/SHA256SUMS-0.17.3.txt. Both staged trees match all 107 final application/resource files. Model validation and reader hash checks pass without changes. The Windows installer is 408,838,802 bytes. Private diagnostics, screenshots, caches and user data are excluded.
+- Packaged documentation records staging-time evidence. This completed record is supplied separately as dist/VERIFICATION-0.17.3.md. Source preview 1998973 and sharing helper 1984295 remain live; the helper's start time is unchanged. The host package is not replaced automatically. No source push, GitHub release or itch.io upload occurred.
+
 ## Lupin v0.17.2
 
 - The 478-test source suite passes with three platform/offscreen skips. All 49 focused follow-up checks pass after the final alignment/cadence refinements. New coverage includes 66-pixel corner geometry, logical/capture scaling, large totals/aligned units, shared two-second EXP/meso GUI/overlay numbers, the complete map header beside a visible character/level, a long paused ETA, cross-character pause/return, persistent history rows and changed-price-only animation.

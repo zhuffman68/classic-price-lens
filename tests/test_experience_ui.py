@@ -198,6 +198,35 @@ class ExperienceUiTests(unittest.TestCase):
         self.assertEqual(self.panel.tracker.run.seconds,before)
         self.assertIn("EXP estimates held",self.panel.state.text())
 
+    def test_inconsistent_exp_is_explained_separately_from_an_unreadable_bar(self):
+        self.train();self.now+=6
+        self.panel.feed({'atMs':int(self.now*1000),'experience':payload(4000,12_000)})
+        self.assertIn('Checking EXP values',self.panel.state.text())
+        self.assertEqual(self.panel.overlay_rows()[0]['compact_note'],'Checking EXP')
+        self.assertNotIn('unreadable',self.panel.state.text())
+        self.now+=1;self.panel.feed({'atMs':int(self.now*1000),'experience':{}})
+        self.assertIn('unreadable',self.panel.state.text())
+
+    def test_warmup_counts_clear_reading_time_and_gain_can_appear_before_rates(self):
+        self.panel.set_connected(True);self.panel.start();self.feed(2000);self.feed(2010,2)
+        self.assertEqual(self.panel.overlay_rows()[0]['text'],'+0.10%')
+        self.assertIsNone(self.panel.tracker.window(300)['rate'])
+        self.assertIn('clear EXP readings remaining',self.panel.observation.text())
+        self.now+=60;self.feed(2500)
+        self.assertIsNone(self.panel.tracker.window(300)['rate'])
+        self.assertIn('clear EXP readings remaining',self.panel.observation.text())
+        self.assertEqual(self.panel.overlay_rows()[0]['text'],'+0.10%')
+        for _ in range(31):self.feed(self.panel.tracker.current.exp+10,1)
+        self.assertIsNotNone(self.panel.tracker.window(300)['rate'])
+
+    def test_overlay_labels_the_rolling_window_and_caps_it_at_five_minutes(self):
+        self.panel.set_connected(True);self.panel.start();self.feed(2000)
+        for _ in range(361):self.feed(self.panel.tracker.current.exp+1,1)
+        row=self.panel.overlay_rows()[0]
+        self.assertEqual(row['basis'],'Last 5 min')
+        self.assertGreater(self.panel.mesos.seconds,300)
+        self.assertIn('Level 28 - ETA',row['footer'])
+
     def test_shared_pickup_tracking_holds_pause_and_saves_its_basis(self):
         self.train();self.pickup();self.pickup(1200);self.pickup(1200)
         self.now+=2;self.panel.refresh()

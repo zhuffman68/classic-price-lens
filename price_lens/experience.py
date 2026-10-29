@@ -86,6 +86,8 @@ class ExperienceTracker:
         self.message = "Keep the EXP bar visible to begin."
         self.bounds = None
         self.candidate = None
+        self.recovery = deque(maxlen=4)
+        self.read_issue = ''
         self.events = deque()
         self.completed = []
         self.map_name = ""
@@ -107,12 +109,14 @@ class ExperienceTracker:
         self.baseline = r
         self.paused = False
         self.events.clear()
+        self.recovery.clear()
         self.message = "Recording · standing still counts toward your rate."
         return True
 
     def pause(self, paused=True):
         self.paused = paused
         self.baseline = None
+        self.recovery.clear()
         self.message = "Session paused." if paused else "Resuming from the next readable EXP bar."
 
     def interrupt(self):
@@ -120,6 +124,7 @@ class ExperienceTracker:
             self.run.gaps += 1
         self.baseline = None
         self.candidate = None
+        self.recovery.clear()
 
     def finish(self, reason="Saved"):
         if self.run is None:
@@ -130,6 +135,7 @@ class ExperienceTracker:
         self.events.clear()
         self.paused = False
         self.baseline = None
+        self.recovery.clear()
         if result.seconds > 0:
             self.completed.append(result)
         self.message = reason + " · start another session to compare."
@@ -159,27 +165,67 @@ class ExperienceTracker:
                 self.run.map_name = name
             self.last_map_at = at
 
+    def recover_bounds(self, reading):
+        """Relearn a numerical baseline only from changing, consistent values.
+
+        Repeated captures of one OCR result cannot outvote an established total.
+        Recovery never bridges the untrusted interval or resets the user's run.
+        """
+        previous = self.recovery[-1] if self.recovery else None
+        if previous and reading.at <= previous.at:
+            return None
+        low, high = reading.bounds
+        compatible = bool(previous and 0 < reading.at-previous.at <= MAX_GAP
+                          and (reading.character,reading.job,reading.level) ==
+                              (previous.character,previous.job,previous.level)
+                          and reading.exp >= previous.exp and reading.percent >= previous.percent)
+        if compatible:
+            low = max(low,*(r.bounds[0] for r in self.recovery))
+            high = min(high,*(r.bounds[1] for r in self.recovery))
+        if not compatible or low > high:
+            self.recovery.clear()
+        self.recovery.append(reading)
+        if (not self.current or len(self.recovery) < 3 or reading.at-self.recovery[0].at < 2
+                or len({r.exp for r in self.recovery}) < 3
+                or len({r.percent for r in self.recovery}) < 2):
+            return None
+        return (max(r.bounds[0] for r in self.recovery),
+                min(r.bounds[1] for r in self.recovery))
+
     def ingest(self, payload, at):
         reading = Reading.parse(payload, at)
         if reading is None:
             self.message = "EXP bar unreadable · waiting for a clear reading."
+            self.read_issue = 'unreadable'
+            self.recovery.clear()
             return False
         old = self.current
         if old and old.character and not reading.character:
             self.message = "Character name unreadable · waiting for a clear status bar."
+            self.read_issue = 'identity'
+            self.recovery.clear()
             return False
         if old and reading.at <= old.at:
             return False
         switched = bool(old and old.character and reading.character and reading.character != old.character)
         changed_level = bool(old and reading.level != old.level)
+        recovered = False
         if old and not switched and not changed_level and self.bounds:
+            replacement = self.recover_bounds(reading)
             low, high = reading.bounds
             if max(low, self.bounds[0]) > min(high, self.bounds[1]):
                 self.message = "Checking an inconsistent EXP reading…"
-                return False
+                self.read_issue = 'inconsistent'
+                if replacement is None:
+                    return False
+                self.interrupt()
+                self.bounds = replacement
+                recovered = True
+        else:
+            self.recovery.clear()
         decrease = bool(old and reading.level == old.level and reading.exp < old.exp)
         jump = bool(old and reading.level == old.level and reading.percent-old.percent > 2000)
-        if switched or changed_level or decrease or jump:
+        if (switched or changed_level or decrease or jump) and not recovered:
             candidate = self.candidate
             compatible = (candidate is not None and 0 < reading.at-candidate.at <= MAX_GAP
                           and candidate.level == reading.level and candidate.character == reading.character
@@ -188,8 +234,10 @@ class ExperienceTracker:
             if not compatible:
                 self.candidate = reading
                 self.message = "Confirming level or EXP change…"
+                self.read_issue = 'confirming'
                 return False
         self.candidate = None
+        self.read_issue = ''
         if switched or (old and changed_level and reading.level != old.level+1):
             self.finish("Character changed" if switched else "Level changed while unreadable")
             self.bounds = None

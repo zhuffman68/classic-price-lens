@@ -228,6 +228,16 @@ class ExperiencePanel(QWidget):
             meso_rate=self.mesos.rate(now) if self.mesos.observed else None,meso_gaps=self.mesos.gaps)
         return self.numeric_snapshot
 
+    def exp_waiting(self):
+        issue = self.tracker.read_issue
+        if issue == 'inconsistent':
+            return 'Checking EXP values · estimates held.', 'Checking EXP'
+        if issue == 'identity':
+            return 'Character name unreadable · EXP estimates held.', 'Checking name'
+        if issue == 'confirming':
+            return 'Confirming level or EXP change · estimates held.', 'Confirming EXP'
+        return 'EXP bar hidden or unreadable · EXP estimates held.', 'EXP unreadable'
+
     def refresh(self, *_):
         tracker = self.tracker
         reading, run = tracker.current, tracker.run
@@ -258,7 +268,7 @@ class ExperiencePanel(QWidget):
                "Screen reading is paused · tracking is held." if not self.connected else
                f"Paused · waiting for {reading.character}." if self.user_paused and not self.paused_context_ready and reading else
                "Paused · elapsed time and gains are held." if self.user_paused else
-               "EXP bar hidden or unreadable · EXP estimates held." if reading and not fresh else
+               self.exp_waiting()[0] if reading and not fresh else
                '' if run else "Waiting for a readable EXP bar…")
         self.state.setText(self.storage_error or state)
         self.state.setVisible(bool(self.storage_error or state))
@@ -278,7 +288,7 @@ class ExperiencePanel(QWidget):
                 self.hour_rate.setText(f'{rate*3600:+.1f}%' if rate is not None else '—')
             self.raw_hint.setText(f"{prefix}{totals['exp']:+,.0f} EXP gained · {prefix}{hour/60:,.0f}/min · {prefix}{hour:,.0f}/hour" if hour is not None else '')
             self.raw_hint.setVisible(self.display_mode=='both' and hour is not None)
-            self.observation.setText(f"Rates: average of the last {duration_text(window['seconds'])} tracked" if rate is not None else f"Measuring pace · {max(0,30-round(window['seconds']))}s of readings remaining")
+            self.observation.setText(f"Rates: average of the last {duration_text(window['seconds'])} tracked" if rate is not None else f"Measuring pace · {max(0,30-round(window['seconds']))}s of clear EXP readings remaining")
             approximate=self.watch_approximate or run.approximate_exp or any(r.approximate_exp for r in self.tracker.completed if r.started>=self.watch_epoch)
             total_prefix='≈' if approximate else ''
             self.gain.setText(f"{total_prefix}{totals['exp']:+,.0f} EXP" if self.display_mode=='raw' else f"{totals['progress']:+.2f}%")
@@ -327,15 +337,17 @@ class ExperiencePanel(QWidget):
         minute=f'{prefix}{hour/60:,.0f} EXP' if raw and hour is not None else f'{rate*60:+.2f}%' if rate is not None else '—'
         hourly=f'{prefix}{hour:,.0f} EXP' if raw and hour is not None else f'{rate*3600:+.1f}%' if rate is not None else '—'
         status='Paused' if held else f"Measuring pace · {max(0,30-round(window['seconds']))}s" if rate is None else f"Rates: average of the last {duration_text(window['seconds'])} tracked"
-        if not held and not tracker.fresh(now):status='EXP bar unreadable · estimates held'
-        note='Paused' if held else 'EXP unreadable' if not tracker.fresh(now) else f"Pace · {max(0,30-round(window['seconds']))}s" if rate is None else ''
+        if not held and not tracker.fresh(now):status=self.exp_waiting()[0]
+        note='Paused' if held else self.exp_waiting()[1] if not tracker.fresh(now) else f"Reading pace · {round(window['seconds'])}/30s" if rate is None else ''
         eta=duration_text(window['eta']) if window['eta'] is not None else '—'
         target=reading.level+1 if reading and reading.level<200 else '—'
         progress=f'{reading.percent/100:.2f}%' if reading else '—'
+        seconds=max(0,round(window['seconds']))
+        basis=f'Last {seconds//60} min' if seconds and seconds%60==0 else 'Last '+duration_text(seconds)
         exp=dict(key='experience',kind='tracking',name='EXP'+(f' · {reading.character} · Lv. {reading.level}' if reading else ''),
             text=gain,color='#e4bd7b',metrics=[('Gained',gain),('Per minute',minute),('Per hour',hourly)],
             footer=f'Level {target} - ETA {eta}',status=status,compact_note=note,
-            basis='avg '+duration_text(window['seconds']).replace(' ',''),clock=values['clock'],progress=progress)
+            basis=basis,clock=values['clock'],progress=progress)
         if self.display_mode=='both' and hour is not None:
             exp['secondary']=f"{prefix}{totals['exp']:+,.0f} EXP · {prefix}{hour/60:,.0f} EXP/min · {prefix}{hour:,.0f} EXP/hour"
         pickups=self.mesos;meso_rate=values['meso_rate']
@@ -346,7 +358,7 @@ class ExperiencePanel(QWidget):
             metrics=[('Picked up',total),('Per minute',f'{meso_rate:,.0f}' if meso_rate is not None else '—'),
                      ('Per hour',f'{meso_rate*60:,.0f}' if meso_rate is not None else '—')],
             status=meso_status,compact_note='Paused' if held else 'Log hidden' if not pickups.fresh(now) else '',
-            basis='session avg',clock=values['clock'],progress='')
+            basis='Session pace',clock=values['clock'],progress='')
         return [exp,meso]
 
     def refresh_history(self, *_):

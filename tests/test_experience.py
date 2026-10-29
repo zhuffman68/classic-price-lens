@@ -77,6 +77,70 @@ class ExperienceTests(unittest.TestCase):
         self.assertEqual(tracker.run.exp,30)
         self.assertEqual(tracker.run.end_level,27)
 
+    def test_initial_misread_does_not_lock_out_confirmed_new_exp_readings(self):
+        tracker = ExperienceTracker()
+        first = payload(51445,95_700,30)
+        first['bar']['percentHundredths'] -= 1
+        self.assertTrue(tracker.ingest(first,0))
+        tracker.start('Original map',started=1_000)
+        run = tracker.run
+        for at,exp in ((1,51445),(3,52402)):
+            self.assertFalse(tracker.ingest(payload(exp,95_700,30),at))
+        self.assertTrue(tracker.ingest(payload(53359,95_700,30),6))
+        self.assertLessEqual(tracker.bounds[0],95_700)
+        self.assertGreaterEqual(tracker.bounds[1],95_700)
+        self.assertIs(tracker.run,run)
+        self.assertEqual(run.map_name,'Original map')
+        self.assertEqual((run.exp,run.progress,run.seconds),(0,0,0))
+        self.assertEqual(run.gaps,1)
+        self.assertTrue(tracker.ingest(payload(53369,95_700,30),7))
+        self.assertEqual(run.exp,10)
+
+    def test_recovery_preserves_confirmed_gains_and_excludes_the_unreadable_gap(self):
+        tracker = self.tracker()
+        tracker.ingest(payload(2010),1)
+        before = (tracker.run.exp,tracker.run.progress,tracker.run.seconds)
+        for at,exp in ((2,3000),(4,3020)):
+            self.assertFalse(tracker.ingest(payload(exp,12_000),at))
+        self.assertTrue(tracker.ingest(payload(3040,12_000),7))
+        self.assertEqual((tracker.run.exp,tracker.run.progress,tracker.run.seconds),before)
+        tracker.ingest(payload(3050,12_000),8)
+        self.assertEqual(tracker.run.exp,before[0]+10)
+
+    def test_occasional_compatible_readings_do_not_keep_an_incorrect_total_locked(self):
+        tracker = ExperienceTracker()
+        first = payload(51445,95_700,30)
+        first['bar']['percentHundredths'] -= 1
+        tracker.ingest(first,0);tracker.start()
+        tracker.ingest(payload(51445,95_700,30),1)
+        self.assertTrue(tracker.ingest(payload(51455,95_700,30),2))
+        self.assertTrue(tracker.ingest(payload(51465,95_700,30),3))
+        gained=tracker.run.exp
+        self.assertTrue(tracker.ingest(payload(51645,95_700,30),4))
+        self.assertLessEqual(tracker.bounds[0],95_700)
+        self.assertGreaterEqual(tracker.bounds[1],95_700)
+        self.assertEqual(tracker.run.exp,gained)
+
+    def test_unchanged_or_duplicate_bad_readings_cannot_replace_learned_exp(self):
+        tracker = self.tracker()
+        bounds = tracker.bounds
+        for at in range(1,12):
+            self.assertFalse(tracker.ingest(payload(3000,12_000),at))
+        for exp in (3010,3020,3030):
+            self.assertFalse(tracker.ingest(payload(exp,12_000),11))
+        self.assertEqual(tracker.bounds,bounds)
+        self.assertEqual(tracker.run.exp,0)
+
+    def test_recovery_evidence_does_not_cross_pause_or_capture_loss(self):
+        for action in ('pause','interrupt'):
+            with self.subTest(action=action):
+                tracker = self.tracker()
+                for at,exp in ((2,3000),(4,3020)):
+                    self.assertFalse(tracker.ingest(payload(exp,12_000),at))
+                getattr(tracker,action)()
+                self.assertFalse(tracker.ingest(payload(3040,12_000),7))
+                self.assertEqual(tracker.run.exp,0)
+
     def test_character_switch_saves_previous_run_without_merging(self):
         tracker = self.tracker()
         tracker.ingest(payload(2010),1)

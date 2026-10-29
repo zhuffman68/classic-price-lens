@@ -53,7 +53,7 @@ Start a session and watch gain, per-minute and per-hour figures in matching colu
 - **In-game trackers:** compact EXP and meso cards in the empty corner beside the status bar, with independent visibility switches, gain, rates, time and level-up ETA.
 - **Session controls:** Start, Pause and Stop; tracking always begins stopped when Lupin opens.
 
-EXP rates and ETA use 30 seconds of valid tracking to establish a pace, then average up to five minutes of tracked time. Meso rates average the active session. Panel and overlay numbers share a two-second update interval; pause and connection changes appear immediately. Pausing holds the displayed ETA and rates. A paused session stays with its original character when another client becomes visible. Pausing screen reading holds tracking; the Prices shortcut can pause prices independently.
+EXP rates and ETA need 30 seconds of clear EXP readings to establish a pace; covered or rejected readings can extend the wait. The overlay's **Last 5 min** label identifies the rolling pace window, while its timer shows session time. Gain totals remain available during warmup. Meso rates average the active session. Panel and overlay numbers share a two-second update interval; pause and connection changes appear immediately. Pausing holds the displayed ETA and rates. A paused session stays with its original character when another client becomes visible. Pausing screen reading holds tracking; the Prices shortcut can pause prices independently.
 
 Meso gain counts readable pickup messages, including while EXP is unchanged. Fast bursts or covered text can be missed. Purchases, trades, potion costs and unsold loot are excluded; this is a pickup total, not farming profit.
 

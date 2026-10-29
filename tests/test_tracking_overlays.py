@@ -14,7 +14,7 @@ ROOT=Path(__file__).resolve().parents[1]
 
 def rows():
     return [dict(key='experience',kind='tracking',name='EXP · Character · Lv. 30',text='+1.20%',color='#e4bd7b',clock='01:20',
-                 metrics=[('Gained','+1.20%'),('Per minute','+0.90%'),('Per hour','+54.0%')],footer='Level 31 - ETA 1h 20m',basis='avg 5m00s',progress='24.10%',status='Rates average the last 5m tracked'),
+                 metrics=[('Gained','+1.20%'),('Per minute','+0.90%'),('Per hour','+54.0%')],footer='Level 31 - ETA 1h 20m',basis='Last 5 min',progress='24.10%',status='Rates average the last 5m tracked'),
             dict(key='meso-gain',kind='tracking',name='Meso gained',text='1,200',clock='01:20',color='#b7d4a9',
                  metrics=[('Picked up','1,200'),('Per minute','900'),('Per hour','54,000')],footer='',status='Watching pickup messages')]
 
@@ -31,9 +31,9 @@ class TrackingOverlayTests(unittest.TestCase):
                     placed=tracking_rows(supplied,[120,90,1366,768],[QRect(405*scale,820*scale,36*scale,37*scale)],scale_x=1/scale,scale_y=1/scale)
                     window.read_command(json.dumps(dict(geometry=[0,0,1920,1080],rows=placed,reduce_motion=True)).encode())
                     boxes=[window.label_rect(row,QPoint()) for row in window.rows]
-                    self.assertTrue(all(box.height()==32 and box.left()==124 for box in boxes))
+                    self.assertTrue(all(48<=box.height()<=60 and box.left()==124 for box in boxes))
                     self.assertTrue(all(box.right()<405 and box.width()<=273 for box in boxes))
-                    self.assertLessEqual(max(box.bottom() for box in boxes)-min(box.top() for box in boxes)+1,66)
+                    self.assertLessEqual(max(box.bottom() for box in boxes)-min(box.top() for box in boxes)+1,122)
                     self.assertEqual(max(box.bottom() for box in boxes),853)
                     if len(boxes)==2:self.assertLess(boxes[0].bottom(),boxes[1].top())
                     self.assertTrue(all(not box.intersects(QRect(405,820,36,37)) for box in boxes))
@@ -48,8 +48,9 @@ class TrackingOverlayTests(unittest.TestCase):
                 placed=tracking_rows(supplied,[120,90,1366,768],[QRect(405,820,36,37)])
                 window.read_command(json.dumps(dict(geometry=[0,0,1920,1080],rows=placed,reduce_motion=True)))
                 self.assertEqual(window.rows[0].get('secondary'),secondary)
-                self.assertEqual('1,200' in window.rows[0]['_rolls']['context'].text,bool(secondary))
-                self.assertEqual(window.rows[0]['_height'],32)
+                self.assertEqual('1,200' in window.rows[0]['_rolls']['detail'].text,bool(secondary))
+                self.assertEqual(window.rows[0]['_rolls']['context'].text,'01:20')
+                self.assertLessEqual(window.rows[0]['_height'],60)
                 self.assertNotIn('secondary',window.rows[0]['_rolls'])
         finally:window.close();window.deleteLater()
 
@@ -65,10 +66,16 @@ class TrackingOverlayTests(unittest.TestCase):
                 self.assertEqual(columns[0]['unit'].center().x(),columns[1]['unit'].center().x())
                 for row,parts in zip(window.rows,columns):
                     self.assertLess(parts['gain'].right(),parts['unit'].left())
-                    self.assertLess(parts['unit'].right(),parts['context'].left())
+                    self.assertFalse(parts['unit'].intersects(parts['context']))
+                    font,_=window.tracking_gain_style(window.label_rect(row,QPoint()))
+                    self.assertGreaterEqual(parts['gain'].height(),font.pixelSize())
+                    from PySide6.QtGui import QFontMetrics
+                    metrics=QFontMetrics(font);roll=row['_rolls']['gain']
+                    width=sum(metrics.horizontalAdvance('0') if key is not None else metrics.horizontalAdvance(char) for key,char in roll.columns)
+                    self.assertLessEqual(width,parts['gain'].width())
                     self.assertTrue(window.label_rect(row,QPoint()).contains(parts['unit']))
-                self.assertEqual(window.tracking_values(window.rows[1])['detail'],'')
-                self.assertIn('avg',window.tracking_values(window.rows[0])['basis'])
+                self.assertEqual(window.tracking_values(window.rows[1])['detail'],'Visible pickups')
+                self.assertEqual(window.tracking_values(window.rows[0])['basis'],'Last 5 min')
                 self.assertEqual(window.tracking_values(window.rows[0])['gain'],'+1.20')
             supplied=rows()[1];supplied['metrics'][0]=('Picked up','—')
             self.assertEqual(window.tracking_values(supplied)['unit'],'')

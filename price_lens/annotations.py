@@ -11,6 +11,7 @@ from PySide6.QtWidgets import QApplication, QWidget
 from .number_motion import NumberRoll
 from . import gui_currency
 from .fonts import interface_font,interface_family
+from .overlay_layout import TRACKING_HEIGHT
 
 
 class CommandPipe(QObject):
@@ -49,6 +50,7 @@ class AnnotationWindow(QWidget):
                                             math.sin(-math.pi/2+i*math.pi/5)*(5 if i%2==0 else 2.3)) for i in range(10)])
         self.price_font = interface_font(12,QFont.Weight.DemiBold)
         self.name_font = interface_font(10)
+        self.tracking_gain_font = interface_font(24,QFont.Weight.DemiBold)
         self.translation_font=QFont(self.price_font);self.translation_font.setPixelSize(13)
         self.original_font=QFont(self.name_font);self.original_font.setPixelSize(11)
         if self.korean_family is None:
@@ -56,8 +58,10 @@ class AnnotationWindow(QWidget):
             families=QFontDatabase.applicationFontFamilies(identity)
             type(self).korean_family=families[0] if families else ""
         if self.korean_family:
-            for font in (self.name_font,self.price_font,self.original_font,self.translation_font):
+            for font in (self.name_font,self.price_font,self.tracking_gain_font,self.original_font,self.translation_font):
                 font.setFamilies([interface_family(),self.korean_family])
+        self.tracking_label_font=QFont(self.name_font)
+        self.tracking_label_font.setWeight(QFont.Weight.Bold)
         self.pointer_timer = QTimer(self)
         self.pointer_timer.setInterval(100)
         self.pointer_timer.timeout.connect(self.report_pointer)
@@ -115,7 +119,7 @@ class AnnotationWindow(QWidget):
                                              metrics.horizontalAdvance(row.get("name",""))+20))
                 if row.get('kind')=='tracking':
                     row['_width']=max(180,min(350,int(row.get('tracking_width',296))))
-                    row['_height']=max(32,min(160,int(row.get('tracking_height',32))))
+                    row['_height']=max(TRACKING_HEIGHT,min(160,int(row.get('tracking_height',TRACKING_HEIGHT))))
                 if row.get("kind")=="translation":
                     row["_width"]=min(360,max(180,row.get("bounds",[0,0,360,0])[2]-8))
                     wrap=Qt.TextFlag.TextWordWrap|Qt.AlignmentFlag.AlignLeft
@@ -527,47 +531,65 @@ class AnnotationWindow(QWidget):
         if not any(char.isdigit() for char in metrics[0]):unit=''
         gain=metrics[0].removesuffix('%')
         raw=row.get('secondary','').split(' · ',1)[0]
-        return dict(gain=gain,unit=unit,minute=metrics[1]+'/min',hour=metrics[2]+'/hr',
-                    detail=row.get('footer','') if experience else '',
-                    basis=row.get('compact_note') or row.get('basis','avg' if experience else 'session avg'),
-                    context=raw if raw else row.get('clock',''))
+        detail=row.get('footer','') if experience else 'Visible pickups'
+        if experience and raw:detail+=' · '+raw
+        return dict(gain=gain,unit=unit,minute=metrics[1]+'/min',hour=metrics[2]+'/hr',detail=detail,
+                    basis=row.get('compact_note') or row.get('basis','Recent pace' if experience else 'Session pace'),
+                    context=row.get('clock',''))
+
+    def tracking_gain_style(self,box):
+        """Scale exceptional totals together while keeping both unit columns fixed."""
+        font=QFont(self.tracking_gain_font)
+        units=[self.tracking_values(row)['unit'] for row in self.rows if row.get('kind')=='tracking']
+        unit_width=28 if 'EXP' in units else 20
+        available=max(1,box.width()-12-90-unit_width-4)
+        for size in range(self.tracking_gain_font.pixelSize(),9,-1):
+            font.setPixelSize(size);metrics=QFontMetrics(font);cell=metrics.horizontalAdvance('0')
+            lengths=[]
+            for row in self.rows:
+                if row.get('kind')!='tracking':continue
+                values=self.tracking_values(row);roll=row.get('_rolls',{}).get('gain') or NumberRoll(values['gain'])
+                lengths.append(sum(cell if key is not None else metrics.horizontalAdvance(char) for key,char in roll.columns))
+            if max(lengths,default=0)<=available:break
+        return font,unit_width
 
     def tracking_columns(self,row,box):
-        """Keep totals beside one stable unit column, expanding for large values."""
-        metrics=QFontMetrics(self.price_font);cell=metrics.horizontalAdvance('0')
-        natural=0;unit_width=16
-        for other in self.rows:
-            if other.get('kind')!='tracking':continue
-            values=self.tracking_values(other);roll=other.get('_rolls',{}).get('gain') or NumberRoll(values['gain'])
-            natural=max(natural,sum(cell if key is not None else metrics.horizontalAdvance(char) for key,char in roll.columns))
-            unit_width=max(unit_width,metrics.horizontalAdvance(values['unit']) if values['unit']!=gui_currency.TOKEN else 16)
+        """Keep totals beside one fixed unit column, below the separate timer."""
+        _,unit_width=self.tracking_gain_style(box)
         x,y,w=box.x()+6,box.y(),box.width()-12
-        left=x+92;unit_x=min(max(x+190,left+natural+4),x+w-unit_width)
-        return dict(gain=QRect(left,y+1,max(1,unit_x-left-4),15),
-                    unit=QRect(unit_x,y+1,unit_width,15),
-                    context=QRect(unit_x+unit_width+6,y+1,max(0,x+w-unit_x-unit_width-6),15))
+        left=x+90;unit_x=x+w-unit_width
+        return dict(gain=QRect(left,y+14,max(1,unit_x-left-4),29),
+                    unit=QRect(unit_x,y+14,unit_width,29),
+                    context=QRect(x+w-54,y+1,54,13))
 
     def paint_tracking(self,painter,row,box):
         painter.save();painter.setClipRect(box.adjusted(5,1,-5,-1))
         x,y,w=box.x()+6,box.y(),box.width()-12
         values=self.tracking_values(row)
         columns=self.tracking_columns(row,box)
-        painter.setFont(self.name_font);painter.setPen(QColor('#c4cbd6'))
-        painter.drawText(QRect(x,y+1,34,15),Qt.AlignmentFlag.AlignVCenter,'EXP' if row.get('key')=='experience' else 'MESO')
-        label_width=25 if row.get('key')=='experience' else 34
+        painter.setFont(self.tracking_label_font);painter.setPen(QColor('#d8dee7'))
+        title='EXP' if row.get('key')=='experience' else 'MESO'
+        label_width=painter.fontMetrics().horizontalAdvance(title)+7
+        painter.drawText(QRect(x,y+1,label_width,13),Qt.AlignmentFlag.AlignVCenter,title)
+        painter.setFont(self.name_font)
         basis=values['basis'].replace('EXP unreadable','Unreadable')
-        basis=painter.fontMetrics().elidedText(basis,Qt.TextElideMode.ElideRight,90-label_width)
-        painter.setPen(QColor('#a5b3c7'));painter.drawText(QRect(x+label_width,y+1,90-label_width,15),Qt.AlignmentFlag.AlignVCenter,basis)
-        painter.setFont(self.price_font);painter.setPen(QColor(row.get('color','#e4bd7b')))
+        basis_width=columns['context'].left()-x-label_width-6
+        basis=painter.fontMetrics().elidedText(basis,Qt.TextElideMode.ElideRight,basis_width)
+        painter.setPen(QColor('#a5b3c7'));painter.drawText(QRect(x+label_width,y+1,basis_width,13),Qt.AlignmentFlag.AlignVCenter,basis)
+        gain_font,_=self.tracking_gain_style(box)
+        painter.setFont(gain_font);painter.setPen(QColor(row.get('color','#e4bd7b')))
         self.paint_number(painter,row,'gain',columns['gain'],values['gain'],Qt.AlignmentFlag.AlignRight|Qt.AlignmentFlag.AlignVCenter)
         if values['unit']==gui_currency.TOKEN:
-            unit=columns['unit'];gui_currency.paint_icon(painter,QRect(unit.center().x()-6,y+3,14,12))
-        else:painter.drawText(columns['unit'],Qt.AlignmentFlag.AlignCenter,values['unit'])
+            unit=columns['unit'];gui_currency.paint_icon(painter,QRect(unit.center().x()-8,unit.center().y()-8,16,16))
+        else:
+            painter.setFont(self.price_font)
+            painter.drawText(columns['unit'],Qt.AlignmentFlag.AlignCenter,values['unit'])
         painter.setFont(self.name_font);painter.setPen(QColor('#a5b3c7'))
-        if columns['context'].width()>=40:
-            self.paint_number(painter,row,'context',columns['context'],values['context'],Qt.AlignmentFlag.AlignRight|Qt.AlignmentFlag.AlignVCenter)
-        for key,left,width in (('minute',0,70),('hour',73,63),('detail',139,w-139)):
-            self.paint_number(painter,row,key,QRect(x+left,y+16,width,13),values[key])
+        self.paint_number(painter,row,'context',columns['context'],values['context'],Qt.AlignmentFlag.AlignRight|Qt.AlignmentFlag.AlignVCenter)
+        for key,top in (('minute',15),('hour',29)):
+            self.paint_number(painter,row,key,QRect(x,y+top,86,13),values[key])
+        detail=painter.fontMetrics().elidedText(values['detail'],Qt.TextElideMode.ElideRight,w)
+        self.paint_number(painter,row,'detail',QRect(x,y+43,w,12),detail)
         painter.restore()
 
 

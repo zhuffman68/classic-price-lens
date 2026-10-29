@@ -1,6 +1,8 @@
 """Shared corner layout for independent, screen-pixel annotations."""
 from PySide6.QtCore import QRect
 
+TRACKING_HEIGHT = 56
+
 
 def tracking_rows(rows,bounds,guards=(),*,scale_x=None,scale_y=1.0):
     """Use the empty HUD corner, or stack above the HUD if it is too narrow.
@@ -19,7 +21,7 @@ def tracking_rows(rows,bounds,guards=(),*,scale_x=None,scale_y=1.0):
         reserve=max(reserve,bottom-top+round(rim*scale_y))
     offset=0 if lane>=240 else reserve;placed=[]
     for row in reversed(rows):
-        height=32
+        height=TRACKING_HEIGHT
         card=dict(row,x=game.left()+4,y=game.bottom()-4,anchor='bottom_left',bounds=bounds,
                   left_offset=0,bottom_offset=offset,tracking_width=width,tracking_height=height)
         placed.append(card);offset+=height+2
