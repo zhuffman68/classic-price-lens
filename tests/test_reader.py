@@ -209,6 +209,32 @@ class ShopReaderTests(unittest.TestCase):
             self.assertEqual(row["area"]["x"], before["area"]["x"] + 140)
             self.assertEqual(row["area"]["y"], before["area"]["y"] + 80)
 
+    def test_orange_and_yellow_item_link_titles_are_read_low_on_screen_away_from_pointer(self):
+        from PySide6.QtGui import QImage,QPainter,QColor
+        from PySide6.QtCore import QRect
+        source=QImage(str(ROOT/'vendor/minerva/samples/item-tooltip/screw@60,20.png'))
+        with tempfile.TemporaryDirectory() as directory:
+            requests=[]
+            for index,tint in enumerate(((255,153,0),(255,205,40))):
+                image=QImage(640,800,QImage.Format.Format_RGBA8888);image.fill(QColor('#ad969e'))
+                painter=QPainter(image);painter.fillRect(QRect(220,580,236,180),QColor(78,65,62))
+                for x in (220,453):
+                    painter.fillRect(x,580,3,180,QColor(30,26,40));painter.fillRect(x+1,580,1,180,QColor(170,150,160))
+                painter.fillRect(220,580,236,3,QColor(30,26,40));painter.fillRect(220,581,236,1,QColor(170,150,160))
+                for y in (592,614):painter.drawImage(302,y,source.copy(QRect(88,70,72,18)))
+                painter.end()
+                for y in range(592,632):
+                    for x in range(302,374):
+                        p=image.pixelColor(x,y);channels=(p.red(),p.green(),p.blue())
+                        if min(channels)>=140 and max(channels)-min(channels)<45:
+                            intensity=max(channels)/255;image.setPixelColor(x,y,QColor(*(round(value*intensity) for value in tint)))
+                path=Path(directory)/f'coloured-link-{index}.png';image.save(str(path))
+                requests.append(json.dumps(dict(path=str(path),tooltip=True,pointer=dict(x=20,y=20))))
+            result=subprocess.run([str(BINARY)],input='\n'.join(requests)+'\n',text=True,capture_output=True,
+                check=True,timeout=20,env={**os.environ,'RAYON_NUM_THREADS':'2'})
+        for value in result.stdout.splitlines():
+            found=json.loads(value)['tooltip']['found'];self.assertEqual(found['name'],'Screw Screw');self.assertTrue(found['pinned'])
+
 
 if __name__ == "__main__":
     unittest.main()

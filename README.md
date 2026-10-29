@@ -19,7 +19,7 @@ See market references beside player-shop listings, with item names and colors th
 - Shows item images beside shop entries in the Prices page.
 - Keeps shop references visible when an item description overlaps them.
 - Prices recognized item-description popups opened from item links, including away from the cursor.
-- Shows the age of the latest observed sale beside each market reference, with refresh warnings when needed. The larger item card keeps snapshot/check details. Thin or stale data receive no deal rating.
+- Shows the age of the latest observed sale beside each market reference, with refresh warnings when needed. Thin or stale data receive no deal rating.
 - Compares equipment as unscrolled. Individual stat rolls are not priced.
 
 <!-- DEMO: docs/media/shop-prices.gif — open a populated shop and hover a listing. -->
@@ -27,9 +27,11 @@ See market references beside player-shop listings, with item names and colors th
 
 ## Item search
 
-Look up an item without opening a shop or sharing a screen. Type its name, browse matching items with thumbnails, and select one for its market reference. Search gets priority over on-screen results, with those results still available when needed.
+Look up an item without opening a shop or sharing a screen. Prices and Database search the same released-item collection. Select an item for its market reference, base stats and Sources in one card. Search gets priority over on-screen results, with those compact listings still available when needed. Both search fields have a clearly visible clear button.
 
 Prices share a local cache with the overlay. Saved references appear while updates run; missing market reports are shown separately from an unreadable item name. The full market refreshes on launch and at the interval selected in Settings. The overlay, search and watched items all use this shared snapshot; individual price requests are not used. Items without a reference stay unpriced.
+
+Recently seen items stay in a compact list after their screen labels disappear. Each row has a thumbnail, a large market reference and its last-seen/listing information. The list keeps one entry per item, up to 100, and clears when Lupin closes.
 
 <!-- DEMO: docs/media/item-search.gif — type, select an item, inspect its reference, clear the search. -->
 
@@ -82,13 +84,21 @@ Both translation directions run locally with the included models. Writing works 
 
 ## Database
 
-Browse **Items**, **Monsters** and **Skills** without sharing a screen. Search by name, narrow the category or job, and follow links between related entries.
+Browse **Items**, **Monsters**, **Skills**, **Maps** and **Quests** without sharing a screen. Items open with illustrated categories and subcategories; skills are organized by job. Search remains available throughout, with Back and breadcrumbs to retrace your steps.
 
-- **Items:** images, base stats, requirements, potion/scroll effects, reported drops, and saved market references with watch controls.
-- **Monsters:** stats, map locations, drop tables and animated sprites where available.
-- **Skills:** job filters, prerequisites and a rank slider for costs and effects.
+- **Items:** images, stats, requirements, potion/scroll effects, Sources and saved market references with watch controls. Sort equipment by name, level or class, with relevant sorting for other categories.
+- **Monsters:** stats, locations, two-column clickable drops and animated sprites where available. Sort by level or name; Back restores the monster after inspecting a drop.
+- **Skills:** job navigation, prerequisites and a rank slider for costs and effects. Crafting skills are omitted.
+- **Maps:** minimaps, map symbols, linked monsters, published spawn-point counts and connections. Spawn markers appear only when image-coordinate alignment verifies.
+- **Quests:** quest-giver portraits, level and location, illustrated requirements and rewards, and linked prerequisite/next quests where recorded. Item Sources link back to named reward quests.
 
-The database updates in the background and remains available offline after its first download. Drop percentages describe dated community samples; other community reports show no invented rate. Source links and dataset dates are included. [Data sources and accuracy](docs/DATABASE_SOURCES.md).
+Selected item cards share a compact price column and sliding Overview/Sources panel. Equipment separates stats from requirements; scrolls show success rate and effects. Quest reward totals keep their units beside their values.
+
+Browsing includes content supported by release or observed-market evidence, including previously available items. GM/test and unconfirmed code-only entries are excluded. Cash pages show relevant information without generic drop-report sections.
+
+Check for database updates in **Settings**. Only changed reference files are downloaded; saved data works offline.
+
+The database updates in the background and remains available offline after its first download. Images are cached as you browse. Drop percentages describe dated community samples; other community reports show no invented rate. Source links and dataset dates are included. [Data sources and accuracy](docs/DATABASE_SOURCES.md).
 
 <!-- DEMO: docs/media/database.gif — search a monster, preview its sprite and maps, follow a drop to its item card, then browse skill ranks. -->
 
@@ -119,8 +129,8 @@ Download from **[itch.io](https://zhuffman68.itch.io/lupin)**. Repository collab
 | System | Download | Install |
 | --- | --- | --- |
 | Windows 10/11 x64 | `Windows-x64-Setup.exe` | Run it, then open Lupin from Start. |
-| Arch / Manjaro | `.pkg.tar.zst` | `sudo pacman -U ./lupin-0.15.0-1-x86_64.pkg.tar.zst` |
-| Debian 12+ / Ubuntu 22.04+ | `.deb` | `sudo apt install ./lupin_0.15.0-1_amd64.deb` |
+| Arch / Manjaro | `.pkg.tar.zst` | `sudo pacman -U ./lupin-0.16.0-1-x86_64.pkg.tar.zst` |
+| Debian 12+ / Ubuntu 22.04+ | `.deb` | `sudo apt install ./lupin_0.16.0-1_amd64.deb` |
 
 Extract downloaded ZIPs before running an installer or package command. For the Windows portable build, extract the full folder and open `run-windows.bat`. Updates preserve settings, prices and history; Linux packages replace the former `classic-price-lens` package.
 

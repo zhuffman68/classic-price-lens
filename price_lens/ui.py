@@ -40,6 +40,7 @@ from .tls import catalog_error_text
 from .watchlist import Watchlist, WatchEncounters
 from .reference_service import ReferenceService
 from .reference_ui import DatabasePanel
+from .recent_items import RecentItems
 from . import APP_NAME, LEGACY_APP_NAME
 
 COLORS = {"green": "#86ceac", "red": "#ed9394", "amber": "#e4bd7b", "blue": "#9ebde3", "muted": "#98a3b1"}
@@ -211,6 +212,7 @@ class LensWindow(QMainWindow):
         self.service = PriceService(cache_path, self)
         self.thumbnails=ThumbnailCache(Path(cache_path).parent/'item-thumbnails-v1',self)
         self.reference=ReferenceService(data_directory()/'reference-v1.sqlite',self)
+        self.reference.changed.connect(self.update_database_settings)
         self.service.refresh_snapshot = True
         self.service.set_refresh_interval(self.ttl)
         self.reader = PixelReader(root, self)
@@ -311,6 +313,8 @@ class LensWindow(QMainWindow):
         self.cards_layout = QVBoxLayout(self.cards)
         self.cards_layout.setContentsMargins(0, 0, 0, 0)
         self.cards_layout.setSpacing(10)
+        self.recent_items=RecentItems(self.cards)
+        self.cards_layout.addWidget(self.recent_items)
         self.scroll.setWidget(self.cards)
         self.exp_panel = ExperiencePanel(data_directory()/"exp-sessions.sqlite", enabled=self.exp_enabled,
                                         window_minutes=self.settings.value("exp-window", 5, type=int), parent=self)
@@ -328,6 +332,9 @@ class LensWindow(QMainWindow):
         self.card_views = {}
         self.tabs.addTab(self.prices_page, "Prices")
         self.search_panel = PriceSearch(self,inline_detail=False)
+        self.recent_items.chosen.connect(self.search_panel.select_recent)
+        self.recent_items.changed.connect(self.update_shop_thumbnails)
+        self.recent_items.clear_button.clicked.connect(self.render)
         self.search_panel.set_watchlist(self.watchlist)
         self.watchlist.changed.connect(self.on_watchlist_changed)
         self.search_panel.ttl = self.ttl
@@ -374,8 +381,14 @@ class LensWindow(QMainWindow):
         self.database_panel.set_watchlist(self.watchlist)
         self.database_panel.set_market(self.service,self.ttl)
         self.database_panel.source_requested.connect(self.open_source)
-        self.database_panel.price_requested.connect(self.on_database_price)
+        self.database_panel.return_requested.connect(lambda:self.tabs.setCurrentIndex(self.search_tab_index))
         self.database_tab_index=self.tabs.addTab(self.database_panel,'Database')
+        self.reference_catalog_signature=None
+        self.search_panel.set_reference(self.reference,self.database_panel.media,self.service)
+        self.search_panel.reference_requested.connect(self.open_reference_entry)
+        self.search_panel.reference_changed.connect(self.update_reference_context)
+        self.database_panel.external_demand=self.search_panel.reference_demand
+        self.reference.updated.connect(self.on_reference_data)
         self.tabs.currentChanged.connect(self.on_tab_changed)
         layout.addWidget(self.tabs, 1)
         self.shortcut_footer = label('', 'color:#a6b1bf;font-size:11px')
@@ -419,6 +432,7 @@ class LensWindow(QMainWindow):
             QScrollBar::handle:vertical { background: #455064; border-radius: 3px; min-height: 20px; }
             QTabWidget::pane { border: 0; padding-top: 6px; }
             QTabBar::tab { background: transparent; color: #96a4b8; border: 0; border-radius: 6px; padding: 8px 18px; margin: 0 4px 3px 0; }
+            QTabWidget::tab-bar { alignment: center; }
             QTabBar::tab:selected { background: #303d51; color: #f1e1c6; }
             QTabBar::tab:hover:!selected { background: #222d3d; color: #dce4ef; }
         """)
@@ -512,6 +526,14 @@ class LensWindow(QMainWindow):
         self.ttl_combo.currentIndexChanged.connect(lambda index: self.set_ttl(self.ttl_combo.itemData(index)))
         layout.addWidget(self.ttl_combo)
         layout.addWidget(label("One shared update supplies the overlay, search and watched items. No individual price lookups. Expired references lose their deal colors until fresh data arrives.", "font-size: 11px; color: #a6b1bf", True))
+        layout.addWidget(label('Database','font-size:15px;font-weight:650'))
+        self.database_update_button=QPushButton('Check for database updates')
+        self.database_update_button.clicked.connect(lambda:self.reference.start())
+        layout.addWidget(self.database_update_button)
+        self.database_update_status=label('', 'font-size:11px;color:#a6b1bf',True)
+        layout.addWidget(self.database_update_status)
+        layout.addWidget(label('Checks for changes and downloads only changed reference files. Saved data stays available offline.','font-size:11px;color:#a6b1bf',True))
+        self.update_database_settings()
         layout.addWidget(label("Troubleshooting", "font-size: 15px; font-weight: 650"))
         self.crop_button = QPushButton("Limit the reading area…")
         self.crop_button.clicked.connect(self.crop)
@@ -536,7 +558,21 @@ class LensWindow(QMainWindow):
 
     def open_settings(self):
         self.update_capture_controls()
+        self.update_database_settings()
         self.settings_dialog.exec()
+
+    def update_database_settings(self):
+        if not hasattr(self,'database_update_button'):return
+        reference=self.reference;state=reference.store.metadata();stamp=state.get('checked_at')
+        self.database_update_button.setEnabled(not reference.busy)
+        if reference.busy:message='Checking for updates…'
+        elif reference.error:message='Update check unavailable · saved data kept'
+        elif stamp:
+            from datetime import datetime
+            message=('Database updated' if reference.core_changed else 'Reference data is up to date')+' · checked '+datetime.fromtimestamp(stamp).strftime('%b %d, %H:%M')
+        else:message='Not checked yet'
+        if reference.availability_error or reference.drop_error:message+=' · some source indexes unavailable'
+        self.database_update_status.setText(message)
 
     def configure_shortcuts(self,focus='prices'):
         if focus not in ('prices','exp','chat','write'):focus='prices'
@@ -586,10 +622,12 @@ class LensWindow(QMainWindow):
                 if identity:
                     item=next((item for item in self.catalog.items if item.game_id==identity),None)
                     if item:items.append(item)
+            items+=self.recent_items.visible_items()
         self.search_panel.set_screen_items(items)
 
     def on_shop_thumbnail(self,identity):
         image=self.thumbnails.image(identity)
+        self.recent_items.set_image(identity,image)
         for card in self.card_views.values():
             if card.property('gameItemId')==identity:card.thumbnail.set_image(image)
 
@@ -725,6 +763,7 @@ class LensWindow(QMainWindow):
 
     def on_tab_changed(self, index):
         if hasattr(self,'database_panel'):self.database_panel.set_active(index==self.database_tab_index)
+        self.update_reference_context()
         self.update_shortcut_footer()
         self.update_price_layout()
         if hasattr(self,"search_panel"):
@@ -749,14 +788,23 @@ class LensWindow(QMainWindow):
             chord, action = self.hotkey_description or shortcut_label(self.hotkey_sequence), 'Pause / resume prices'
         self.shortcut_footer.setText(f'{shortcut_label(chord)}  ·  {action}')
 
-    def on_database_price(self,item_id):
-        item=next((item for item in self.catalog.items if item.game_id==item_id),None) if self.catalog else None
-        if item is None:return
-        self.tabs.setCurrentIndex(self.search_tab_index)
-        self.search_panel.query.setText(item.name);self.search_panel.timer.stop();self.search_panel.find_items()
-        for index in range(self.search_panel.results.count()):
-            row=self.search_panel.results.item(index);candidate=row.data(Qt.ItemDataRole.UserRole)
-            if getattr(candidate,'game_id',None)==item_id:self.search_panel.results.setCurrentItem(row);break
+    def open_reference_entry(self,key):
+        self.tabs.setCurrentIndex(self.database_tab_index);self.database_panel.open_external(tuple(key))
+
+    def update_reference_context(self):
+        if not hasattr(self,'database_panel') or self.closing:return
+        if self.tabs.currentIndex()==self.search_tab_index:self.reference.extra.select(self.search_panel.reference_entry())
+        self.database_panel.observe_media()
+
+    def on_reference_data(self):
+        if self.closing or not hasattr(self,'database_panel'):return
+        self.reference.observe_market(self.catalog,getattr(self.service,'snapshot',None),notify=False)
+        state=self.reference.store.metadata();count=self.reference.store.released_counts()['items']
+        signature=(id(self.catalog),state.get('manifest'),count)
+        if signature!=self.reference_catalog_signature:
+            self.reference_catalog_signature=signature;catalog=self.reference.store.catalog(self.catalog)
+            self.search_panel.set_catalog(catalog,preserve=True);self.database_panel.set_catalog(catalog)
+        self.search_panel.refresh_reference();self.update_reference_context()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -1323,8 +1371,7 @@ class LensWindow(QMainWindow):
         self.catalog = catalog
         self.catalog_loading = False
         self.catalog_error = ""
-        self.search_panel.set_catalog(catalog)
-        self.database_panel.set_catalog(catalog)
+        self.on_reference_data()
         self.composer.set_names(catalog.items)
         if catalog.warning:
             self.last_diagnostic = catalog.warning
@@ -1373,6 +1420,7 @@ class LensWindow(QMainWindow):
 
     def on_price_state(self):
         if not self.closing:
+            self.reference.observe_market(self.catalog,getattr(self.service,'snapshot',None))
             self.database_panel.update_market()
             snapshot=getattr(self.service,'snapshot',None)
             generation=(snapshot.meta or {}).get('checked_at') if snapshot else None
@@ -1496,6 +1544,10 @@ class LensWindow(QMainWindow):
         now = time.time()
         screen_old = not self.last_screen or now - self.last_screen > 8
         observations = self.rows + ([self.tooltip_result] if self.tooltip_result else [])
+        if self.catalog:
+            if self.mode in ('live','screenshot') and not screen_old and self.prices_enabled:self.recent_items.observe(observations,self.catalog,now)
+            else:self.recent_items.active={item.game_id for row in observations if (item:=self.catalog.resolve(row.get('name'),row.get('tier')))}
+            self.recent_items.refresh(self.service,self.ttl,now)
         structure=tuple((hovered,item.game_id if self.catalog and (item:=self.catalog.resolve(row.get('name'),row.get('tier'))) else row.get('name'))
                         for row,hovered in ([(self.tooltip_result,True)] if self.tooltip_result else [])+[(row,False) for row in self.rows])
         if not structure:
@@ -1531,7 +1583,7 @@ class LensWindow(QMainWindow):
             position = self.scroll.verticalScrollBar().value()
             used = set()
             ordered = []
-            if not observations:
+            if not observations and not self.recent_items.rows_by_id:
                 key = ("empty",self.mode,self.shop_open,self.capture_starting,self.catalog_error,self.catalog_loading,
                        self.reader.game_area is not None)
                 used.add(key)

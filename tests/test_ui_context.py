@@ -147,16 +147,68 @@ class FakeThumbnails(QObject):
 
 class ContextUiTests(unittest.TestCase):
     def test_database_is_the_fourth_tab_and_browsing_needs_no_capture_or_price_request(self):
-        from test_reference import generation
+        from test_reference import generation,allow_fixture
         w=self.window;w.reference.store.replace(*generation())
+        allow_fixture(w.reference.store)
         w.on_catalog(Catalog({'items':[{'id':1001,'name':'Leaf Earrings','category':'Equipment'}]}))
         w.database_panel.reloaded();w.tabs.setCurrentIndex(w.database_tab_index)
         self.assertEqual(w.database_tab_index,3);self.assertEqual(w.tabs.tabText(3),'Database')
         w.database_panel.query.setText('leaf');w.database_panel.open_first()
         self.assertEqual(w.database_panel.selected.id,1001);self.assertEqual(w.reader.starts,0)
         self.assertEqual(w.service.requests,[])
-        w.database_panel.market_button.click();self.assertEqual(w.tabs.currentIndex(),w.search_tab_index)
+        self.assertIsNotNone(w.database_panel.detail.summary_card)
+        w.tabs.setCurrentIndex(w.search_tab_index);w.search_panel.query.setText('leaf');w.search_panel.choose_first()
         self.assertEqual(w.search_panel.selected.game_id,1001)
+        self.assertEqual(w.search_panel.price_view.row,w.database_panel.detail.row)
+        self.assertEqual(w.reader.starts,0);self.assertEqual(w.service.requests,[])
+
+    def test_main_and_subnavigation_tabs_remain_centered_at_compact_widths(self):
+        from test_reference import generation,allow_fixture
+        w=self.window;w.reference.store.replace(*generation());allow_fixture(w.reference.store);w.show()
+        for width in (460,509):
+            w.resize(width,829);self.app.processEvents()
+            bar=w.tabs.tabBar();self.assertLessEqual(abs(bar.geometry().center().x()-w.tabs.rect().center().x()),2)
+            w.tabs.setCurrentIndex(w.database_tab_index);QTest.qWait(300);self.app.processEvents()
+            p=w.database_panel;self.assertLessEqual(abs(p.kind_bar.geometry().center().x()-p.rect().center().x()),2)
+            p.open(('monsters',13));self.app.processEvents()
+            self.assertLessEqual(abs(p.detail.tabs.tabBar().geometry().center().x()-p.detail.tabs.rect().center().x()),2)
+            w.tabs.setCurrentIndex(w.translation_tab_index);QTest.qWait(300);self.app.processEvents()
+            tabs=w.translation_panel.modes;self.assertLessEqual(abs(tabs.tabBar().geometry().center().x()-tabs.rect().center().x()),2)
+
+    def test_database_update_check_lives_in_settings_and_does_not_force_a_redownload(self):
+        w=self.window
+        self.assertTrue(w.settings_dialog.isAncestorOf(w.database_update_button))
+        self.assertFalse(w.database_panel.isAncestorOf(w.database_update_button))
+        with patch.object(w.reference,'start') as start:
+            w.database_update_button.click();start.assert_called_once_with()
+
+    def test_source_navigation_from_prices_returns_to_the_same_selected_card(self):
+        w=self.window;w.show();w.search_panel.query.setText('Example');w.search_panel.choose_first()
+        selected=w.search_panel.selected;card=w.search_panel.price_view;card.tabs.setCurrentIndex(1)
+        w.open_reference_entry(('quests',10002));self.assertEqual(w.tabs.currentIndex(),w.database_tab_index)
+        w.database_panel.go_back();self.app.processEvents()
+        self.assertEqual(w.tabs.currentIndex(),w.search_tab_index);self.assertIs(w.search_panel.selected,selected)
+        self.assertIs(w.search_panel.price_view,card);self.assertEqual(card.tabs.currentIndex(),1)
+
+    def test_selected_cards_share_stats_prices_sources_and_retain_controls_on_quote_update(self):
+        from test_reference import documents,generation,allow_fixture
+        from price_lens.reference_details import EntryDetails
+        from price_lens.price_widgets import PriceCard
+        w=self.window;w.show();docs=documents();w.reference.store.replace(*generation(docs));allow_fixture(w.reference.store)
+        raw=Catalog({'items':[dict(id=1001,name='Leaf Earrings',category='Equipment'),dict(id=999,name='Never released')]})
+        now=time.time();w.service.cached_values={1001:Quote(1001,5000,now,now,20,'MesoWatch','https://meso.watch/items/1001','24h')}
+        w.on_catalog(raw);w.search_panel.query.setText('leaf');w.search_panel.choose_first();self.app.processEvents()
+        card=w.search_panel.price_view;self.assertIsInstance(card,EntryDetails);self.assertIsInstance(card.summary_card,PriceCard)
+        self.assertIn('Requirements Level 25',' '.join(label.text() for label in card.findChildren(QLabel)))
+        self.assertEqual([card.tabs.tabText(i) for i in range(card.tabs.count())],['Overview','Sources'])
+        self.assertNotIn(999,[i.game_id for i in w.search_panel.catalog.items])
+        self.assertEqual(set(i.game_id for i in w.search_panel.catalog.items),set(w.database_panel.catalog))
+        header=card.item_name;watch=card.watch_button
+        quote=Quote(1001,6000,now,now,25,'MesoWatch','https://meso.watch/items/1001','24h')
+        w.on_quote(1001,quote);self.assertIs(w.search_panel.price_view,card);self.assertIs(card.item_name,header);self.assertIs(card.watch_button,watch)
+        self.assertIn('6,000',card.fields['market'].text());self.assertTrue(card.fields['age'].isHidden())
+        self.assertIn('Latest observed sale',card.fields['recent'].text())
+        w.database_panel.open(('items',1001));self.assertEqual(card.row,w.database_panel.detail.row)
         self.assertEqual(w.reader.starts,0);self.assertEqual(w.service.requests,[])
 
     def test_real_panel_keeps_the_slide_running_after_page_layout_updates(self):
@@ -471,7 +523,11 @@ class ContextUiTests(unittest.TestCase):
         self.tray_show.start()
         self.reference_start_patch=patch('price_lens.ui.ReferenceService.start');self.reference_start_patch.start()
         self.addCleanup(self.reference_start_patch.stop)
+        media_patch=patch('price_lens.reference_ui.ReferenceMedia.observe');media_patch.start();self.addCleanup(media_patch.stop)
         self.window = LensWindow(Path.cwd(), Path("unused-cache"))
+        from test_reference import documents,generation,allow_fixture
+        docs=documents();docs['items.json'].append({'id':1,'name':'Example Hat','category':'Equipment'})
+        self.window.reference.store.replace(*generation(docs));allow_fixture(self.window.reference.store)
         self.window.monitor.setCurrentIndex(0)
         self.window.on_catalog(Catalog({"items": [{"id": 1, "name": "Example Hat"}], "scrolls": []}))
         self.window.mode = "live"

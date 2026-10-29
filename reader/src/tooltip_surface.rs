@@ -26,7 +26,28 @@ fn cyan(p: [u8; 3]) -> bool {
 fn coloured(p: [u8; 3]) -> bool {
     let high = *p.iter().max().unwrap();
     let low = *p.iter().min().unwrap();
-    high >= 175 && high - low > 45
+    high >= 145 && high - low > 45
+}
+
+/// Title pixels can be orange, yellow or purple after scrolling. Shared by the
+/// marker-based and centered-header readers, only inside verified native panels.
+pub(crate) fn title_light(p: [u8; 3]) -> Option<u8> {
+    let [r,g,b]=p;
+    let neutral=r.abs_diff(g)<=55 && b.saturating_sub(r)<100;
+    if neutral {Some((u16::from(r)*30/100+u16::from(g)*59/100+u16::from(b)*11/100) as u8)}
+    else if coloured(p) {Some(*p.iter().max().unwrap())}
+    else {None}
+}
+
+#[cfg(test)]
+mod title_tests {
+    #[test]
+    fn orange_and_coloured_title_ink_retains_antialiased_strokes() {
+        for p in [[255,153,0],[170,105,45],[255,230,80],[190,100,240]] {
+            assert!(super::title_light(p).is_some_and(|v|v>=145));
+        }
+        assert!(super::title_light([70,40,110]).is_none_or(|v|v<130));
+    }
 }
 
 fn title_ink(frame: &Frame, dot: Dot, x: u32, y: u32) -> bool {

@@ -38,6 +38,14 @@ class TooltipNameTests(unittest.TestCase):
         for name in ('Screw (+3)','Cape (+3)','Leaf Earrings (+3)','Leaf Earrings (M)','Leaf Earrings 10%'):
             self.assertEqual(self.names.resolve({**self.found,'name':name},self.image,catalog)['name'],name)
 
+    def test_independent_second_read_can_identify_a_scrolled_title_and_coloured_pixels_invalidate_the_cache(self):
+        found={**self.found,'name':'Leaf Earrins (+3)','alternatives':['Leaf Earrings (+3)']}
+        result=self.names.resolve(found,self.image,self.catalog)
+        self.assertEqual(result['name'],'Leaf Earrings');self.assertEqual(result['raw_name'],'Leaf Earrings (+3)')
+        original={**found,'alternatives':[]};self.assertEqual(self.names.resolve(original,self.image,self.catalog)['name'],'Leaf Earrings')
+        self.image.setPixelColor(48,20,QColor('#ff9900'))
+        self.assertEqual(self.names.resolve(original,self.image,self.catalog)['name'],original['name'])
+
     def test_second_pass_cannot_change_explicit_stat_tier_color_or_gender(self):
         item=Item(1,'Test',equipment=True,gender='male')
         for before,after in [('Overall DEX Sorol: Greater','Overall LUK Scroll: Greater'),

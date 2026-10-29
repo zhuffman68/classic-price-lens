@@ -1,327 +1,331 @@
-"""The local Database tab. Navigation never creates market-price demand."""
+"""Released Classic World browsing, with stable entry ownership and local search."""
 from datetime import datetime
-from pathlib import Path
-import time
-from PySide6.QtCore import QEasingCurve,QPoint,QRect,QSize,Qt,QTimer,QVariantAnimation,Signal
-from PySide6.QtGui import QColor,QIcon,QImage,QKeySequence,QPainter,QPixmap,QShortcut
-from PySide6.QtWidgets import (QButtonGroup,QComboBox,QFrame,QHBoxLayout,QLabel,QLineEdit,QListWidget,QListWidgetItem,
-    QPushButton,QScrollArea,QStackedWidget,QVBoxLayout,QWidget)
-from .motion import ContentArea,MotionLabel,enabled
-from .reference_data import image_url
-from .reference_media import ReferenceMedia,ReferenceSprite
-from .reference_details import text,describe_item,describe_monster,describe_skill
+from PySide6.QtCore import Qt,QTimer,Signal
+from PySide6.QtGui import QKeySequence,QShortcut
+from PySide6.QtWidgets import QComboBox,QHBoxLayout,QPushButton,QSizePolicy,QStackedWidget,QTabBar,QVBoxLayout,QWidget
+from .motion import MotionLabel
+from .reference_media import ReferenceMedia
+from .reference_widgets import ReferenceList,BrowserContent,thumbnail
+from .reference_details import EntryDetails
 from .domain import key as name_key
-from .watchlist_ui import WatchButton
+from .search_field import SearchField
+
+FAMILIES={0:'Beginner',1:'Warrior',2:'Magician',3:'Bowman',4:'Thief'}
+JOBS={0:'Beginner',100:'Warrior',110:'Fighter',120:'Page',130:'Spearman',200:'Magician',210:'Fire / Poison',220:'Ice / Lightning',230:'Cleric',
+      300:'Bowman',310:'Hunter',320:'Crossbowman',400:'Thief',410:'Assassin',420:'Bandit'}
+CATEGORIES={'Equipment':'Equipment','Consumable':'Use','Etc':'Etc','Setup':'Setup','Cash':'Cash'}
+ORDER={'Equipment':0,'Consumable':1,'Setup':2,'Etc':3,'Cash':4,'Weapon':0,'Hat':1,'Overall':2,'Top':3,'Bottom':4,'Glove':5,'Shoes':6,'Cape':7,'Shield':8,'Earring':9}
+PLURALS={'Weapon':'Weapons','Hat':'Hats','Top':'Tops','Bottom':'Bottoms','Overall':'Overalls','Glove':'Gloves','Cape':'Capes','Shield':'Shields','Earring':'Earrings','Scroll':'Scrolls','Consume':'Potions & use items'}
+KINDS=('items','monsters','skills','maps','quests')
 
 
 class DatabasePanel(QWidget):
     source_requested=Signal(str)
-    price_requested=Signal(int)
+    return_requested=Signal()
 
     def __init__(self,service,media_folder,parent=None,*,media=None):
-        super().__init__(parent);self.service=service;self.store=service.store
-        self.media=media or ReferenceMedia(media_folder,self)
-        self.kind='items';self.selected=None;self.history=[];self.entries={};self.catalog={};self.market=None;self.ttl=900
-        self.active=False;self.closed=False;self.related=[];self.rank_slider=None;self.results_current=True;self.limit=80;self.match_count=0
+        super().__init__(parent);self.service=service;self.store=service.store;self.media=media or ReferenceMedia(media_folder,self)
+        self.kind='items';self.scope=();self.selected=None;self.history=[];self.catalog={};self.market=None;self.ttl=900;self.external_demand=None
+        self.active=False;self.closed=False;self._entry=None;self.entries={};self.results_current=True;self.limit=80;self.match_count=0;self.sort_mode=None
+        self.external_return=None
         self.setStyleSheet('QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical{height:0;} QScrollBar::up-arrow:vertical,QScrollBar::down-arrow:vertical{width:0;height:0;}')
         layout=QVBoxLayout(self);layout.setContentsMargins(0,0,0,0);layout.setSpacing(8)
-        kinds=QHBoxLayout();kinds.setSpacing(6);self.kind_group=QButtonGroup(self);self.kind_buttons={}
-        for kind,title in (('items','Items'),('monsters','Monsters'),('skills','Skills')):
-            button=QPushButton(title);button.setCheckable(True);button.setChecked(kind==self.kind)
-            button.setStyleSheet('QPushButton:checked{background:#3f3528;border-color:#b59664;color:#f0ce94;}')
-            self.kind_group.addButton(button);self.kind_buttons[kind]=button;kinds.addWidget(button,1)
-            button.clicked.connect(lambda checked=False,kind=kind:self.choose_kind(kind))
-        layout.addLayout(kinds)
+        self.kind_bar=QTabBar();self.kind_bar.setExpanding(False);self.kind_bar.setDrawBase(False)
+        for kind in KINDS:self.kind_bar.addTab(kind.capitalize())
+        self.kind_bar.setAccessibleName('Database category');layout.addWidget(self.kind_bar,0,Qt.AlignmentFlag.AlignHCenter)
+        self.kind_bar.currentChanged.connect(lambda index:self.choose_kind(KINDS[index]))
         tools=QHBoxLayout();tools.setSpacing(6)
-        self.query=QLineEdit();self.query.setPlaceholderText('Search items…');self.query.setClearButtonEnabled(True);self.query.setAccessibleName('Search database')
-        self.query.setMinimumHeight(34);self.query.setStyleSheet('QLineEdit{background:#1b2330;border:1px solid #3b485c;border-radius:6px;padding:6px 9px;} QLineEdit:focus{border-color:#c3a16a;}')
-        tools.addWidget(self.query,1);self.refresh=QPushButton('↻');self.refresh.setFixedWidth(34);self.refresh.setToolTip('Update the local database')
-        self.refresh.setAccessibleName('Refresh database');self.refresh.clicked.connect(self.refresh_all);tools.addWidget(self.refresh);layout.addLayout(tools)
-        self.filters=QComboBox();self.filters.setAccessibleName('Filter database');layout.addWidget(self.filters)
-        self.summary=MotionLabel();self.summary.setStyleSheet('color:#a8b6c8;font-size:11px');layout.addWidget(self.summary)
-        self.content=ContentArea();content=QVBoxLayout(self.content);content.setContentsMargins(0,0,0,0)
+        self.query=SearchField('Search items…');self.query.setAccessibleName('Search database')
+        tools.addWidget(self.query,1);layout.addLayout(tools)
+        navigation=QHBoxLayout();navigation.setSpacing(7)
+        self.back=QPushButton('‹');self.back.setFixedSize(30,28);self.back.setAccessibleName('Back');self.back.setToolTip('Back · Alt+Left');self.back.clicked.connect(self.go_back)
+        navigation.addWidget(self.back);self.breadcrumb=MotionLabel('Items');self.breadcrumb.setStyleSheet('font-size:11px;color:#b6c2d2')
+        self.breadcrumb.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Fixed);self.breadcrumb.setMinimumWidth(0);navigation.addWidget(self.breadcrumb,1)
+        self.summary=MotionLabel();self.summary.setStyleSheet('font-size:10px;color:#9dacc0');self.summary.setAlignment(Qt.AlignmentFlag.AlignRight|Qt.AlignmentFlag.AlignVCenter)
+        navigation.addWidget(self.summary);layout.addLayout(navigation)
+        self.content=BrowserContent();content=QVBoxLayout(self.content);content.setContentsMargins(0,0,0,0)
         self.pages=QStackedWidget();content.addWidget(self.pages);layout.addWidget(self.content,1)
         self.list_page=QWidget();listing=QVBoxLayout(self.list_page);listing.setContentsMargins(0,0,0,0);listing.setSpacing(6)
-        self.results=QListWidget();self.results.setIconSize(QSize(32,32));self.results.setSpacing(3)
-        self.results.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.results.setStyleSheet('QListWidget{background:transparent;border:0;} QListWidget::item{padding:7px;border:1px solid transparent;border-radius:7px;} QListWidget::item:hover{background:#253244;} QListWidget::item:selected{background:#3e3529;border-color:#a88b5c;color:#f0d4a8;}')
-        listing.addWidget(self.results,1);self.more=QPushButton('Show more');listing.addWidget(self.more);self.more.hide()
-        self.more.clicked.connect(self.show_more);self.pages.addWidget(self.list_page)
-        self.detail_page=QWidget();detail_page=QVBoxLayout(self.detail_page);detail_page.setContentsMargins(0,0,0,0);detail_page.setSpacing(8)
-        nav=QHBoxLayout();self.back=QPushButton('‹ Back');self.back.clicked.connect(self.go_back);nav.addWidget(self.back);nav.addStretch()
-        self.section_links=QHBoxLayout();self.section_links.setSpacing(10);nav.addLayout(self.section_links);detail_page.addLayout(nav)
-        self.detail_scroll=QScrollArea();self.detail_scroll.setWidgetResizable(True);self.detail_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        self.detail_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.detail=QWidget();self.detail_layout=QVBoxLayout(self.detail);self.detail_layout.setContentsMargins(0,0,5,0);self.detail_layout.setSpacing(12)
-        self.detail_scroll.setWidget(self.detail);detail_page.addWidget(self.detail_scroll,1);self.pages.addWidget(self.detail_page)
-        self.status=MotionLabel();self.status.setWordWrap(True);self.status.setStyleSheet('font-size:10px;color:#96a6bb');layout.addWidget(self.status)
-        self.status.setToolTip('Reference data: OSMS Data Explorer / @ohmi, CC BY 4.0\nDrop reports: MapleClassic Wiki, CC BY-NC-SA 4.0; NiaMeowDB community reports\nGame text and images © Nexon')
+        self.sort_row=QWidget();sorts=QHBoxLayout(self.sort_row);sorts.setContentsMargins(0,0,0,0);sorts.addStretch()
+        self.sort_choice=QComboBox();self.sort_choice.setAccessibleName('Sort database results');self.sort_choice.setMinimumWidth(165)
+        sorts.addWidget(self.sort_choice);listing.addWidget(self.sort_row);self.sort_choice.currentIndexChanged.connect(self.sort_changed)
+        self.results=ReferenceList(self.media);self.results.chosen.connect(self.choose_result);self.results.viewport_changed.connect(self.observe_media)
+        listing.addWidget(self.results,1);self.more=QPushButton('Show more');listing.addWidget(self.more);self.more.hide();self.more.clicked.connect(self.show_more);self.pages.addWidget(self.list_page)
+        self.tiles=ReferenceList(self.media,tiles=True);self.tiles.chosen.connect(self.enter_group);self.tiles.viewport_changed.connect(self.observe_media);self.pages.addWidget(self.tiles)
+        self.status=MotionLabel();self.status.setWordWrap(True);self.status.setMinimumHeight(27);self.status.setStyleSheet('font-size:10px;color:#96a6bb');layout.addWidget(self.status)
+        self.status.setToolTip('Released-content evidence: NiaMeowDB source/release indexes and dated exact-ID market sales.\nReference values and images: OSMS Data Explorer / @ohmi, CC BY 4.0.\nDrop observations: MapleClassic Wiki; extra reports: NiaMeowDB. Game artwork © Nexon.')
         self.timer=QTimer(self);self.timer.setSingleShot(True);self.timer.setInterval(100);self.timer.timeout.connect(self.search)
-        self.scrolling=QVariantAnimation(self);self.scrolling.setDuration(210);self.scrolling.setEasingCurve(QEasingCurve.Type.OutCubic)
-        self.scrolling.valueChanged.connect(lambda value:self.detail_scroll.verticalScrollBar().setValue(round(value)))
         self.query.textChanged.connect(self.schedule);self.query.returnPressed.connect(self.open_first)
-        self.filters.currentIndexChanged.connect(lambda *_:self.search())
-        self.results.itemClicked.connect(self.choose_result);self.results.itemActivated.connect(self.choose_result)
-        self.results.verticalScrollBar().valueChanged.connect(self.observe_media)
-        self.detail_scroll.verticalScrollBar().valueChanged.connect(self.observe_media)
         self.media.ready.connect(self.image_ready);self.service.updated.connect(self.reloaded);self.service.changed.connect(self.update_status)
         self.service.extra.updated.connect(self.extra_updated);self.service.extra.changed.connect(self.update_status)
+        self.service.geometry.updated.connect(self.geometry_updated)
         self.focus_shortcut=QShortcut(QKeySequence('Ctrl+F'),self);self.focus_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         self.focus_shortcut.activated.connect(lambda:(self.query.setFocus(),self.query.selectAll()))
-        self.back_shortcut=QShortcut(QKeySequence('Alt+Left'),self);self.back_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
-        self.back_shortcut.activated.connect(self.go_back)
-        self.fill_filters();self.search(False);self.update_status()
+        self.back_shortcut=QShortcut(QKeySequence('Alt+Left'),self);self.back_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut);self.back_shortcut.activated.connect(self.go_back)
+        self.search(False);self.update_status()
 
+    @property
+    def detail(self):return self._entry
+    @property
+    def detail_page(self):return self._entry
+    @property
+    def detail_scroll(self):return self._entry.tabs.currentWidget() if self._entry else None
+    @property
+    def item_name(self):return self._entry.item_name if self._entry else None
+    @property
+    def sprite(self):return self._entry.sprite if self._entry else None
+    @property
+    def rank_slider(self):return self._entry.rank_slider if self._entry else None
+    @property
+    def watch_button(self):return self._entry.watch_button if self._entry else None
+    @property
+    def market_label(self):return self._entry.market_label if self._entry else None
     def set_catalog(self,catalog):
-        self.catalog={item.game_id:item for item in catalog.items} if catalog else {}
-        if self.selected and self.selected.kind=='items' and hasattr(self,'watch_button'):
-            self.watch_button.set_item(self.catalog_item(self.selected));self.update_market()
+        self.catalog={item.game_id:item for item in catalog.items} if catalog else {};self.update_market()
 
     def catalog_item(self,entry):
         item=self.catalog.get(entry.id)
         return item if item and name_key(item.name)==name_key(entry.name) else None
 
     def set_market(self,market,ttl):self.market=market;self.ttl=ttl;self.update_market()
-
     def set_watchlist(self,watchlist):self.watchlist=watchlist
 
-    def refresh_all(self):
-        self.service.start(True)
-        if self.active:self.service.extra.select(self.selected,True)
-
     def extra_updated(self,key):
-        if not self.closed and self.active and self.selected and self.selected.key==key:
-            position=self.detail_scroll.verticalScrollBar().value();self.reloaded();self.detail_scroll.verticalScrollBar().setValue(position)
+        if not self.closed and self._entry and self.selected and self.selected.key==tuple(key):
+            self._entry.refresh_drops();self.update_status();self.observe_media()
 
-    def fill_filters(self,value=''):
-        self.filters.blockSignals(True);self.filters.clear();self.filters.addItem('All jobs' if self.kind=='skills' else 'All categories','')
-        for category in self.store.categories(self.kind):self.filters.addItem(category,category)
-        self.filters.setCurrentIndex(max(0,self.filters.findData(value)));self.filters.blockSignals(False)
+    def sync_kind(self):
+        self.kind_bar.blockSignals(True);self.kind_bar.setCurrentIndex(KINDS.index(self.kind));self.kind_bar.blockSignals(False)
+        self.query.setPlaceholderText('Search '+self.kind+'…')
 
     def choose_kind(self,kind):
-        if kind not in self.kind_buttons:return
-        self.content.begin();self.kind=kind;self.selected=None;self.history=[];self.timer.stop();self.limit=80
-        self.kind_buttons[kind].setChecked(True);self.query.blockSignals(True);self.query.clear();self.query.blockSignals(False)
-        self.query.setPlaceholderText('Search '+kind+'…');self.fill_filters();self.search(False);self.content.complete()
+        if kind not in KINDS:return
+        self.external_return=None
+        old=KINDS.index(self.kind);new=KINDS.index(kind)
+        self.content.begin();self.kind=kind;self.scope=();self.selected=None;self.history=[];self.timer.stop();self.limit=80;self.sort_mode=None
+        self.query.blockSignals(True);self.query.clear();self.query.blockSignals(False);self.sync_kind();self.search(False)
+        self.content.complete(1 if new>old else -1 if new<old else 0)
 
-    def schedule(self):
-        self.results_current=False;self.limit=80;self.timer.start()
+    def schedule(self):self.results_current=False;self.limit=80;self.timer.start()
+    def scope_filters(self):return tuple((field,value) for field,value,label in self.scope)
+
+    def sort_changed(self,*_):
+        self.sort_mode=self.sort_choice.currentData();self.limit=80;self.search()
+
+    def sorting(self):
+        if self.kind=='skills':self.sort_row.hide();return 'book'
+        options=[('name','Name · A–Z')]
+        if self.kind in ('monsters','quests'):options=[('level','Level · low to high'),('level-desc','Level · high to low'),('name','Name · A–Z')]
+        elif self.kind=='maps':options=[('name','Name · A–Z')]
+        elif self.scope:
+            category=self.scope[0][1]
+            if category=='Equipment':options += [('level','Level · low to high'),('level-desc','Level · high to low'),('class','Class')]
+            else:
+                options += [('type','Type')]
+                if category!='Cash':options += [('value','NPC sell value')]
+                if any(value=='Scroll' for field,value,label in self.scope):options += [('rate','Scroll success rate')]
+        else:options += [('type','Type')]
+        if self.sort_mode not in [value for value,label in options]:self.sort_mode=options[0][0]
+        self.sort_choice.blockSignals(True);self.sort_choice.clear()
+        for value,label in options:self.sort_choice.addItem(label,value)
+        self.sort_choice.setCurrentIndex(self.sort_choice.findData(self.sort_mode));self.sort_choice.blockSignals(False);self.sort_row.show()
+        return self.sort_mode
+
+    def group_field(self):
+        if self.query.text().strip():return None
+        if self.kind=='items':
+            if not self.scope:return 'category'
+            if len(self.scope)==1:return 'sub_category'
+            if self.scope[-1][:2]==('sub_category','Weapon'):return 'weapon.type'
+        if self.kind=='skills':
+            if not self.scope:return 'family'
+            if len(self.scope)==1 and self.scope[0][1]!=0:return 'job_id'
+        if self.kind in ('maps','quests') and not self.scope:return 'region'
+        return None
+
+    def groups(self):
+        field=self.group_field()
+        if not field:return []
+        rows=self.store.groups(self.kind,field,self.scope_filters())
+        if len(rows)==1 and field=='sub_category' and rows[0]['value'] in ('Etc','Install'):return []
+        if field=='category':rows.sort(key=lambda row:ORDER.get(row['value'],99))
+        elif field=='sub_category':rows.sort(key=lambda row:(ORDER.get(row['value'],99),str(row['value'])))
+        elif field=='family':rows.sort(key=lambda row:row['value'])
+        else:rows.sort(key=lambda row:row['value'])
+        result=[]
+        for row in rows:
+            value=row['value'];label=CATEGORIES.get(value,value) if field=='category' else PLURALS.get(value,value) if field=='sub_category' else FAMILIES.get(value,str(value)) if field=='family' else JOBS.get(value,str(value)) if field=='job_id' else value
+            result.append(dict(key=(field,value),target=(field,value,label),name=str(label),subtitle=f"{row['count']:,} {self.kind}",icon=row['entry'].icon))
+        return result
 
     def search(self,animate=True):
-        entries,count=self.store.search(self.kind,self.query.text(),self.filters.currentData() or '',self.limit)
-        structure=tuple(entry.key for entry in entries)
-        previous=tuple(self.results.item(i).data(Qt.ItemDataRole.UserRole).key for i in range(self.results.count()))
-        change=previous!=structure or self.selected is not None
+        if self.closed:return
+        groups=self.groups();order=self.sorting();entries,count=self.store.search(self.kind,self.query.text(),scope=self.scope_filters(),limit=self.limit,sort=order)
+        structure=tuple(row['key'] for row in groups) if groups else tuple(entry.key for entry in entries)
+        previous=getattr(self,'search_structure',None);change=self.selected is not None or previous!=structure or bool(groups)!=(self.pages.currentWidget()==self.tiles)
         if animate and change:self.content.begin()
-        self.selected=None;self.history=[];self.pages.setCurrentWidget(self.list_page);self.pause_sprite()
-        self.service.extra.select(None)
-        rows={self.results.item(i).data(Qt.ItemDataRole.UserRole).key:self.results.item(i) for i in range(self.results.count())}
-        self.results.blockSignals(True)
-        for identity,row in list(rows.items()):
-            if identity not in structure:self.results.takeItem(self.results.row(row));rows.pop(identity)
+        self.selected=None;self.pause_sprite()
+        if self.active:self.service.extra.select(None)
         self.entries={entry.key:entry for entry in entries}
-        for index,entry in enumerate(entries):
-            row=rows.get(entry.key)
-            if row is None:row=QListWidgetItem();self.results.insertItem(index,row)
-            elif self.results.row(row)!=index:self.results.takeItem(self.results.row(row));self.results.insertItem(index,row)
-            label=entry.category
-            if entry.kind=='skills':label=entry.job+' · '+entry.category
-            elif entry.level is not None:label+=f' · Lv. {entry.level}'
-            old=row.data(Qt.ItemDataRole.UserRole);caption=entry.name+'\n'+label
-            if row.text()!=caption:row.setText(caption)
-            if old!=entry:row.setData(Qt.ItemDataRole.UserRole,entry)
-            row.setSizeHint(QSize(0,59))
-            if old is None or old.icon!=entry.icon:row.setIcon(self.icon(entry.icon))
-            row.setToolTip(entry.name)
-        self.results.blockSignals(False);self.results_current=True;self.match_count=count
-        self.summary.setText(f'{count:,} '+('matches' if self.query.text().strip() else self.kind))
-        self.more.setVisible(count>len(entries));self.results.setVisible(bool(entries))
-        if not entries:
-            self.summary.setText('No matches' if self.store.metadata().get('counts') else 'Getting the Classic World database…' if self.service.busy else 'Database not downloaded yet')
+        if groups:
+            self.tiles.populate(groups);self.pages.setCurrentWidget(self.tiles);self.summary.setText(f'{len(groups)} groups')
+        else:
+            records=[]
+            for entry in entries:
+                subtitle=entry.job+' · '+entry.category if entry.kind=='skills' else entry.category
+                if entry.kind=='items' and entry.category=='Equipment':subtitle=entry.job
+                if entry.kind in ('maps','quests'):
+                    record=self.store.entry(*entry.key);subtitle=record[1].get('region') or entry.category
+                if entry.level is not None:subtitle+=f' · Lv. {entry.level}'
+                records.append(dict(key=entry.key,target=entry.key,name=entry.name,subtitle=subtitle,icon=entry.icon))
+            self.results.populate(records);self.pages.setCurrentWidget(self.list_page);self.more.setVisible(count>len(entries));self.summary.setText(f'{count:,} results')
+        self.results_current=True;self.match_count=count;self.search_structure=structure
+        self.update_navigation()
         if animate and change:self.content.complete()
         self.observe_media();QTimer.singleShot(0,self.observe_media)
+
+    def enter_group(self,group):
+        if not self.results_current:return
+        self.history.append(self.state());self.history=self.history[-32:];self.content.begin()
+        self.scope=(*self.scope,tuple(group));self.selected=None;self.query.blockSignals(True);self.query.clear();self.query.blockSignals(False);self.limit=80
+        self.search(False);self.content.complete(1)
 
     def show_more(self):self.limit+=80;self.search()
 
     def choose_result(self,row):
-        if self.results_current and row:self.open(row.data(Qt.ItemDataRole.UserRole).key)
+        if not self.results_current:return
+        if hasattr(row,'data'):row=row.data(Qt.ItemDataRole.UserRole)
+        if row:self.open(tuple(row))
 
     def open_first(self):
-        self.timer.stop();self.search();self.choose_result(self.results.item(0))
+        self.timer.stop();self.search()
+        if self.pages.currentWidget()==self.list_page and self.results.count():self.choose_result(self.results.item(0))
 
     def state(self):
-        return (self.selected.key if self.selected else None,self.kind,self.query.text(),self.filters.currentData(),
-                self.detail_scroll.verticalScrollBar().value() if self.selected else self.results.verticalScrollBar().value())
+        return dict(selected=self.selected.key if self.selected else None,kind=self.kind,query=self.query.text(),scope=self.scope,
+            limit=self.limit,sort=self.sort_mode,scroll=self.results.verticalScrollBar().value(),tile_scroll=self.tiles.verticalScrollBar().value(),
+            details=self._entry.state() if self.selected and self._entry else {})
 
-    def open(self,key,remember=True):
+    def open(self,key,remember=True,direction=1):
         if self.selected and self.selected.key==key:return
         record=self.store.entry(*key)
-        if record is None:return
+        if not record or not self.store.available(*key):return
         if remember:self.history.append(self.state());self.history=self.history[-32:]
-        self.timer.stop();self.scrolling.stop();self.content.begin();self.pause_sprite()
-        self.selected,row=record;entry=self.selected;self.kind=entry.kind;self.kind_buttons[self.kind].setChecked(True)
-        self.query.blockSignals(True);self.query.clear();self.query.blockSignals(False);self.query.setPlaceholderText('Search '+self.kind+'…');self.fill_filters()
-        while self.detail_layout.count():
-            item=self.detail_layout.takeAt(0)
-            if item.widget():item.widget().hide();item.widget().deleteLater()
-        self.related=[];self.rank_slider=None;self.market_label=None;self.section_targets={}
-        header=QWidget();head=QHBoxLayout(header);head.setContentsMargins(0,0,0,0);head.setSpacing(12)
-        self.sprite=ReferenceSprite(self.media,header);head.addWidget(self.sprite,0,Qt.AlignmentFlag.AlignTop)
-        names=QVBoxLayout();names.setSpacing(5);self.item_name=text(entry.name,17,'#edcf9f',True);self.item_name.setProperty('currencyIcon',False)
-        names.addWidget(self.item_name);names.addWidget(text(entry.job+' · '+entry.category if entry.kind=='skills' else entry.category,11,'#9cacc1'));names.addStretch();head.addLayout(names,1)
-        self.watch_button=WatchButton(header)
-        if hasattr(self,'watchlist'):self.watch_button.bind(self.watchlist)
-        self.watch_button.set_item(self.catalog_item(entry) if entry.kind=='items' else None);head.addWidget(self.watch_button,0,Qt.AlignmentFlag.AlignTop)
-        self.detail_layout.addWidget(header)
-        self.animation_url='';animations=row.get('animation_urls') or {}
-        if entry.kind=='monsters' and animations:
-            self.animation_choice=QComboBox();self.animation_choice.setAccessibleName('Monster animation')
-            labels={'move':'Move','stand':'Idle','attack1':'Attack','hit1':'Hit','die1':'Defeated','jump':'Jump'}
-            for action in ('move','stand',*[k for k in animations if k not in ('move','stand')]):
-                url=image_url(animations.get(action))
-                if url:self.animation_choice.addItem(labels.get(action,action.replace('1','').capitalize()),url)
-            self.animation_url=self.animation_choice.currentData() or '';self.detail_layout.addWidget(self.animation_choice)
-            self.animation_choice.currentIndexChanged.connect(self.change_animation)
-        self.sprite.set_source(entry.icon,self.animation_url)
-        {'items':describe_item,'monsters':describe_monster,'skills':describe_skill}[entry.kind](self,entry,row)
-        while self.section_links.count():
-            button=self.section_links.takeAt(0).widget();button.hide();button.deleteLater()
-        for title in ('Top',*self.section_targets):
-            link=QPushButton(title);link.setObjectName('quiet');link.clicked.connect(lambda checked=False,title=title:self.scroll_to(title));self.section_links.addWidget(link)
-        source=QPushButton('OSMS Data Explorer ↗');source.setObjectName('quiet')
-        source.clicked.connect(lambda:self.source_requested.emit('https://osmsdataexplorer.com/'));self.detail_layout.addWidget(source,0,Qt.AlignmentFlag.AlignLeft)
-        self.detail_layout.addStretch()
-        self.summary.setText('');self.pages.setCurrentWidget(self.detail_page);self.detail_scroll.verticalScrollBar().setValue(0)
-        self.sprite.active=self.active;self.sprite.sync();self.content.complete()
-        self.service.extra.select(entry if self.active else None)
-        QTimer.singleShot(0,self.observe_media)
+        self.timer.stop();self.content.begin()
+        if key[0]!=self.kind:
+            self.kind=key[0];self.scope=();self.query.blockSignals(True);self.query.clear();self.query.blockSignals(False)
+        self.sync_kind();self.selected,row=record
+        self.dispose_entry();self._entry=EntryDetails(self,self.selected,row);self._entry.media_changed.connect(self.observe_media)
+        self.pages.addWidget(self._entry);self.pages.setCurrentWidget(self._entry)
+        self._entry.set_active(self.active);self.summary.setText('');self.update_navigation();self.content.complete(direction)
+        self.service.extra.select(self.selected if self.active else None);QTimer.singleShot(0,self.observe_media)
 
-    def scroll_to(self,section):
-        self.scrolling.stop();bar=self.detail_scroll.verticalScrollBar();target=self.section_targets.get(section)
-        end=min(bar.maximum(),max(0,target.mapTo(self.detail,QPoint()).y()-4)) if target else 0
-        if not enabled(self):bar.setValue(end);return
-        self.scrolling.setStartValue(bar.value());self.scrolling.setEndValue(end);self.scrolling.start()
+    def open_external(self,key):
+        self.external_return=(self.state(),list(self.history));self.history=[]
+        if self.selected and self.selected.key==key:self.selected=None
+        self.open(key,False)
+
+    def dispose_entry(self):
+        if self._entry:
+            old=self._entry;self._entry=None;old.pause();self.pages.removeWidget(old);old.hide();old.deleteLater()
 
     def go_back(self):
-        if not self.selected:return
-        state=self.history.pop() if self.history else (None,self.kind,'','',0);remaining=list(self.history)
-        key,self.kind,query,category,position=state;self.kind_buttons[self.kind].setChecked(True)
-        self.query.blockSignals(True);self.query.setText(query);self.query.blockSignals(False);self.fill_filters(category)
-        if key:
-            self.selected=None;self.open(key,False);self.detail_scroll.verticalScrollBar().setValue(position)
-        else:self.search();self.results.verticalScrollBar().setValue(position)
-        self.history=remaining
+        if not self.history and self.external_return:
+            state,history=self.external_return;self.external_return=None;self.history=[state]
+            self.go_back();self.history=history;self.update_navigation();self.return_requested.emit();return
+        if not self.history:
+            if self.selected:self.selected=None;self.search()
+            return
+        state=self.history.pop();remaining=list(self.history);self.content.begin();self.selected=None
+        self.kind=state['kind'];self.scope=tuple(state['scope']);self.limit=state.get('limit',80);self.sort_mode=state.get('sort');self.sync_kind()
+        self.query.blockSignals(True);self.query.setText(state['query']);self.query.blockSignals(False)
+        if state['selected']:
+            self.content.finish();self.open(tuple(state['selected']),False,-1)
+            if self._entry:self._entry.restore(state.get('details',{}))
+        else:
+            self.search(False);self.results.verticalScrollBar().setValue(state.get('scroll',0));self.tiles.verticalScrollBar().setValue(state.get('tile_scroll',0));self.content.complete(-1)
+        self.history=remaining;self.update_navigation()
 
-    def change_animation(self):
-        if not self.selected:return
-        self.animation_url=self.animation_choice.currentData() or '';self.sprite.set_source(self.selected.icon,self.animation_url)
-        self.observe_media()
-
-    def add_relation(self,entry,name,subtitle,icon,trailing=''):
-        widget=QPushButton() if entry else QFrame()
-        widget.setObjectName('referenceRelation');widget.setMinimumHeight(57)
-        widget.setStyleSheet('#referenceRelation{background:#202a38;border:1px solid #2e3b4e;border-radius:8px;} #referenceRelation:hover{background:#2a394d;border-color:#626c77;}')
-        row=QHBoxLayout(widget);row.setContentsMargins(9,7,9,7);row.setSpacing(8)
-        image=QLabel();image.setFixedSize(32,32);image.setPixmap(self.icon(icon).pixmap(32,32));row.addWidget(image)
-        words=QVBoxLayout();words.setContentsMargins(0,0,0,0);words.setSpacing(3);name_label=text(name,12,'#d9e2ef')
-        if entry:name_label.setProperty('currencyIcon',False)
-        words.addWidget(name_label)
-        if subtitle:words.addWidget(text(subtitle,10,'#9eafc5'))
-        row.addLayout(words,1)
-        if trailing:
-            value=text(trailing,10,'#e2bf86');value.setMaximumWidth(105);value.setAlignment(Qt.AlignmentFlag.AlignRight|Qt.AlignmentFlag.AlignVCenter);row.addWidget(value)
-        for label in widget.findChildren(QLabel):label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        if entry:widget.clicked.connect(lambda checked=False,key=entry.key:self.open(key))
-        self.detail_layout.addWidget(widget);self.related.append((widget,image,icon));return widget
-
-    def build_market(self,entry):
-        self.market_label=text('',13,'#e9c88d',True);self.detail_layout.addWidget(self.market_label)
-        self.section_targets['Price']=self.market_label
-        self.market_button=QPushButton('View market price');self.market_button.clicked.connect(lambda:self.price_requested.emit(entry.id))
-        self.detail_layout.addWidget(self.market_button,0,Qt.AlignmentFlag.AlignLeft);self.update_market()
+    def update_navigation(self):
+        title=' › '.join([self.kind.capitalize(),*[str(label) for field,value,label in self.scope]])
+        self.breadcrumb.setText(title);self.breadcrumb.setToolTip(title);self.back.setEnabled(bool(self.history or self.selected))
 
     def update_market(self):
-        if not self.selected or self.selected.kind!='items' or not getattr(self,'market_label',None):return
-        item=self.catalog_item(self.selected);quote=self.market.cached(item) if self.market and item else None
-        if quote and quote.price is not None:
-            freshness='' if quote.fresh(time.time(),self.ttl) else ' · older reference'
-            self.market_label.setText(f'Market · {quote.price:,.0f} mesos'+(' per set' if item.per_set else '')+freshness)
-        else:self.market_label.setText('No market reference in the saved snapshot')
-        self.market_button.setVisible(item is not None)
+        if self._entry:self._entry.update_market()
 
-    def icon(self,url):
-        image=QImage(str(Path(__file__).parent/'resources/meso.svg')) if url==':meso' else self.media.image(url)
-        tile=QPixmap(32,32);tile.fill(Qt.GlobalColor.transparent);painter=QPainter(tile)
-        if image.isNull():
-            painter.setPen(QColor('#5d718d'));painter.drawRoundedRect(8,7,16,18,3,3)
-        else:
-            image=image.scaled(QSize(16,16) if url==':meso' else QSize(32,32),Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.FastTransformation)
-            painter.drawImage((32-image.width())//2,(32-image.height())//2,image)
-        painter.end();icon=QIcon(tile);icon.addPixmap(tile,QIcon.Mode.Disabled);return icon
+    def icon(self,url):return thumbnail(self.media,url,32,self.devicePixelRatioF())
 
     def image_ready(self,url):
-        for index in range(self.results.count()):
-            row=self.results.item(index);entry=row.data(Qt.ItemDataRole.UserRole)
-            if entry.icon==url:row.setIcon(self.icon(url))
-        for widget,label,icon in self.related:
-            if icon==url:label.setPixmap(self.icon(icon).pixmap(32,32))
+        self.results.image_ready(url);self.tiles.image_ready(url)
+        if self._entry:self._entry.image_ready(url)
 
     def observe_media(self,*_):
         if self.closed:return
         urls=[]
-        if self.active and self.isVisible() and not self.window().isMinimized():
-            if self.selected:
-                viewport=self.detail_scroll.viewport()
-                sprite_visible=QRect(self.sprite.mapTo(viewport,QPoint()),self.sprite.size()).intersects(viewport.rect())
-                self.sprite.active=sprite_visible;self.sprite.sync()
-                urls=[self.selected.icon,self.animation_url] if sprite_visible else []
-                for widget,label,icon in self.related:
-                    if QRect(widget.mapTo(viewport,QPoint()),widget.size()).intersects(viewport.rect()):urls.append(icon)
-            else:
-                viewport=self.results.viewport().rect()
-                for index in range(self.results.count()):
-                    row=self.results.item(index)
-                    if self.results.visualItemRect(row).intersects(viewport):urls.append(row.data(Qt.ItemDataRole.UserRole).icon)
+        visible=self.active and self.isVisible() and not self.window().isMinimized()
+        if self._entry:
+            self._entry.set_active(bool(visible and self.selected))
+        if visible:
+            if self.selected and self._entry:urls=self._entry.visible_urls()
+            elif self.pages.currentWidget()==self.tiles:urls=self.tiles.nearby_urls()
+            else:urls=self.results.nearby_urls()
+        if not visible and self.external_demand and self.window().isVisible() and not self.window().isMinimized():urls=self.external_demand()
         self.media.observe(urls)
+        row=self._entry.row if visible and self.selected and self.selected.kind=='maps' and self._entry else None
+        self.service.geometry.select(row)
+        if row:self.geometry_updated(row['id'])
+
+    def geometry_updated(self,identity):
+        if not self._entry or not self.selected or self.selected.key!=('maps',identity):return
+        proof=self.service.geometry.cached(self._entry.row)
+        names={entry.id:entry.name for entry,count in self.store.map_monsters(identity)}
+        self._entry.map_preview.set_geometry(proof,names)
 
     def pause_sprite(self):
-        if hasattr(self,'sprite'):self.sprite.active=False;self.sprite.sync()
+        if self._entry:self._entry.pause()
 
     def set_active(self,active):
-        self.active=active
-        self.service.extra.select(self.selected if active else None)
-        if hasattr(self,'sprite'):self.sprite.active=bool(active and self.selected);self.sprite.sync()
-        QTimer.singleShot(0,self.observe_media)
-        self.update_status()
+        self.active=active;self.service.extra.select(self.selected if active else None)
+        if not active:self.pause_sprite()
+        QTimer.singleShot(0,self.observe_media);self.update_status()
 
     def sync_motion(self):
-        if hasattr(self,'sprite'):self.sprite.sync()
+        if self._entry:self._entry.sync_motion()
 
     def reloaded(self):
-        key=self.selected.key if self.selected else None;history=list(self.history);category=self.filters.currentData()
-        self.fill_filters(category or '')
-        if key and self.store.entry(*key):
-            self.selected=None;self.open(key,False);self.history=history
+        if self.closed:return
+        if self.selected and self._entry:
+            record=self.store.entry(*self.selected.key)
+            if not record or not self.store.available(*self.selected.key):self.selected=None;self.search()
+            elif record[1]!=self._entry.row:
+                state=self._entry.state();key=self.selected.key;self.selected=None;self.open(key,False,0);self._entry.restore(state)
+            else:self._entry.refresh_drops();self._entry.update_market()
         else:self.search()
         self.update_status()
+        if not self.active:QTimer.singleShot(0,self.warm_landing)
+
+    def warm_landing(self):
+        if self.closed or self.active or not self.window().isVisible() or self.window().isMinimized():return
+        if self.external_demand and self.external_demand():return
+        urls=[row['entry'].icon for row in self.store.groups('items','category')]
+        urls += [row['entry'].icon for row in self.store.groups('skills','family')]
+        self.media.observe(urls[:12])
 
     def update_status(self):
+        if self.closed:return
         state=self.store.metadata();stamp=state.get('generation','')
         try:stamp=datetime.fromisoformat(stamp.replace('Z','+00:00')).strftime('%b %d')
         except (ValueError,TypeError):stamp=''
-        parts=['Updating database…' if self.service.busy else 'Reference data · '+stamp if stamp else 'Reference data not downloaded']
-        if self.service.error:parts.append('Offline · saved data retained' if state.get('counts') else self.service.error)
-        if self.service.drop_error:parts.append(self.service.drop_error)
-        elif state.get('drops_checked_at'):parts.append(f"{self.store.report_count()} drop reports")
-        if self.active and self.selected and self.service.extra.pending:parts.append('Checking extra drops…')
-        elif self.active and self.selected:
-            check=self.store.community_check(self.selected.kind,self.selected.id)
-            if check and check[1].get('error'):parts.append('Extra drop reports offline')
-        self.status.setText(' · '.join(parts));self.refresh.setEnabled(not self.service.busy)
+        counts=self.store.released_counts();parts=['Updating released content…' if self.service.busy else f"Released content · {counts['items']:,} items · {counts['monsters']} monsters"]
+        if stamp:parts.append('Data '+stamp)
+        if self.service.error:parts.append('Saved reference data')
+        if self.service.availability_error:parts.append('Release list offline')
+        if self.service.drop_error:parts.append('Drop reports offline')
+        if self.active and self.selected and self.service.extra.pending:parts.append('Checking sources…')
+        self.status.setText(' · '.join(parts))
 
-    def hideEvent(self,event):self.scrolling.stop();self.pause_sprite();self.media.observe([]);super().hideEvent(event)
-
+    def hideEvent(self,event):self.pause_sprite();self.observe_media();super().hideEvent(event)
     def showEvent(self,event):super().showEvent(event);self.set_active(self.active)
 
     def close(self):
-        self.closed=True;self.timer.stop();self.scrolling.stop();self.pause_sprite();self.media.close();super().close()
+        self.closed=True;self.timer.stop();self.content.finish();self.pause_sprite();self.media.close();super().close()

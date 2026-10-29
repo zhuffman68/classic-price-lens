@@ -8,9 +8,10 @@ Original MapleStory, Mapleland and private-server balance tables are not fallbac
 [OSMS Data Explorer's public API](https://osmsdataexplorer.com/data/api/v1/README.md)
 provides a [manifest](https://osmsdataexplorer.com/data/api/v1/meta.json) with the
 world, client build, update date, SHA-256 hashes and record counts. Lupin verifies
-all five files before replacing the local generation. The October 26 generation
+all seven used files before replacing the local generation. These include NPCs
+and quests alongside items, cash items, monsters, skills and maps. The October 26 generation
 contains 5,164 named regular/cash items, 117 monsters and 99 skills, including six
-crafting disciplines. Empty client placeholders are omitted from search.
+crafting disciplines, 343 quest records and 301 NPCs. Empty client placeholders are omitted from search.
 
 Records retain their original fields and rank descriptions in SQLite. Map links
 use exact map IDs; location counts are **spawn points**, not a live monster count
@@ -21,6 +22,77 @@ No server drop rate or content availability is inferred from a record's presence
 The dataset is attributed to OSMS Data Explorer / @ohmi, CC BY 4.0; game text and
 artwork belong to Nexon. Images come from the published URLs and are cached on
 demand, outside the installer. Native animation timing is retained.
+
+## Released-content browsing
+
+Client records and client `on_sale` flags alone do not establish that an item
+has ever been obtainable in the live game. The raw records remain cached for
+identity validation; both manual item searches, Database groups and related entries require
+positive release/circulation evidence.
+
+- The public [Nia item browser](https://meowdb.com/msclassic/item-db) supplies its
+  sourced `avail=launch` filter for equipment, use, etc, setup and cash utilities.
+  Cosmetics use its curated `unsold=hide` filter. Requests also exclude Ossyria
+  and closed-test-only content; explicit `cashShopLastSeenIn` flags and future
+  `availableDate` values are independently rejected. An internal provider ID
+  alone never establishes identity: canonical icon ID and English name must match.
+- Monsters use the public index's canonical ID/name/level/HP. Encounter-specific
+  duplicate aliases do not inherit the ordinary monster's status. GM/test
+  placeholders and the ten Forgotten Hollow monsters plus Rotten Mushmom are
+  excluded. The [roadmap](https://meowdb.com/msclassic/news/classic-world-roadmap-maplestory-fest-2026)
+  and [area guide](https://meowdb.com/msclassic/guides/forgotten-hollow-the-new-endgame-area)
+  place the area after this build, on November 18. A scheduled date does not
+  automatically unlock those records; a verified release update is required.
+- The existing validated [MesoWatch](https://meso.watch/) snapshot can additionally
+  prove circulation, including formerly available cosmetics. It must match the
+  exact game ID/name/world, have a positive observed-sale sample, and contain a
+  dated sale since Founder's Access opened on October 6. Catalog rows, undated
+  prices and closed-test sales alone do not qualify. No extra market HTTP calls
+  are made. The cutoff is documented in the current
+  [release timeline](https://meowdb.com/msclassic/guides/maplestory-classic-worlds-release-date).
+- Positive evidence is retained when a sale/event ends, so this is not merely
+  an "on sale now" filter. Evidence is bound to ID/name; renamed/reused records
+  must be confirmed again. Failed source updates retain saved proofs and never
+  make the full raw catalog visible.
+
+The checked source-only generation contains 1,742 eligible items (293 cash items)
+and 70 ordinary monsters, with 332 maps and 332 quests. Dated market sales can extend the item collection. This is a conservative
+sourced subset, not a complete official release ledger: some legitimate content
+can remain hidden until supported. Source filters and name/status changes need
+periodic review. No third-party application code is copied or executed; downloaded
+index records stay in the per-user cache.
+
+Cash entries retain their release/market Sources, with no generic monster-drop section, empty drop message or drop-report
+button. Opening one does not request a drop feed. Client NX retail prices and
+rental flags are omitted from cards where they cannot establish the actual released
+product's terms. Regular item Sources and monster Drops retain the evidence below.
+Crafting disciplines are excluded from skill browsing and search.
+
+## Quests, maps and images
+
+The public [map index](https://meowdb.com/msclassic/maps/all) and
+[quest index](https://meowdb.com/msclassic/quest-tracker/all) confirm exact game
+IDs/names. Known chain/step/class decorations are normalized, never guessed by
+similarity. Developer maps, unconfirmed records and Forgotten Hollow quests stay
+hidden. The cached API quest fields supply requirements, rewards, quest givers
+and portraits. Reverse reward links make named quests appear in item Sources.
+Random reward weights are divided within their own class/choice group; duplicate
+flat export rows are omitted. These client references are not measured server
+drop probabilities.
+
+Maps use the published minimap and symbol URLs. Monster counts mean exported
+spawn points, not a live population or a respawn timer. Full-render positions
+cannot simply be scaled onto every minimap: their crops can differ. The optional
+marker path requires two consistent canonical portal anchors, a matching
+content-addressed native WebP, and matching minimap palette/terrain projection.
+Uncertain maps keep the minimap and monster list without guessed dots. Both
+checked real examples (East Entrance to Mushroom Town and Henesys Hunting Ground I)
+failed the final projection check, so their markers stay hidden.
+
+Alignment is loaded only for the selected map and cached separately. Images are
+not retained by this worker; a plugin that needs native decoding is capped at
+eight million pixels (32 MiB of RGBA pixels) for this one-time background check.
+Failures are cached and matching last-good geometry is retained on network errors.
 
 ## Resolving skill discrepancies
 
@@ -87,14 +159,21 @@ server drop table.
   files only, then replace the complete validated generation atomically.
 - Refresh the Wiki observation table daily. Preserve the last-good generation on
   malformed, empty-after-nonempty, failed or cancelled updates.
-- Supplementary reports are fetched only for an explicitly selected item/monster,
+- Release indexes refresh daily. Positive historical evidence remains after a sale ends.
+- Supplementary reports are fetched only for an explicitly selected ordinary item/monster,
   then cached for 24 hours (30 minutes for a failed lookup). Idle or repeated
-  selection does not poll. Manual Refresh can retry sooner.
-- Cache images for 30 days, misses for six hours; use at most two downloads,
-  64 memory thumbnails and 64 MiB/1,024 files on disk. Only one visible selected
-  monster animation plays. Hidden/minimized/clipped or reduced-motion views pause it.
+  selection does not poll. The update check is in Settings; it compares the manifest without forcing unchanged files or still-fresh source indexes to download again.
+- Cache images for 30 days, misses for six hours; use at most four downloads,
+  eight MiB/128 native decoded images and 64 MiB/1,024 files on disk. Visible rows precede nearby thumbnail prefetch; up to twelve landing icons can warm in the background. Obsolete requests are cancelled without being cached as misses. Only one selected monster animation plays; hidden/minimized or reduced-motion views pause it.
 - Market cards read the existing full-market snapshot. Browsing Database never
   starts item-price requests. Its refresh policy remains separate from references.
+
+Prices and Database use the same selected-item card, with compact market/sale
+information beside a sliding stats/Sources panel. Ordinary on-screen listings stay compact.
+Equipment can sort by name, required level or class; other item lists have relevant
+type/value/rate choices. Monsters sort by level or name; skills retain job order.
+Monster drops use two columns; opening a drop and going Back restores the same
+monster, subpage and list position.
 
 The source has automated validation and public/generated fixtures. Saved private
 research copies and live captures are excluded from source, installers and archives.

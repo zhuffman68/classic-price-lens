@@ -9,7 +9,7 @@ from unittest.mock import patch
 from PySide6.QtCore import QCoreApplication,QEvent,QSettings,Qt,QPoint,QObject,Signal
 from PySide6.QtGui import QImage,QColor
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication,QToolButton
 
 from price_lens.domain import Catalog,Item,Quote
 from price_lens.search import PriceSearch
@@ -74,6 +74,16 @@ class PriceSearchTests(unittest.TestCase):
         self.assertEqual(self.panel.hint.text(),'')
         self.search('Work')
         self.assertIn('2 matches',self.panel.hint.text())
+
+    def test_search_clear_control_is_large_bright_and_clickable(self):
+        self.panel.resize(460,650);self.panel.show();self.search('work');self.app.processEvents()
+        control=next(button for button in self.panel.query.findChildren(QToolButton) if button.isVisible())
+        self.assertGreaterEqual(control.width(),28);self.assertGreaterEqual(control.height(),28)
+        self.assertEqual(control.accessibleName(),'Clear search')
+        icon=control.icon().pixmap(20,20).toImage()
+        self.assertTrue(any(icon.pixelColor(x,y).alpha()>200 and icon.pixelColor(x,y).lightness()>180 for x in range(20) for y in range(20)))
+        QTest.mouseClick(control,Qt.MouseButton.LeftButton);self.panel.timer.stop();self.panel.find_items()
+        self.assertEqual(self.panel.query.text(),'');self.assertFalse(control.isVisible());self.assertIsNone(self.panel.selected)
 
     def test_inline_watches_request_only_on_selection_and_remove_without_lookup(self):
         with tempfile.TemporaryDirectory() as directory:

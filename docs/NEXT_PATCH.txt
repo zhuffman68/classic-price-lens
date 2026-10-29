@@ -1,13 +1,21 @@
 Local patch status
 
-v0.15.0 adds Database as the fourth tab: items, monsters, locations, drop reports
-and skills, with cached images, native-timed monster sprites and linked navigation.
-References refresh in the background and remain available offline. Items share
-existing watch controls and the full-market snapshot. Community reports and dated
-observations retain their source and units. Skill presentation rules and research
-are documented in docs/DATABASE_SOURCES.md.
+v0.16.0 final refinements, platform builds and isolated package checks are complete.
+The source and documentation are committed locally.
+Uploads remain on hold: do not push source, publish a GitHub release, or upload
+itch.io channels until the user authorizes publication again.
 
-Vendor OCR and both translation models are unchanged.
-Build and validation details are in VERIFICATION.md.
-Uploads remain on hold at the user's request. Do not push source, create a
-GitHub release or upload itch.io channels until publication is authorized again.
+The source includes released-content category/job/region browsing, compact shared
+item cards with sliding Overview/Sources, stable price refreshes, and bright clear
+controls. Session history retains 100 unique items with thumbnails and large
+market references. Quests include portraits, requirements and rewards; Maps include
+minimaps, connections and published spawn counts. Marker placement is conditional
+on verified image projection. Current curated data exposes 332 maps and 332 quests.
+
+The market-report button is removed. Quest reward totals keep units beside their
+numbers. The design fits 509 x 829 and the 460-pixel minimum width. Design previews
+were transferred to the Pixel 6a; the user accepted the layout after these changes.
+
+Our native reader and Python name validation handle colored and scrolled titles.
+Rebuild both packaged reader targets before staging. The pinned Minerva checkout
+and both local translation model bundles remain unchanged.

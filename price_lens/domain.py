@@ -82,7 +82,14 @@ class Catalog:
                                         cash=True, nx_price=int(nx) if number(nx) else None,
                                         nx_count=count if isinstance(count, int) and count > 0 else 1,
                                         on_sale=row.get("on_sale"),gender=row.get('gender'))
-        self.items = list(by_id.values())
+        self._index_items(list(by_id.values()))
+
+    @classmethod
+    def from_items(cls,items):
+        catalog=cls({'items':[]});catalog._index_items(items);return catalog
+
+    def _index_items(self,items):
+        self.items = list(items)
         self.names = {}
         self.read_names = {}
         self.glyph_names = {}

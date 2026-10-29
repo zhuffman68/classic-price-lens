@@ -38,9 +38,8 @@ pub fn alternatives(frame:&Frame,origin:ScreenPoint,found:&Value)->Vec<String> {
         for (threshold,scale,filter) in [(None,3,FilterType::Triangle),(Some(150),2,FilterType::Triangle)] {
             let ink=GrayImage::from_fn(w,h,|col,row| {
                 let at=(((y as u32+row)*frame.width+x as u32+col)*4) as usize;
-                let p=&frame.rgba[at..at+3];let (r,g,b)=(i32::from(p[0]),i32::from(p[1]),i32::from(p[2]));
-                let neutral=(r-g).abs()<55 && b-r<100;
-                let luma=(r*30+g*59+b*11)/100;
+                let p=&frame.rgba[at..at+3];let light=crate::tooltip_surface::title_light([p[0],p[1],p[2]]);
+                let neutral=light.is_some();let luma=i32::from(light.unwrap_or(0));
                 let value=match threshold {
                     Some(t)=> if neutral && luma>=t {0} else {255},
                     None=> if neutral {255-((luma-100)*255/120).clamp(0,255)} else {255}

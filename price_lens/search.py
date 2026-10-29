@@ -3,7 +3,7 @@ import time
 
 from PySide6.QtCore import Qt, QTimer, Signal,QSize
 from PySide6.QtGui import QIcon,QPixmap,QPainter
-from PySide6.QtWidgets import (QFrame,QHBoxLayout,QLabel,QLineEdit,QListWidget,
+from PySide6.QtWidgets import (QFrame,QHBoxLayout,QLabel,QListWidget,
     QListWidgetItem,QPushButton,QScrollArea,QVBoxLayout,QWidget)
 
 from .domain import key, item_words, unclipped_name
@@ -11,6 +11,8 @@ from .ui_components import price_card, text_label
 from .motion import reveal, visibility, fade_away
 from .tls import catalog_error_text
 from .watchlist_ui import WatchedItems,WatchButton
+from .search_field import SearchField
+from .reference_details import EntryDetails
 
 
 class PriceSearch(QWidget):
@@ -20,12 +22,15 @@ class PriceSearch(QWidget):
     identity_selected = Signal(object, object)
     source_requested = Signal(str)
     catalog_retry = Signal()
+    reference_requested=Signal(object)
+    reference_changed=Signal()
 
     def __init__(self, parent=None, *, inline_detail=True):
         super().__init__(parent)
         self.inline_detail=inline_detail
         self.detail_identity=(None,None)
         self.catalog = None
+        self.reference=None;self.store=None;self.media=None;self.market=None
         self.watchlist = None
         self.thumbnails=None
         self.screen_items=()
@@ -48,11 +53,8 @@ class PriceSearch(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0,12,0,0)
         layout.setSpacing(12)
-        self.query = QLineEdit()
-        self.query.setPlaceholderText("Search an item or scroll…")
+        self.query = SearchField("Search an item or scroll…")
         self.query.setAccessibleName("Search Classic World items")
-        self.query.setClearButtonEnabled(True)
-        self.query.setStyleSheet("QLineEdit { padding: 11px 12px; background: #222c3b; border: 1px solid #3b4b61; border-radius: 7px; } QLineEdit:focus { border-color: #d9ad66; }")
         layout.addWidget(self.query)
         self.market_status=text_label('', 'color:#9eacbf;font-size:11px',True)
         self.market_status.hide();layout.addWidget(self.market_status)
@@ -166,12 +168,46 @@ class PriceSearch(QWidget):
         card=getattr(self,'price_view',None)
         if self.selected and self.selected.game_id==item_id and card:card.thumbnail.set_image(image)
 
-    def set_catalog(self, catalog):
-        self.clear_selection()
+    def set_catalog(self, catalog,*,preserve=False):
+        selected=self.selected if preserve else None;quote=self.quote
+        if not preserve:self.clear_selection()
         self.catalog = catalog
         self.catalog_error = ""
         self.retry_button.hide()
         self.find_items()
+        if selected:
+            current=next((item for item in catalog.items if item.game_id==selected.game_id and key(item.name)==key(selected.name)),None)
+            if current:
+                self.selected=current;self.quote=quote;visibility(self.results,False);self.card_key=None;self.render()
+            else:self.clear_selection()
+
+    def set_reference(self,service,media,market):
+        self.reference=service;self.store=service.store;self.media=media;self.market=market
+        media.ready.connect(self.on_reference_image);service.extra.updated.connect(self.on_reference_reports)
+
+    def catalog_item(self,entry):
+        return next((item for item in self.catalog.items if item.game_id==entry.id and key(item.name)==key(entry.name)),None) if self.catalog else None
+
+    def open(self,key):self.reference_requested.emit(tuple(key))
+
+    def reference_demand(self):
+        card=getattr(self,'price_view',None)
+        return card.visible_urls() if isinstance(card,EntryDetails) and self.selected and self.isVisible() and not self.window().isMinimized() else []
+
+    def reference_entry(self):
+        card=getattr(self,'price_view',None)
+        return card.entry if isinstance(card,EntryDetails) and self.selected and self.isVisible() else None
+
+    def on_reference_image(self,url):
+        card=getattr(self,'price_view',None)
+        if isinstance(card,EntryDetails):card.image_ready(url)
+
+    def on_reference_reports(self,key):
+        card=getattr(self,'price_view',None)
+        if isinstance(card,EntryDetails) and self.selected and card.entry.key==tuple(key):card.refresh_drops();self.reference_changed.emit()
+
+    def refresh_reference(self):
+        if self.selected:self.card_key=None;self.render()
 
     def select_watched(self,identity):
         if identity is None:
@@ -188,6 +224,13 @@ class PriceSearch(QWidget):
         self.error=self.lookup_state=''
         visibility(self.results,False);self.matches_button.hide()
         self.hint.setText('');self.hint.hide()
+        self.item_selected.emit(item);self.render();self.active_changed.emit()
+
+    def select_recent(self,item):
+        self.watched_items.set_expanded(False);self.watch_focus=False
+        self.query.blockSignals(True);self.query.setText(item.name);self.query.blockSignals(False);self.timer.stop()
+        self.selected,self.quote=item,None;self.pending_identity=None;self.pending_candidates=();self.selection_source='recent'
+        self.error=self.lookup_state='';self.hint.hide();visibility(self.results,False);self.matches_button.hide()
         self.item_selected.emit(item);self.render();self.active_changed.emit()
 
     def on_watch_expanded(self,shown):
@@ -358,7 +401,17 @@ class PriceSearch(QWidget):
                         lookup_state=self.lookup_state,
                         open_source=self.source_requested.emit,context_name="Classic World · market price")
             changed = getattr(self,"card_item",None) != self.selected.game_id
-            if card:card.update_data(**data)
+            record=self.store.entry('items',self.selected.game_id) if self.store else None
+            if record:
+                if not isinstance(card,EntryDetails) or card.entry.id!=self.selected.game_id or card.row!=record[1]:
+                    old=card;previous=old.state() if isinstance(old,EntryDetails) and old.entry.id==self.selected.game_id else None
+                    if old:self.detail_layout.removeWidget(old);old.hide();old.deleteLater()
+                    else:self.watch_button.hide();self.watch_button.deleteLater()
+                    card=self.price_view=EntryDetails(self,*record);self.watch_button=card.watch_button
+                    card.media_changed.connect(self.reference_changed.emit);self.detail_layout.insertWidget(0,card)
+                    if previous:card.restore(previous)
+                card.update_data(**data);card.refresh_drops()
+            elif card:card.update_data(**data)
             else:
                 card = self.price_view = price_card(watch_button=self.watch_button,**data)
                 self.detail_layout.insertWidget(0,card)
@@ -367,9 +420,12 @@ class PriceSearch(QWidget):
                 card.header.addWidget(self.watch_button,0,Qt.AlignmentFlag.AlignTop)
             card.show()
             if self.thumbnails:
-                card.thumbnail.show();card.thumbnail.set_image(self.thumbnails.image(self.selected.game_id))
+                image=self.thumbnails.image(self.selected.game_id)
+                card.thumbnail.show()
+                if not image.isNull() or not record:card.thumbnail.set_image(image)
             if changed and self.inline_detail:reveal(card)
             self.request_thumbnails()
+            self.reference_changed.emit()
         else:
             if card:card.hide()
             self.card_item = None
@@ -377,4 +433,5 @@ class PriceSearch(QWidget):
             if self.pending_identity:
                 self.pending_name.setText(self.pending_identity[0])
                 self.pending_message.setText("The price source couldn't identify this item. Try again later." if self.error else "Checking market price…")
+            self.reference_changed.emit()
         if changed_identity:self.active_changed.emit()

@@ -1,6 +1,6 @@
 //! Cash-item descriptions have centered, sometimes wrapped titles and no marker.
 //! Require both repeated native frame edges; OCR only the centered header lines.
-use crate::tooltip_surface::{horizontal_rim, rgb, rim};
+use crate::tooltip_surface::{horizontal_rim, rgb, rim,title_light};
 use image::{GrayImage, Luma};
 use minerva_core::{Frame, ItemCapture, ItemTooltip, ScreenRect};
 use std::collections::VecDeque;
@@ -43,11 +43,7 @@ fn edges(frame: &Frame) -> Vec<Edge> {
 }
 
 fn ink(frame: &Frame, x: u32, y: u32) -> u8 {
-    let [r, g, b] = rgb(frame, x, y).map(i32::from);
-    if (r - g).abs() > 55 || b - r > 100 {
-        return 255;
-    }
-    let light = (r * 30 + g * 59 + b * 11) / 100;
+    let Some(light)=title_light(rgb(frame,x,y)).map(i32::from) else {return 255};
     (255 - ((light - 130) * 255 / 90).clamp(0, 255)) as u8
 }
 

@@ -1,6 +1,6 @@
 # Lupin architecture
 
-Lupin v0.15.0 provides market references, EXP/meso tracking, local Korean translation and a searchable Classic World database for MapleStory Classic World.
+Lupin v0.16.0 provides market references, EXP/meso tracking, local Korean translation and a searchable Classic World database for MapleStory Classic World.
 
 ## Observation boundary
 
@@ -94,14 +94,53 @@ The Windows Korean writer registers the existing PySide6 DLL directory before lo
 
 ## Local reference database
 
-Database is the fourth tab, with Items / Monsters / Skills, job/category filters, local prefix search, images and linked details. Item cards share exact-ID market references and watch controls. Monster cards link maps and drops; skill cards have rank selectors and prerequisite links. An inner detail scrollbar and section links keep the main window compact. Navigation uses the existing interruptible content transition and Reduce motion preference.
+Database is the fourth tab, with Items / Monsters / Skills / Maps / Quests and local prefix search. Items start with category tiles, then subcategories and weapon types. Skills start with illustrated job families and job lists. Search stays available at each depth; Back restores category, query, scroll position and the selected entry's subpage/rank. Main and subnavigation tabs are centered and use the shared selected/hover colors. `reference_widgets.py` provides fixed-geometry list/tile rows, nearby-image demand and interruptible forward/back slides. Search uses the same content fade as Prices.
 
-`reference_data.py` stores verified source blobs, entities and an FTS5 index in a separate per-user SQLite WAL database. `reference_service.py` checks the OSMS Classic World version/hash manifest asynchronously on launch and daily. It downloads only changed items/cash/monsters/skills/maps files and commits a complete validated generation atomically. Wrong-world, hash, count, shape, duplicate and identity failures keep last-good data. Empty client placeholders are omitted from search. No new database runtime or server is required.
+`reference_data.py` stores verified source blobs, entities and FTS5 in per-user SQLite WAL storage. `reference_service.py` checks the OSMS Classic World version/hash manifest on launch and daily. Changed items/cash/monsters/skills/maps files replace one complete generation atomically. Wrong-world, hash, count, shape, duplicate and identity failures keep last-good records. Raw client presence does not make a record browsable.
 
-Wiki Cargo observations refresh daily in the same worker. Their own monster/drop/item page joins must match both canonical IDs and names. Sample percentage/counts/version/date/interval remain attached; missing rates stay unknown. `reference_community.py` supplements only an explicitly selected monster/item with NiaMeowDB reports, cached for 24 hours with a 30-minute error cache. Monster IDs require public index name/level/HP proof; items require exact canonical icon ID/name. Votes never become rates. Each of the two reference workers has one thread, cancellable requests, bounded pages/rows and GUI-thread result delivery. Repeated selection and idle browsing do not poll.
+`reference_availability.py` imports positive evidence from NiaMeowDB's sourced release indexes and its never-sold cosmetic exclusion, with exact canonical ID/name matching, future-date/closed-test rejection and explicit GM/test/unreleased exclusions. Monster identity also matches level/HP; duplicate encounter variants do not inherit the ordinary monster's status. Validated MesoWatch snapshots can confirm circulation only with exact names/IDs/world, a positive observed-sale sample and a sale since Founder's Access. Catalog membership, client on-sale flags and undated prices are not evidence. Positive records remain after a sale/event ends; ID/name changes invalidate their join. Release indexes refresh daily with bounded pagination and normal error backoff; saved proofs work offline. Known scheduled content requires a verified release update rather than automatically unlocking on a calendar date. This is a conservative sourced view, not an authoritative complete release registry.
 
-`reference_skills.py` keeps raw records intact while presenting the documented Arrow Bomb explosion stage and reconciling identified stale English rank descriptions with cross-checked numeric data. It uses exact ID/name/rank/value guards, never interpolated progressions. Source evidence and limitations are recorded in [Database sources](docs/DATABASE_SOURCES.md).
+Wiki Cargo observations refresh daily. Their own monster/drop/item joins must match canonical IDs and names; sampled percentages/counts/version/date/interval remain attached. `reference_community.py` supplements a selected ordinary item/monster, cached for 24 hours with a 30-minute error cache. Cash entries have neither generic drop controls nor generic drop requests. Votes never become rates. Related item/monster rows must also have release evidence. Two single-thread reference workers use cancellable requests and GUI-thread result delivery; idle browsing does not poll.
 
-`reference_media.py` uses QtNetwork with at most two image downloads, 64 memory thumbnails, a 64 MiB/1,024-file disk limit, 30-day freshness and six-hour negative caching. Only HTTPS OSMS dataset PNG/WebP routes are accepted. File/decoded-image/frame limits bound memory. Only visible rows request images; one selected monster movie uses native frame timing without a frame cache and pauses hidden/minimized/clipped or under Reduce motion. Downloaded data and images are outside installers and source.
+`reference_details.py` owns one complete entry widget. Navigating away disposes that widget and all nested controls, fixing the orphaned skill slider. Background drop results update retained list rows without reconstructing the header, rank control, sprite or subpage. Identical core data does not rebuild the view. Actual changed core records preserve rank/subpage/scroll state. Initial stats start populated; subsequent numeric changes roll. Monster Overview / Locations / Drops have separate scroll areas; ordinary item Sources are separate from Overview. Cash cards omit irrelevant drop/NPC-price scaffolding and repeated name-only descriptions.
 
-`reference_ui.py` retains search rows during refinements and uses `reference_details.py` for linked cards. Market prices read the existing shared snapshot locally and refresh through its normal signals; database navigation never creates individual price requests. Core/drop refresh timing stays separate from market timing. Saved data works offline, with source date and status visible. Monster location counts mean spawn points, not respawn timing. Community observations are not authoritative server probabilities.
+`reference_skills.py` preserves raw records while presenting the documented Arrow Bomb explosion and reconciling identified stale rank descriptions with cross-checked numeric data. Exact ID/name/rank/value guards prevent interpolated progressions. [Database sources](docs/DATABASE_SOURCES.md) records the evidence and limitations.
+
+`reference_media.py` retains original decoded pixels in an eight-MiB/128-image LRU. `reference_widgets.py` renders directly at the requested size/device scale: integer enlargement for pixel art, quality downsampling when needed. At most four image requests run; visible rows precede nearby prefetch and obsolete requests yield without creating false negative-cache entries. Up to twelve static landing-page icons can warm while the main window is visible. Disk caching remains 64 MiB/1,024 files, with 30-day freshness and six-hour misses. PNG/WebP byte/dimension/frame limits bound decoding; disk cleanup avoids rescanning on every thumbnail. One selected monster movie uses source timing without a frame cache and pauses when hidden/minimized or under Reduce motion. Downloads remain outside installers/source.
+
+`ReferenceStore.catalog` builds the same released-item identity collection for both manual searches, preserving exact matching domain objects where available. The raw OCR catalog remains separate for recognition. `EntryDetails` embeds the Prices-style `PriceCard` summary beside a fixed-height sliding stats/Sources panel on both pages; compact on-screen listings remain simple price cards. Prices owns selection demand, while Database coordinates the shared reference-image/report services for whichever page is visible. Quote updates retain the header, watch control and stat widgets; core-data changes preserve the selected subpage. Selected cards omit redundant check ages, per-item captions and generic explanations, retaining sale recency and source links.
+
+Database update checks live in Settings and use the manifest/hash comparison, without a forced full refresh. Equipment sorts by class/name/required level; other categories expose relevant type/value/rate orders, monsters level/name, and skills job order without crafting. Monster drops use fixed two-column tiles and preserve subpage/list position across item navigation. `SearchField` supplies the same field geometry and contrasting 28-pixel clear control on both pages.
+
+Market cards read the existing shared snapshot and watch controls, with updates through normal signals. Database browsing never starts individual price requests. Reference, release, drop and market refresh ages stay separate. Raw map placement counts mean spawn points, not server respawn timing; community samples are not official server probabilities.
+
+
+## Session history and expanded references
+
+`recent_items.py` keeps at most 100 exact-item sightings in memory, replacing
+repeated reads and never retaining frames. Live observations and history share
+one identity; inactive entries use native painted rows rather than per-row widget
+trees. Only visible history thumbnails enter image demand. Market references are
+local snapshot reads, with large rolling prices and muted expired values. History
+is cleared on application exit and has no persistent file.
+
+NPC and quest bulk files join the existing validated reference generation. A
+cached old manifest that lacks these files triggers only the missing downloads.
+`reference_indexes.py` validates map/quest release indexes; developer and known
+future content remain unavailable. `reference_relations.py` builds canonical
+quest requirements/reward links and reverse item sources, keeping choice/class
+pools distinct. Returning from a source restores the previous tab, entry and
+subpage. Quests use NPC portraits; Maps use published symbols and minimaps.
+
+`reference_geometry.py` has one cancellable worker for the selected map, positive
+and negative caches, content-addressed native-image checks and multiple portal
+anchors. A palette/terrain projection check rejects incompatible minimap crops.
+No full render is retained; native decoding, if required by the plugin, is capped
+at eight million pixels. Markers appear only for verified projections. An API
+spawn count is a count of exported placements, not live population or timing.
+
+Reader title contrast now shares colored-ink handling across marker and centered
+headers. Exact upgrade-suffix validation also applies to independent second reads;
+colored title pixels participate in their cache fingerprint. Frame structure and
+exact catalog identity remain required. No hooks, process access or game input
+are introduced.

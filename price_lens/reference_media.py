@@ -1,4 +1,4 @@
-"""Two image downloads at most; one native-timed visible monster animation."""
+"""Bounded thumbnail prefetch and one source-timed visible monster animation."""
 from collections import OrderedDict,deque
 import hashlib
 import json
@@ -32,6 +32,11 @@ class ReferenceMedia(QObject):
     def __init__(self,folder,parent=None):
         super().__init__(parent);self.folder=Path(folder);self.folder.mkdir(parents=True,exist_ok=True)
         self.manager=QNetworkAccessManager(self);self.memory=OrderedDict();self.active={};self.queue=deque();self.closed=False
+        self.memory_bytes=0;self.disk_checked=0
+        self.disk_bytes=0;self.disk_files=set()
+        for path in (*self.folder.glob('*.png'),*self.folder.glob('*.webp')):
+            try:self.disk_bytes+=path.stat().st_size;self.disk_files.add(path.name)
+            except OSError:pass
         self.demand=set();self.misses={}
         try:
             saved=json.loads((self.folder/'misses.json').read_text())
@@ -55,25 +60,35 @@ class ReferenceMedia(QObject):
         return self.filename(url) if image_url(url) and not self.image(url).isNull() else None
 
     def remember(self,url,image):
-        self.memory[url]=image.scaled(QSize(64,64),Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.FastTransformation)
+        # Keep source pixels: rescaling every icon to 64 and then down to 32
+        # unnecessarily damaged small, non-square monster sprites.
+        old=self.memory.pop(url,None)
+        if old is not None:self.memory_bytes-=old.sizeInBytes()
+        self.memory[url]=image;self.memory_bytes+=image.sizeInBytes()
         self.memory.move_to_end(url)
-        while len(self.memory)>64:self.memory.popitem(last=False)
+        while len(self.memory)>128 or self.memory_bytes>8*1024*1024:
+            self.memory_bytes-=self.memory.popitem(last=False)[1].sizeInBytes()
 
     def observe(self,urls):
         if self.closed:return
-        urls=list(dict.fromkeys(url for url in urls if image_url(url)))[:24];self.demand=set(urls)
-        self.queue=deque(url for url in self.queue if url in self.demand)
+        urls=list(dict.fromkeys(url for url in urls if image_url(url)))[:80];self.demand=set(urls)
+        # The caller orders visible rows before nearby rows. Reorder queued work
+        # on every scroll so yesterday's viewport cannot block today's icons.
+        self.queue=deque()
         now=time.time()
         for url in urls:
-            if url in self.active or url in self.queue:continue
+            if url in self.active:continue
             path=self.path(url)
             if path is not None and 0<=now-path.stat().st_mtime<TTL:continue
             if 0<=now-self.misses.get(url,-FAIL_TTL)<FAIL_TTL:continue
             self.queue.append(url)
+        for url,reply in list(self.active.items()):
+            if url not in self.demand:
+                reply._reference_cancelled=True;reply.abort()
         self.pump()
 
     def pump(self):
-        while self.queue and len(self.active)<2 and not self.closed:
+        while self.queue and len(self.active)<4 and not self.closed:
             url=self.queue.popleft();request=QNetworkRequest(QUrl(url));request.setTransferTimeout(10000)
             request.setAttribute(QNetworkRequest.Attribute.RedirectPolicyAttribute,QNetworkRequest.RedirectPolicy.SameOriginRedirectPolicy)
             request.setHeader(QNetworkRequest.KnownHeaders.UserAgentHeader,'Lupin (Classic World reference images)')
@@ -86,6 +101,8 @@ class ReferenceMedia(QObject):
     def finish(self,url,reply):
         self.active.pop(url,None)
         if self.closed:reply.deleteLater();return
+        if getattr(reply,'_reference_cancelled',False):
+            reply.deleteLater();self.pump();return
         data=bytes(reply._reference_data)+bytes(reply.readAll())
         image=decode(data) if reply.error()==QNetworkReply.NetworkError.NoError else QImage()
         if image.isNull():
@@ -93,12 +110,18 @@ class ReferenceMedia(QObject):
         else:
             self.remember(url,image);self.misses.pop(url,None)
             try:
-                path=self.filename(url);temporary=path.with_suffix('.tmp');temporary.write_bytes(data);temporary.replace(path)
-                files=sorted([*self.folder.glob('*.png'),*self.folder.glob('*.webp')],key=lambda p:p.stat().st_mtime,reverse=True)
-                total=0
-                for index,path in enumerate(files):
-                    total+=path.stat().st_size
-                    if index>=1024 or total>64*1024*1024:path.unlink(missing_ok=True)
+                path=self.filename(url);old_size=path.stat().st_size if path.exists() else 0
+                temporary=path.with_suffix('.tmp');temporary.write_bytes(data);temporary.replace(path)
+                self.disk_bytes+=len(data)-old_size;self.disk_files.add(path.name)
+                if self.disk_bytes>64*1024*1024 or len(self.disk_files)>1024 or time.monotonic()-self.disk_checked>30:
+                    self.disk_checked=time.monotonic()
+                    files=sorted([*self.folder.glob('*.png'),*self.folder.glob('*.webp')],key=lambda p:p.stat().st_mtime,reverse=True)
+                    total=0;kept=set()
+                    for index,path in enumerate(files):
+                        total+=path.stat().st_size
+                        if index>=1024 or total>64*1024*1024:path.unlink(missing_ok=True)
+                        else:kept.add(path.name)
+                    self.disk_files=kept;self.disk_bytes=sum(path.stat().st_size for path in files if path.name in kept)
             except OSError:pass
         try:(self.folder/'misses.json').write_text(json.dumps(self.misses))
         except OSError:pass
@@ -113,7 +136,7 @@ class ReferenceMedia(QObject):
 class ReferenceSprite(QWidget):
     def __init__(self,media,parent=None):
         super().__init__(parent);self.media=media;self.movie=None;self.url='';self.icon='';self.active=False;self.image=QImage()
-        self.setFixedSize(92,92);self.setAccessibleName('Reference image')
+        self.setFixedSize(64,64);self.setAccessibleName('Reference image')
         media.ready.connect(self.received)
 
     def set_source(self,icon,animation=''):
@@ -158,8 +181,8 @@ class ReferenceSprite(QWidget):
             painter.setPen(QColor('#728198'));painter.drawText(self.rect(),Qt.AlignmentFlag.AlignCenter,'—');return
         size=image.size()
         # Integer enlargement keeps small skill/item icons crisp; large mobs fit.
-        factor=min(2,80//max(size.width(),size.height()))
+        limit=self.width()-8;factor=min(2,limit//max(size.width(),size.height()))
         if factor>=1:size*=factor
-        else:size=size.scaled(QSize(80,80),Qt.AspectRatioMode.KeepAspectRatio)
-        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform,False)
-        painter.drawImage(QRect((92-size.width())//2,(92-size.height())//2,size.width(),size.height()),image)
+        else:size=size.scaled(QSize(limit,limit),Qt.AspectRatioMode.KeepAspectRatio)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform,factor<1)
+        painter.drawImage(QRect((self.width()-size.width())//2,(self.height()-size.height())//2,size.width(),size.height()),image)

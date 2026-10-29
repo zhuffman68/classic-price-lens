@@ -32,7 +32,13 @@ class PriceCard(QFrame):
         self.watch_button=watch_button if watch_button is not None else WatchButton(self)
         if watchlist is not None:self.watch_button.bind(watchlist)
         header.addWidget(self.watch_button,0,Qt.AlignmentFlag.AlignTop);layout.addLayout(header)
-        field("status",layout)
+        self.selected_mode=bool(data.get('selected'))
+        self.columns=QHBoxLayout();self.columns.setSpacing(12);layout.addLayout(self.columns)
+        self.price_column=QWidget();self.price_column.setStyleSheet('background:transparent')
+        values=QVBoxLayout(self.price_column);values.setContentsMargins(0,0,0,0);values.setSpacing(6)
+        self.columns.addWidget(self.price_column,4)
+        if self.selected_mode:self.price_column.setMaximumWidth(174)
+        if not self.selected_mode:field("status",values)
         numbers=QHBoxLayout()
         self.store=QWidget()
         self.store.setStyleSheet("background: transparent")
@@ -44,12 +50,21 @@ class PriceCard(QFrame):
         market.addWidget(text_label("Market reference","font-size: 10px; color: #98a3b1"))
         field("market",market,"font-size: 17px; font-weight: 650")
         numbers.addLayout(market)
-        layout.addLayout(numbers)
-        for name in ("units","age","progress","explanation"):field(name,layout,"font-size: 10px; color: #98a3b1")
-        field('recent',layout,'font-size:11px;color:#b3c0d2')
+        values.addLayout(numbers)
+        field('recent',values,'font-size:11px;color:#b3c0d2')
+        field('sales',values,'font-size:10px;color:#a5b5ca')
+        if self.selected_mode:
+            field('status',values);self.fields['status'].setFixedHeight(44)
+            policy=self.fields['status'].sizePolicy();policy.setRetainSizeWhenHidden(True);self.fields['status'].setSizePolicy(policy)
+            values.addStretch()
+        for name in ("units","age","progress","explanation"):field(name,values,"font-size: 10px; color: #98a3b1")
         self.link=QPushButton('View price source ↗');self.link.setObjectName('quiet')
-        self.link.clicked.connect(self.visit_source);layout.addWidget(self.link,0,Qt.AlignmentFlag.AlignLeft)
+        self.link.clicked.connect(self.visit_source);values.addWidget(self.link,0,Qt.AlignmentFlag.AlignLeft)
         self.update_data(**data)
+
+    def set_panel(self,panel):
+        self.columns.addWidget(panel,6);self.price_column.setMinimumWidth(142)
+        panel.setMinimumWidth(0);panel.setFixedHeight(200)
 
     def put(self,name,text,style=None):
         label=self.fields[name]
@@ -64,7 +79,12 @@ class PriceCard(QFrame):
 
     def update_data(self,*,item,row,quote,now,ttl,paused=False,old_capture=False,lookup_error=False,
                     lookup_state="",open_source=None,
-                    hovered=False,example=False,context_name=None):
+                    hovered=False,example=False,context_name=None,selected=False):
+        identity=item.game_id if item else None
+        changing=selected and getattr(self,'selected_identity',None)!=identity
+        self.selected_identity=identity
+        if changing:
+            for label in self.fields.values():label.setProperty('quietUpdates',True)
         self.data={"open_source":open_source,"quote":quote}
         self.watch_button.set_item(item)
         price=row.get("price") or {}
@@ -86,7 +106,7 @@ class PriceCard(QFrame):
                      if quote.cache_valid(now,ttl) else "Older reference · refresh needed")
             tone="muted"
         elif quote.sample_count<5 or quote.uncertain:message,tone="Few price reports · reference only","muted"
-        elif hovered:message,tone=(f"{quote.period} · {quote.sample_count:,} reports" if context_name else "Market reference"),"blue"
+        elif hovered:message,tone=("" if selected else "Market reference"),"blue"
         elif verdict.delta is not None:
             direction="below" if verdict.delta<0 else "above"
             message=f"{abs(verdict.delta):.0f}% {direction} reference" if verdict.delta else "Near reference"
@@ -94,6 +114,7 @@ class PriceCard(QFrame):
             tone=verdict.tone
         else:message,tone="Store price unclear","muted"
         self.put("name",item.name if item else row.get("name") or "Item name unclear")
+        self.fields['name'].setProperty('currencyIcon',False)
         self.put("context","EXAMPLE PRICES" if example else (context_name or "Inventory / equipment item") if hovered else "")
         self.put("status",message,f"color: {COLORS[tone]}; font-size: 11px")
         self.store.setVisible(not hovered)
@@ -101,21 +122,28 @@ class PriceCard(QFrame):
         value=quote.price if compatible else None
         self.put("market",mesos(value)+(" mesos" if value is not None else ""),
                  f"font-size: 17px; font-weight: 650; color: {'#e8d2ac' if fresh and not stale else '#98a3b1'}")
-        self.put("units",(("Prices are per set" if item.per_set else "Prices are per item")+
+        self.put("units",('Per set' if item and item.per_set else '') if selected else (("Prices are per set" if item.per_set else "Prices are per item")+
                           (" · resale value in mesos" if item.cash else "")) if item else "")
         age=f'Price checked {age_text(max(0,now-quote.fetched_at))} ago' if compatible else ''
         if compatible and quote.source!='MesoWatch':
             age+=' · latest market report '+(age_text(max(0,now-quote.observed_at))+' ago' if quote.observed_at else 'unknown')
         if compatible and quote.published_at is not None:age+=f' · snapshot {age_text(now-quote.published_at)} old'
-        self.put('age',age if not example else '')
-        self.put("progress",{"queued":"Background refresh queued","refreshing":"Refreshing in the background…",
-                             "retry":"Last refresh unavailable · retry later"}.get(lookup_state,"") if fresh and not example else "")
+        self.put('age',age if not example and not selected else '')
+        # Refresh progress belongs to the shared market status. Per-card progress
+        # changed card height on every refresh and shifted surrounding content.
+        self.put('progress','')
         self.put("explanation","Item name recognised. The price source has no market reference for this item." if compatible and value is None else
                  "Item name recognised. Saved prices remain available; the full market will be checked again later." if lookup_error and not compatible else
                  "Keep the full item name visible. A shared name or unclear text can prevent a match." if not item else "")
+        if selected:self.put('explanation','')
         if compatible and quote.source=='MesoWatch' and quote.observed_at is not None:
             from datetime import datetime,timezone
             stamp=datetime.fromtimestamp(quote.observed_at,timezone.utc).strftime('%b %d, %H:%M UTC')
-            self.put('recent',f'Most recent observed sale · {age_text(max(0,now-quote.observed_at))} ago · {stamp}')
+            self.put('recent',('Latest observed sale · ' if selected else 'Most recent observed sale · ')+age_text(max(0,now-quote.observed_at))+' ago'+('' if selected else ' · '+stamp))
+            self.fields['recent'].setToolTip(stamp)
         else:self.put('recent','')
-        self.link.setVisible(bool(hovered and compatible and quote.url and open_source))
+        sales=(f'{quote.sample_count:,} sales in the last 24hr' if quote.period=='24h' else f'Reference from {quote.sample_count:,} recent sales') if compatible and quote.sample_count else ''
+        self.put('sales',sales if selected else '')
+        self.link.setVisible(bool(not selected and hovered and compatible and quote.url and open_source))
+        if changing:
+            for label in self.fields.values():label.setProperty('quietUpdates',False)

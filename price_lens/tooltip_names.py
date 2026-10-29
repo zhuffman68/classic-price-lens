@@ -13,7 +13,9 @@ def name_key(found, image):
         patch=image.copy(box).convertToFormat(QImage.Format.Format_RGBA8888)
         pixels=bytes(patch.constBits());mask=bytearray()
         for r,g,b,a in zip(pixels[0::4],pixels[1::4],pixels[2::4],pixels[3::4]):
-            mask.append(1 if r>=150 and abs(r-g)<55 and b-r<100 else 0)
+            neutral=r>=150 and abs(r-g)<55 and b-r<100
+            coloured=max(r,g,b)>=150 and max(r,g,b)-min(r,g,b)>45
+            mask.append(1 if neutral or coloured else 0)
         return (found.get('name'),found.get('tier'),box.width(),box.height(),hashlib.blake2b(mask,digest_size=12).digest())
     except (KeyError,TypeError,ValueError):return None
 
@@ -38,14 +40,18 @@ class TooltipNames:
         for text in found.get('alternatives') or []:
             if not isinstance(text,str):continue
             item=catalog.resolve(text,found.get('tier'))
+            if item is None:
+                upgraded=re.fullmatch(r'(.+?)\s*\(\+\s*\d{1,2}\)\s*',text)
+                base=catalog.resolve(upgraded[1],found.get('tier')) if upgraded else None
+                if base and base.equipment:item=base
             if item:matches[item.game_id]=(text,item)
         # No closest-name guess. Competing valid versions remain unresolved.
         if len(matches)!=1:return found
         text,item=next(iter(matches.values()))
         if not roles_agree(found.get('name') or '',text,item):return found
         if len(self.proofs)>=64:self.proofs.clear()
-        self.proofs[key]=(text,item.game_id)
-        return {**found,'name':text}
+        self.proofs[key]=(item.name,item.game_id)
+        return {**found,'name':item.name,**({'raw_name':text} if text!=item.name else {})}
 
 
 def roles_agree(original, alternative, item):

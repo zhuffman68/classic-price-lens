@@ -29,7 +29,11 @@ def documents():
         'skills.json':[{'id':1300000,'name':'Spear Mastery','class_name':'Spearman','job_tier':'2nd Job','max_level':3,
             'description':'Improves spear mastery.','levels':[{'level':n,'mpCon':n,'damage':n*10} for n in (1,2,3)],
             'level_descriptions':['Rank one','Rank two','Rank three']}],
-        'maps.json':[{'id':100,'name':'Mushroom Garden','region':'Victoria Island','street_name':'Henesys'}]}
+        'maps.json':[{'id':100,'name':'Mushroom Garden','region':'Victoria Island','street_name':'Henesys','mobs':[{'mob_id':13,'x':10,'y':20}]}],
+        'npcs.json':[{'id':103,'name':'Jane','maps':[100],'icon_url':'https://osmsdataexplorer.com/data/current/images/npcs/0000103.png'}],
+        'quests.json':[{'id':10002,'name':'Jane and the Mushroom','region':'Lith Harbor','npc_id':103,'level_min':20,
+            'description':'Help Jane.','requirements':[{'type':'mob','id':13,'count':30}],
+            'rewards':[{'type':'exp','value':1610},{'type':'money','value':658},{'type':'item','id':1001,'count':1}]}]}
 
 
 def generation(docs=None):
@@ -38,6 +42,13 @@ def generation(docs=None):
     meta={'game':'MapleStory Classic World','schema_version':1,'client_build':'a'*40,'data_updated_at':'2026-10-26T16:46:04Z',
           'files':{name:{'sha256':hashlib.sha256(raw).hexdigest(),'bytes':len(raw),'records':len(docs[name])} for name,raw in payloads.items()}}
     return meta,payloads
+
+
+def allow_fixture(store):
+    rows=[]
+    for kind in ('items','monsters','maps','quests'):
+        rows.extend(dict(kind=kind,id=entry.id,name=entry.name,detail={'label':'Fixture release evidence'}) for entry in store.search(kind,limit=1000,released=False)[0])
+    store.confirm(rows,'nia-release')
 
 
 def report(**changes):
@@ -50,6 +61,7 @@ class ReferenceStoreTests(unittest.TestCase):
     def setUp(self):
         self.folder=tempfile.TemporaryDirectory();self.addCleanup(self.folder.cleanup)
         self.store=ReferenceStore(Path(self.folder.name)/'reference.sqlite');self.meta,self.payloads=generation();self.store.replace(self.meta,self.payloads,at=100)
+        allow_fixture(self.store)
 
     def test_bulk_generation_preserves_stats_images_skills_and_named_cash(self):
         self.assertEqual(self.store.metadata()['counts'],{'items':3,'monsters':2,'skills':1})
@@ -67,6 +79,29 @@ class ReferenceStoreTests(unittest.TestCase):
         self.assertEqual([r.id for r in self.store.search('items','1001')[0]],[1001])
         self.assertEqual(self.store.search('items','" OR * ; DROP TABLE entities --')[1],0)
         self.assertEqual(self.store.search('items',category='Cash')[1],1)
+
+    def test_equipment_class_level_name_and_other_sort_orders_use_local_data(self):
+        docs=documents();docs['items.json'] += [
+            dict(id=1002,name='Axe',category='Equipment',stats={'reqLevel':40},req_classes=['Warrior']),
+            dict(id=1003,name='Bow',category='Equipment',stats={'reqLevel':10},req_classes=['Bowman']),
+            dict(id=1004,name='Wand',category='Equipment',stats={'reqLevel':30},req_classes=['Magician'])]
+        self.store.replace(*generation(docs));allow_fixture(self.store)
+        def names(order):return [e.name for e in self.store.search('items',category='Equipment',sort=order)[0]]
+        self.assertEqual(names('name'),['Axe','Bow','Leaf Earrings','Wand'])
+        self.assertEqual(names('level'),['Bow','Leaf Earrings','Wand','Axe'])
+        self.assertEqual(names('level-desc'),list(reversed(names('level'))))
+        self.assertEqual(names('class'),['Leaf Earrings','Axe','Wand','Bow'])
+        self.assertEqual(self.store.search('items','Bow')[0][0].job,'Bowman')
+        self.assertEqual([e.name for e in self.store.search('monsters',sort='level')[0]],['Green Mushroom','Blue Mushroom'])
+        self.assertEqual([e.name for e in self.store.search('monsters',sort='name')[0]],['Blue Mushroom','Green Mushroom'])
+        with self.assertRaises(ValueError):self.store.search('items',sort='SQL is not accepted')
+
+    def test_crafting_is_not_browsable_or_openable_but_remains_in_verified_payload(self):
+        docs=documents();docs['skills.json'].append(dict(id=1000,name='Mining',job_tier='Crafting',job_id=900))
+        self.store.replace(*generation(docs))
+        self.assertEqual(self.store.search('skills','Mining')[1],0)
+        self.assertFalse(self.store.available('skills',1000));self.assertIsNotNone(self.store.entry('skills',1000))
+        self.assertNotIn(9,[r['value'] for r in self.store.groups('skills','family')])
 
     def test_bad_hash_wrong_world_duplicates_and_bad_shapes_preserve_previous_generation(self):
         for reason in ('hash','world','duplicate','shape','date'):
@@ -129,6 +164,8 @@ class ReferenceRefreshTests(unittest.TestCase):
 
     def setUp(self):
         self.folder=tempfile.TemporaryDirectory();self.addCleanup(self.folder.cleanup);self.meta,self.payloads=generation();self.calls=[]
+        release_patch=patch('price_lens.reference_service.AvailabilityLoader.refresh',lambda loader,token,force=False:allow_fixture(loader.store))
+        release_patch.start();self.addCleanup(release_patch.stop)
         def fetch_json(url):
             self.calls.append(url)
             if url==API+'meta.json':return deepcopy(self.meta)
@@ -139,7 +176,7 @@ class ReferenceRefreshTests(unittest.TestCase):
 
     def test_initial_download_then_only_manifest_until_a_file_or_report_interval_changes(self):
         s=self.service;self.assertEqual(s.refresh(RequestToken(),False),{})
-        self.assertEqual(sum(url.startswith(API) and not url.endswith('meta.json') for url in self.calls),5)
+        self.assertEqual(sum(url.startswith(API) and not url.endswith('meta.json') for url in self.calls),len(FILES))
         self.calls.clear();self.assertEqual(s.refresh(RequestToken(),False),{});self.assertEqual(self.calls,[API+'meta.json'])
         docs=documents();docs['items.json'][0]['price']=101;self.meta,self.payloads=generation(docs)
         self.calls.clear();s.refresh(RequestToken(),False)

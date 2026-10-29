@@ -9,7 +9,7 @@ from PySide6.QtTest import QTest
 from price_lens.reference_community import BASE,MonsterIndex,CommunityDrops
 from price_lens.reference_data import ReferenceStore
 from price_lens.http_json import RequestToken
-from test_reference import generation,report
+from test_reference import generation,report,allow_fixture
 
 
 def index_html(extra=''):
@@ -25,6 +25,7 @@ class CommunityReportTests(unittest.TestCase):
 
     def setUp(self):
         self.folder=tempfile.TemporaryDirectory();self.store=ReferenceStore(Path(self.folder.name)/'references.sqlite');self.store.replace(*generation())
+        allow_fixture(self.store)
         self.store.save_drops([report()]);self.calls=[]
         def fetch_bytes(url):self.calls.append(url);return index_html()
         def fetch_json(url):

@@ -57,6 +57,9 @@ class CommunityDrops(QObject):
         self._finished.connect(self.finish,Qt.ConnectionType.QueuedConnection)
 
     def select(self,entry,force=False):
+        if entry and entry.kind=='items':
+            record=self.store.entry('items',entry.id)
+            if record and record[1].get('cash'):entry=None
         key=entry.key if entry and entry.kind in ('items','monsters') else None
         if key==self.current and (self.pending is not None or key is None):return
         self.cancel();self.current=key

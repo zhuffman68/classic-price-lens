@@ -14,8 +14,40 @@ from urllib.parse import urlencode,quote,urlsplit
 
 API='https://osmsdataexplorer.com/data/api/v1/'
 WIKI='https://mapleclassic.wiki/'
-FILES=('items.json','cash_shop.json','monsters.json','skills.json','maps.json')
+FILES=('items.json','cash_shop.json','monsters.json','skills.json','maps.json','npcs.json','quests.json')
+RELEASED_KINDS=('items','monsters','maps','quests')
+RELEASE_RULES={
+    'quests':"COALESCE(json_extract(e.body,'$.region'),'')!='Forgotten Hollow'",
+    'maps':"COALESCE(json_extract(e.body,'$.region'),'')!='Dev' AND NOT EXISTS(SELECT 1 FROM json_each(e.body,'$.mobs') p WHERE json_extract(p.value,'$.mob_id') BETWEEN 54 AND 63 OR json_extract(p.value,'$.mob_id')=700003)"}
 DAY=86400
+
+
+def excluded(kind,identity,name):
+    """Content explicitly outside ordinary released play, checked 2026-10-28.
+
+    Forgotten Hollow is scheduled for November 18. A scheduled date alone does
+    not unlock these records: this rule needs a verified release update.
+    """
+    if name.startswith(('GM ','Test(')):return True
+    return kind=='monsters' and (identity in range(54,64) or identity==700003)
+
+
+GROUP_FIELDS={'category':'e.category','sub_category':"json_extract(e.body,'$.sub_category')",'weapon.type':"json_extract(e.body,'$.weapon.type')",
+    'job_id':"json_extract(e.body,'$.job_id')",'family':"CAST(json_extract(e.body,'$.job_id')/100 AS INTEGER)",'region':"json_extract(e.body,'$.region')"}
+CLASS_LABEL="CASE WHEN e.kind='items' THEN COALESCE((SELECT GROUP_CONCAT(j.value, ', ') FROM json_each(e.body,'$.req_classes') j),'All classes') ELSE e.job END"
+CLASS_ORDER="COALESCE((SELECT MIN(CASE j.value WHEN 'Warrior' THEN 1 WHEN 'Magician' THEN 2 WHEN 'Bowman' THEN 3 WHEN 'Thief' THEN 4 ELSE 5 END) FROM json_each(e.body,'$.req_classes') j),0)"
+SORTS={'name':'e.name COLLATE NOCASE,e.id','level':'e.level IS NULL,e.level,e.name COLLATE NOCASE,e.id',
+    'level-desc':'e.level IS NULL,e.level DESC,e.name COLLATE NOCASE,e.id','class':CLASS_ORDER+',e.level,e.name COLLATE NOCASE,e.id',
+    'type':"e.category,COALESCE(json_extract(e.body,'$.sub_category'),''),e.name COLLATE NOCASE,e.id",
+    'value':"json_extract(e.body,'$.price') IS NULL,json_extract(e.body,'$.price') DESC,e.name COLLATE NOCASE,e.id",
+    'rate':"json_extract(e.body,'$.scroll.success_rate') IS NULL,json_extract(e.body,'$.scroll.success_rate'),e.name COLLATE NOCASE,e.id",'book':'e.id'}
+
+
+def scoped(where,params,scope):
+    for field,value in scope:
+        expression=GROUP_FIELDS.get(field)
+        if expression is None:raise ValueError('Unsupported browse category')
+        where.append(expression+'=?');params.append(value)
 
 
 def image_url(url):
@@ -72,7 +104,7 @@ def _rows(meta,name,raw):
             if key in row and not isinstance(row[key],dict):raise ValueError('Invalid reference fields')
         if 'description' in row and (not isinstance(row['description'],str) or len(row['description'])>16000):raise ValueError('Invalid reference description')
         if 'req_classes' in row and (not isinstance(row['req_classes'],list) or any(not isinstance(v,str) for v in row['req_classes'])):raise ValueError('Invalid class requirements')
-        for key in ('spawns','levels','required_skills'):
+        for key in ('spawns','levels','required_skills','requirements','rewards','reward_choices','reward_random','mobs','portals','npcs'):
             if key in row and (not isinstance(row[key],list) or len(row[key])>2000 or any(not isinstance(v,dict) for v in row[key])):raise ValueError('Invalid reference relationships')
         for spawn in row.get('spawns',[]):
             if type(spawn.get('map_id')) is not int or 'count' in spawn and (type(spawn['count']) is not int or not 0<=spawn['count']<=10000):raise ValueError('Invalid monster location')
@@ -112,6 +144,8 @@ class ReferenceStore:
                 CREATE INDEX IF NOT EXISTS drop_item ON drops(item_id);
                 CREATE TABLE IF NOT EXISTS community_reports(monster_id INTEGER,item_id INTEGER,body TEXT,PRIMARY KEY(monster_id,item_id));
                 CREATE TABLE IF NOT EXISTS community_checks(kind TEXT,id INTEGER,saved REAL,detail TEXT,PRIMARY KEY(kind,id));
+                CREATE TABLE IF NOT EXISTS availability(kind TEXT,id INTEGER,name TEXT,source TEXT,first_seen REAL,last_seen REAL,detail TEXT,PRIMARY KEY(kind,id,source));
+                CREATE INDEX IF NOT EXISTS available_entity ON availability(kind,id,name);
             ''')
 
     @contextmanager
@@ -124,6 +158,10 @@ class ReferenceStore:
     def metadata(self):
         with self.connect() as db:return {k:json.loads(v) for k,v in db.execute('SELECT key,value FROM metadata')}
 
+    def value(self,key,default=None):
+        with self.connect() as db:row=db.execute('SELECT value FROM metadata WHERE key=?',(key,)).fetchone()
+        return json.loads(row[0]) if row else default
+
     @staticmethod
     def put_meta(db,key,value):db.execute('INSERT OR REPLACE INTO metadata VALUES(?,?)',(key,json.dumps(value)))
 
@@ -131,6 +169,10 @@ class ReferenceStore:
         with self.connect() as db:
             row=db.execute('SELECT payload FROM files WHERE name=? AND hash=?',(name,digest)).fetchone()
             return bytes(row[0]) if row else None
+
+    def has_payloads(self,meta):
+        with self.connect() as db:saved=dict(db.execute('SELECT name,hash FROM files'))
+        return all(saved.get(name)==meta['files'][name]['sha256'] for name in FILES)
 
     def checked(self,meta,at):
         with self.connect() as db:
@@ -141,23 +183,28 @@ class ReferenceStore:
         documents={name:_rows(meta,name,payloads[name]) for name in FILES}
         records={}
         for name,rows in documents.items():
-            kind={'items.json':'items','cash_shop.json':'items','monsters.json':'monsters','skills.json':'skills','maps.json':'maps'}[name]
+            kind={'items.json':'items','cash_shop.json':'items','monsters.json':'monsters','skills.json':'skills','maps.json':'maps','npcs.json':'npcs','quests.json':'quests'}[name]
             for source in rows:
                 if not source['name'].strip():continue # Unnamed client placeholders are not searchable entities.
                 row=dict(source);identity=row.get('id',row.get('item_id'));row['id']=identity
                 if name=='cash_shop.json':
                     if (kind,identity) in records:continue
                     row['cash']=True;row['category']='Cash';row['nx_price']=row.pop('price',None)
-                category=row.get('category') or row.get('job_tier') or ('Boss' if row.get('is_boss') else 'Monster' if kind=='monsters' else 'Map')
-                level=row.get('level') if kind=='monsters' else (row.get('stats') or {}).get('reqLevel') if kind=='items' else None
+                category=row.get('category') or row.get('job_tier') or ('Boss' if row.get('is_boss') else 'Monster' if kind=='monsters' else 'Quest' if kind=='quests' else 'Town' if kind=='maps' and row.get('is_town') else 'Map' if kind=='maps' else 'NPC')
+                level=row.get('level') if kind=='monsters' else row.get('level_min') if kind=='quests' else (row.get('stats') or {}).get('reqLevel') if kind=='items' else None
                 level=level if type(level) is int else None
-                entry=Entry(kind,identity,row['name'],category,level,row.get('class_name','Crafting' if category=='Crafting' else ''),image_url(row.get('icon_url')))
+                icon=row.get('map_mark_url') if kind=='maps' else row.get('icon_url')
+                entry=Entry(kind,identity,row['name'],category,level,row.get('class_name','Crafting' if category=='Crafting' else ''),image_url(icon))
                 records[entry.key]=(entry,row)
+        for key,(entry,row) in list(records.items()):
+            if entry.kind=='quests':
+                npc=records.get(('npcs',row.get('npc_id')))
+                if npc:records[key]=(Entry(entry.kind,entry.id,entry.name,entry.category,entry.level,entry.job,npc[0].icon),row)
         guard()
         with self.connect() as db:
             db.execute('DELETE FROM entities');db.execute('DELETE FROM lookup')
             db.executemany('INSERT INTO entities VALUES(?,?,?,?,?,?,?,?)',[(e.kind,e.id,e.name,e.category,e.level,e.job,e.icon,json.dumps(row,separators=(',',':'))) for e,row in records.values()])
-            db.executemany('INSERT INTO lookup VALUES(?,?,?)',[(e.kind,e.id,e.name) for e,row in records.values()])
+            db.executemany('INSERT INTO lookup VALUES(?,?,?)',[(e.kind,e.id,e.name+(' '+str(row.get('region',''))+' '+str(row.get('street_name','')) if e.kind in ('maps','quests') else '')) for e,row in records.values()])
             for name,raw in payloads.items():db.execute('INSERT OR REPLACE INTO files VALUES(?,?,?)',(name,meta['files'][name]['sha256'],raw))
             self.put_meta(db,'manifest',meta);self.put_meta(db,'checked_at',at)
             self.put_meta(db,'generation',meta.get('data_updated_at',''))
@@ -171,10 +218,14 @@ class ReferenceStore:
                     db.execute('DELETE FROM community_reports WHERE monster_id=? AND item_id=?',(mid,iid))
             guard()
 
-    def search(self,kind,query='',category='',limit=80):
-        if kind not in ('items','monsters','skills'):return [],0
+    def search(self,kind,query='',category='',limit=80,*,released=True,scope=(),sort='name'):
+        if kind not in (*RELEASED_KINDS,'skills'):return [],0
         terms=re.findall(r'[^\W_]+',str(query)[:120],re.UNICODE)[:12]
         params=[kind];where=['e.kind=?']
+        if released and kind in RELEASED_KINDS:
+            where.append('EXISTS(SELECT 1 FROM availability a WHERE a.kind=e.kind AND a.id=e.id AND a.name=e.name)')
+            if kind in RELEASE_RULES:where.append(RELEASE_RULES[kind])
+        if released and kind=='skills':where.append("e.category!='Crafting'")
         if terms:
             if len(terms)==1 and terms[0].isdigit():where.append('e.id=?');params.append(int(terms[0]))
             else:
@@ -182,20 +233,80 @@ class ReferenceStore:
                 where.append('e.id IN (SELECT id FROM lookup WHERE lookup MATCH ? AND kind=?)');params.extend((expression,kind))
         if category:
             where.append('e.job=?' if kind=='skills' else 'e.category=?');params.append(category)
+        scoped(where,params,scope)
         condition=' AND '.join(where)
         with self.connect() as db:
             count=db.execute('SELECT COUNT(*) FROM entities e WHERE '+condition,params).fetchone()[0]
-            rows=db.execute('SELECT kind,id,name,category,level,job,icon FROM entities e WHERE '+condition+' ORDER BY e.name COLLATE NOCASE,e.id LIMIT ?',(*params,max(1,min(10000,limit)))).fetchall()
+            order=SORTS.get(sort)
+            if order is None:raise ValueError('Unsupported database sort')
+            rows=db.execute('SELECT e.kind,e.id,e.name,e.category,e.level,'+CLASS_LABEL+',e.icon FROM entities e WHERE '+condition+' ORDER BY '+order+' LIMIT ?',(*params,max(1,min(10000,limit)))).fetchall()
         return [Entry(*row) for row in rows],count
 
-    def categories(self,kind):
-        field='job' if kind=='skills' else 'category'
-        with self.connect() as db:return [r[0] for r in db.execute(f'SELECT DISTINCT {field} FROM entities WHERE kind=? AND {field}!="" ORDER BY {field}',(kind,))]
+    def groups(self,kind,field,scope=()):
+        expression=GROUP_FIELDS.get(field)
+        if expression is None:raise ValueError('Unsupported browse group')
+        where=['e.kind=?'];params=[kind]
+        if kind in RELEASED_KINDS:where.append('EXISTS(SELECT 1 FROM availability a WHERE a.kind=e.kind AND a.id=e.id AND a.name=e.name)')
+        if kind in RELEASE_RULES:where.append(RELEASE_RULES[kind])
+        if kind=='skills':where.append("e.category!='Crafting'")
+        scoped(where,params,scope)
+        where.append(expression+' IS NOT NULL');where.append(expression+"!=''")
+        with self.connect() as db:
+            rows=db.execute('SELECT '+expression+',COUNT(*),MIN(e.id) FROM entities e WHERE '+' AND '.join(where)+' GROUP BY '+expression,params).fetchall()
+        return [{'value':value,'count':count,'entry':self.entry(kind,identity)[0]} for value,count,identity in rows]
 
     def entry(self,kind,identity):
         with self.connect() as db:
-            row=db.execute('SELECT kind,id,name,category,level,job,icon,body FROM entities WHERE kind=? AND id=?',(kind,identity)).fetchone()
+            row=db.execute('SELECT e.kind,e.id,e.name,e.category,e.level,'+CLASS_LABEL+',e.icon,e.body FROM entities e WHERE e.kind=? AND e.id=?',(kind,identity)).fetchone()
         return (Entry(*row[:7]),json.loads(row[7])) if row else None
+
+    def available(self,kind,identity):
+        if kind=='skills':
+            record=self.entry(kind,identity);return bool(record and record[0].category!='Crafting')
+        with self.connect() as db:
+            condition=' AND '+RELEASE_RULES[kind] if kind in RELEASE_RULES else ''
+            return db.execute('SELECT 1 FROM entities e JOIN availability a ON a.kind=e.kind AND a.id=e.id AND a.name=e.name WHERE e.kind=? AND e.id=?'+condition+' LIMIT 1',(kind,identity)).fetchone() is not None
+
+    def confirm(self,rows,source,at=None,guard=lambda:None):
+        """Retain positive, exact-ID/name evidence even after a sale/event ends."""
+        if not isinstance(rows,list) or len(rows)>20000 or source not in ('nia-release','market','screen'):raise ValueError('Invalid availability evidence')
+        at=time.time() if at is None else at;clean=[];guard()
+        with self.connect() as db:
+            names={(k,i):n for k,i,n in db.execute('SELECT kind,id,name FROM entities')}
+            before=db.execute('SELECT COUNT(*) FROM availability').fetchone()[0]
+            for row in rows:
+                kind,identity,name=row.get('kind'),row.get('id'),row.get('name')
+                if kind not in RELEASED_KINDS or type(identity) is not int or not isinstance(name,str) or names.get((kind,identity))!=name or excluded(kind,identity,name):continue
+                detail=row.get('detail') or {}
+                if not isinstance(detail,dict):continue
+                clean.append((kind,identity,name,source,at,at,json.dumps(detail)))
+            if rows and not clean:raise ValueError('Availability records do not match the Classic World catalog')
+            db.executemany('''INSERT INTO availability VALUES(?,?,?,?,?,?,?) ON CONFLICT(kind,id,source) DO UPDATE SET
+                name=excluded.name,last_seen=excluded.last_seen,detail=excluded.detail''',clean)
+            guard();after=db.execute('SELECT COUNT(*) FROM availability').fetchone()[0]
+        return after-before
+
+    def evidence(self,kind,identity):
+        with self.connect() as db:
+            rows=db.execute('SELECT a.source,a.detail FROM availability a JOIN entities e ON a.kind=e.kind AND a.id=e.id AND a.name=e.name WHERE a.kind=? AND a.id=? ORDER BY a.first_seen',(kind,identity)).fetchall()
+        return [{'source':source,**json.loads(detail)} for source,detail in rows]
+
+    def released_counts(self):
+        with self.connect() as db:
+            return {kind:db.execute('SELECT COUNT(*) FROM entities e WHERE e.kind=? AND EXISTS(SELECT 1 FROM availability a WHERE a.kind=e.kind AND a.id=e.id AND a.name=e.name)',(kind,)).fetchone()[0] for kind in ('items','monsters')}
+
+    def catalog(self,original=None):
+        from .domain import Catalog,Item,key as name_key
+        known={item.game_id:item for item in original.items} if original else {}
+        with self.connect() as db:
+            rows=db.execute("SELECT e.id,e.name,e.body FROM entities e WHERE e.kind='items' AND EXISTS(SELECT 1 FROM availability a WHERE a.kind=e.kind AND a.id=e.id AND a.name=e.name)").fetchall()
+        items=[]
+        for identity,name,body in rows:
+            item=known.get(identity)
+            if item and name_key(item.name)==name_key(name):items.append(item);continue
+            row=json.loads(body);items.append(Item(identity,name,row.get('category')=='Equipment' or 1000000<=identity<2000000,
+                identity//10000 in (207,233), (row.get('scroll') or {}).get('tier'),cash=bool(row.get('cash')),gender=row.get('gender')))
+        return Catalog.from_items(items)
 
     def locations(self,identity):
         found=self.entry('monsters',identity)
@@ -204,8 +315,31 @@ class ReferenceStore:
         for spawn in found[1].get('spawns',[]):
             if not isinstance(spawn,dict) or type(spawn.get('map_id')) is not int:continue
             target=self.entry('maps',spawn['map_id'])
-            if target:locations.append({**target[1],'count':spawn.get('count')})
+            if target and self.available('maps',spawn['map_id']):locations.append({**target[1],'count':spawn.get('count')})
         return sorted(locations,key=lambda r:(-(r.get('count') or 0),r['name']))
+
+    def map_monsters(self,identity):
+        record=self.entry('maps',identity)
+        if not record:return []
+        counts={}
+        for point in record[1].get('mobs',[]):
+            mid=point.get('mob_id')
+            if type(mid) is int:counts[mid]=counts.get(mid,0)+1
+        result=[]
+        for mid,count in counts.items():
+            target=self.entry('monsters',mid)
+            if target and self.available('monsters',mid):result.append((target[0],count))
+        return sorted(result,key=lambda pair:(pair[0].level or 0,pair[0].name))
+
+    def quests_for(self,item_id):
+        with self.connect() as db:
+            rows=db.execute("""SELECT e.id FROM entities e WHERE e.kind='quests'
+                AND EXISTS(SELECT 1 FROM availability a WHERE a.kind=e.kind AND a.id=e.id AND a.name=e.name)
+                AND EXISTS(SELECT 1 FROM json_each(e.body,'$.rewards') r
+                    WHERE json_extract(r.value,'$.type')='item' AND json_extract(r.value,'$.id')=?)
+                AND COALESCE(json_extract(e.body,'$.region'),'')!='Forgotten Hollow'
+                ORDER BY e.level,e.name COLLATE NOCASE""",(item_id,)).fetchall()
+        return [self.entry('quests',identity) for identity, in rows]
 
     def save_drops(self,rows,at=None,guard=lambda:None):
         if not isinstance(rows,list) or len(rows)>10000:raise ValueError('Too many drop records')
@@ -266,7 +400,7 @@ class ReferenceStore:
                 key=(r['monster_id'],r['item_id'],'')
                 if key in combined:combined[key]['also_reported']=True
                 else:combined[key]=r
-        return list(combined.values())
+        return [r for r in combined.values() if self.available('monsters',r['monster_id']) and (r['item_id'] is None or self.available('items',r['item_id']))]
 
     def community_check(self,kind,identity):
         with self.connect() as db:

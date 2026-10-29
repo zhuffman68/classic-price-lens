@@ -6,6 +6,8 @@ from PySide6.QtCore import QObject,QTimer,Qt,Signal,Slot
 from .http_json import get_bytes,get_json,RequestToken,request_scope
 from .reference_data import ReferenceStore,API,FILES,DAY,drop_url,validate_meta
 from .reference_community import CommunityDrops
+from .reference_availability import AvailabilityLoader,market_proofs
+from .reference_geometry import MapGeometry
 
 
 class ReferenceService(QObject):
@@ -17,14 +19,18 @@ class ReferenceService(QObject):
         super().__init__(parent);self.store=ReferenceStore(path)
         self.fetch_bytes=fetch_bytes or get_bytes;self.fetch_json=fetch_json or get_json
         self.extra=CommunityDrops(self.store,self,fetch_bytes=fetch_bytes,fetch_json=fetch_json)
+        self.geometry=MapGeometry(self.store,self,fetch_bytes=fetch_bytes,fetch_json=fetch_json)
         self.pool=ThreadPoolExecutor(max_workers=1,thread_name_prefix='lupin-reference')
-        self.busy=False;self.closed=False;self.error='';self.drop_error='';self.token=None
+        self.busy=False;self.closed=False;self.error='';self.drop_error='';self.availability_error='';self.token=None
+        self.core_changed=False;self.manifest_before=None
+        self.market_signature=None
         self.timer=QTimer(self);self.timer.setSingleShot(True);self.timer.timeout.connect(self.start)
         self._finished.connect(self.finish,Qt.ConnectionType.QueuedConnection)
 
     def start(self,force=False):
         if self.closed or self.busy:return
-        self.timer.stop();self.busy=True;self.error=self.drop_error='';self.token=RequestToken()
+        self.timer.stop();self.busy=True;self.error=self.drop_error=self.availability_error='';self.token=RequestToken()
+        self.manifest_before=self.store.metadata().get('manifest')
         self.extra.enabled=True
         token=self.token
         future=self.pool.submit(self.refresh,token,force)
@@ -37,7 +43,7 @@ class ReferenceService(QObject):
             try:
                 meta=validate_meta(self.fetch_json(API+'meta.json'));token.check()
                 previous=self.store.metadata().get('manifest')
-                if previous==meta:self.store.checked(meta,time.time())
+                if previous==meta and self.store.has_payloads(meta):self.store.checked(meta,time.time())
                 else:
                     payloads={}
                     for name in FILES:
@@ -48,6 +54,10 @@ class ReferenceService(QObject):
             except CancelledError:raise
             except Exception:errors['core']='Reference update unavailable'
             token.check();state=self.store.metadata()
+            if state.get('counts'):
+                try:AvailabilityLoader(self.store,self.fetch_json,self.fetch_bytes).refresh(token,force)
+                except CancelledError:raise
+                except Exception:errors['availability']='Release availability update unavailable'
             if state.get('counts') and (force or not 0<=time.time()-state.get('drops_checked_at',0)<DAY):
                 try:
                     rows=[]
@@ -69,14 +79,24 @@ class ReferenceService(QObject):
         if self.closed:return
         self.busy=False
         try:
-            errors=future.result();self.error=errors.get('core','');self.drop_error=errors.get('drops','')
+            errors=future.result();self.error=errors.get('core','');self.drop_error=errors.get('drops','');self.availability_error=errors.get('availability','')
         except CancelledError:return
         except Exception:self.error='Reference update unavailable'
+        self.core_changed=not self.error and self.manifest_before!=self.store.metadata().get('manifest')
         self.updated.emit();self.changed.emit()
-        self.timer.start((15*60 if self.error or self.drop_error else DAY)*1000)
+        self.timer.start((15*60 if self.error or self.drop_error or self.availability_error else DAY)*1000)
 
     def close(self):
         self.closed=True;self.timer.stop()
         self.extra.close()
+        self.geometry.close()
         if self.token:self.token.cancel()
         self.pool.shutdown(wait=False,cancel_futures=True)
+
+    def observe_market(self,catalog,snapshot,*,notify=True):
+        signature=((snapshot.meta or {}).get('checked_at'),id(catalog),self.store.metadata().get('generation')) if snapshot and catalog else None
+        if signature is None or signature==self.market_signature:return False
+        self.market_signature=signature;proofs=market_proofs(self.store,catalog,snapshot)
+        changed=bool(proofs and self.store.confirm(proofs,'market'))
+        if changed and notify:self.updated.emit()
+        return changed
