@@ -15,6 +15,7 @@ class ExperiencePanel(QWidget):
     changed = Signal()
     enabled_changed = Signal(bool)
     overlay_changed = Signal(bool)
+    meso_overlay_changed = Signal(bool)
 
     def __init__(self, history_path, *, parent=None):
         super().__init__(parent)
@@ -34,7 +35,6 @@ class ExperiencePanel(QWidget):
         self.requested = False
         self.paused_window = None
         self.last_character = None
-        self.overlay_enabled = True
         self.display_mode = "percent"
         self.user_paused = False
         self.watch_approximate = False
@@ -203,7 +203,11 @@ class ExperiencePanel(QWidget):
         self.stop_button.setVisible(self.requested)
         self.stop_button.setEnabled(self.requested)
         map_name = (run.map_name if run and run.map_name != 'Unlabelled map' else self.map_input.text().strip() or tracker.map_name)
-        self.map_label.setText(map_name)
+        display_map=map_name
+        if not self.map_input.text().strip() and map_name==tracker.map_name and ': ' in map_name:
+            display_map=map_name.split(': ',1)[1]
+        self.map_label.setText(display_map)
+        self.map_label.setToolTip(map_name)
         self.map_label.setVisible(bool(map_name))
         totals = self.totals()
         if run:
@@ -298,7 +302,7 @@ class ExperiencePanel(QWidget):
         meso=dict(key='meso-gain',kind='tracking',name='Meso gained',text=total,color='#b7d4a9',
             metrics=[('Picked up',total),('Per minute',f'{meso_rate:,.0f}' if meso_rate is not None else '—'),
                      ('Per hour',f'{meso_rate*60:,.0f}' if meso_rate is not None else '—')],
-            footer='Pickup log · purchases/trades excluded',status=meso_status,
+            status=meso_status,
             clock=clock_text(pickups.seconds),progress='')
         self.overlay_snapshot=[exp,meso]
         return [dict(row) for row in self.overlay_snapshot]

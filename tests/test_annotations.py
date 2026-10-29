@@ -181,6 +181,17 @@ class AnnotationMotionTests(unittest.TestCase):
         self.assertAlmostEqual(self.window.rows[0]['_alpha'],.25)
         self.assertIsNone(self.window.rows[0].get('_fade'))
 
+    def test_omitted_occlusion_clears_the_previous_shop_overlap(self):
+        row={'x':120,'y':90,'name':'Hat','key':'shop:0','kind':'shop','text':'FM 1,000'}
+        state={**self.command,'reduce_motion':True,'rows':[{**row,'occlusion':[200,80,300,100]}]}
+        self.window.read_command(json.dumps(state))
+        active=self.window.rows[0]
+        self.assertAlmostEqual(active['_alpha'],.25)
+        self.window.read_command(json.dumps({**state,'rows':[row]}))
+        self.assertIs(self.window.rows[0],active)
+        self.assertIsNone(active.get('occlusion'))
+        self.assertAlmostEqual(active['_alpha'],1)
+
     def test_age_updates_do_not_pulse_a_stable_market_price(self):
         row={'x':120,'y':90,'name':'Hat','key':'shop:0','kind':'shop','text':'FM 1,000 · 1s',
              'content_id':[1,1000]}

@@ -1,13 +1,15 @@
 Local patch status
 
-v0.17.0 implements the approved compact design and pickup-based meso tracking.
-Linux/Windows builds and isolated package checks are complete.
-See docs/PATCH_0.17.0.md for changes, limits and install commands.
+v0.17.1 fixes tracking-overlay HUD coverage, separates visibility switches, keeps
+long map names readable, and rejects false shop-pane occlusion feedback.
+All four artifacts are built and pass their isolated installed-package checks.
+See docs/PATCH_0.17.1.md for changes, limits and install commands.
 Uploads remain on hold: do not push source, publish a GitHub release, or upload
 itch.io channels until the user authorizes publication again.
 
-EXP and meso gain have separate fixed-grid overlays at bottom left, with two-second
-numeric updates. EXP retains percentage/raw/both modes, session gain, recent pace,
+EXP and meso gain have compact fixed-grid overlays stacked at bottom left above
+the native HUD, with independent checkboxes and two-second numeric updates.
+EXP retains percentage/raw/both modes, session gain, recent pace,
 current progress, timer and level-up ETA. Meso gain counts visible pickup-message
 arrivals, including while EXP is unchanged; it does not read the wallet or estimate
 profit. Known occlusion, reading pause and capture gaps prevent old messages from

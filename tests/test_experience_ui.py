@@ -197,6 +197,16 @@ class ExperienceUiTests(unittest.TestCase):
         self.assertNotEqual(self.panel.overlay_rows(),first)
         self.panel.toggle_pause();self.assertEqual(self.panel.overlay_rows()[0]['status'],'Paused')
 
+    def test_detected_map_header_keeps_the_start_of_the_name_and_full_tooltip(self):
+        full='Victoria Road: Tree Dungeon, Forest Up North V'
+        self.panel.tracker.map_name=full;self.panel.resize(428,650);self.panel.show();self.panel.refresh();self.app.processEvents()
+        self.assertEqual(self.panel.map_label.text(),'Tree Dungeon, Forest Up North V')
+        self.assertEqual(self.panel.map_label.toolTip(),full)
+        self.assertTrue(self.panel.map_label.property('elideRight'))
+        self.assertEqual(self.panel.tracker.map_name,full)
+        self.panel.map_input.setText('My map: route 1');self.panel.refresh()
+        self.assertEqual(self.panel.map_label.text(),'My map: route 1')
+
     def test_map_changes_save_a_segment_and_continue_the_total_timer(self):
         self.train()
         before=self.panel.totals()["seconds"]

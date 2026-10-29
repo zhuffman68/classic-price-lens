@@ -4,8 +4,36 @@ Only captured colours are inspected. A known tooltip anchor is required; this
 never searches desktop windows or treats arbitrary purple scenery as a tooltip.
 """
 from PySide6.QtCore import QRect
+from PySide6.QtGui import QRegion
 from PySide6.QtGui import QImage
 import time
+
+
+def _visible_region(rect,exclude):
+    visible=QRegion(rect)
+    for covered in exclude:
+        if rect.intersects(covered):visible=visible.subtracted(QRegion(covered.adjusted(-1,-1,1,1)))
+    return visible
+
+
+def _description_body(image,rect,exclude=()):
+    """A bright shop/chat pane is not a dark native item description.
+
+    Never use our own dark price cards as evidence for a description behind
+    them: that creates a dim/bright feedback loop on otherwise light shops.
+    """
+    if rect is None or not image.rect().contains(rect):return False
+    interior=rect.adjusted(6,6,-6,-6)
+    if interior.isEmpty():return False
+    dark=total=0.0
+    for part in _visible_region(interior,exclude):
+        weight=part.width()*part.height();matches=0
+        for fy in (.1,.3,.5,.7,.9):
+            for fx in (.1,.3,.5,.7,.9):
+                color=image.pixelColor(part.x()+round((part.width()-1)*fx),part.y()+round((part.height()-1)*fy))
+                matches+=max(color.red(),color.green(),color.blue())<185
+        dark+=weight*matches/25;total+=weight
+    return total>=24 and dark/total>=.60
 
 
 def _rim_pixels(image):
@@ -60,8 +88,10 @@ def description_bounds(image,area,exclude=()):
     # Its recognized name line is allowed to be clipped there as well.
     name=name.intersected(image.rect())
     if name.width()<12 or name.height()<8:return None
+    visible=_visible_region(name,exclude)
+    if sum(part.width()*part.height() for part in visible)<name.width()*name.height()*.25:return None
     framed=_framed_bounds(image,name)
-    if framed is not None:return framed
+    if framed is not None:return framed if _description_body(image,framed,exclude) else None
     def fill(x,y):
         if not(0<=x<image.width() and 0<=y<image.height()):return False
         c=image.pixelColor(x,y);r,g,b=c.red(),c.green(),c.blue()
@@ -111,11 +141,12 @@ def description_bounds(image,area,exclude=()):
                 if gap>12:break
                 end+=1
             right=max(right,last)
-    return QRect(left-3,top-3,right-left+7,bottom-top+7).intersected(image.rect())
+    rect=QRect(left-3,top-3,right-left+7,bottom-top+7).intersected(image.rect())
+    return rect if _description_body(image,rect,exclude) else None
 
 
-def still_present(image,rect):
-    if rect is None or not image.rect().contains(rect):return False
+def still_present(image,rect,exclude=()):
+    if not _description_body(image,rect,exclude):return False
     matches=0
     for fraction in (.2,.5,.8):
         c=image.pixelColor(min(rect.right(),rect.left()+6),round(rect.top()+rect.height()*fraction))

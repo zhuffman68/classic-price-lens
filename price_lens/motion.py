@@ -58,6 +58,12 @@ class MotionLabel(QLabel):
     def paintEvent(self, event):
         if not enabled(self):
             self.animation.stop();self.digits.stop();self.number_roll.finish();self.alpha=1.0
+        if self.property('elideRight'):
+            painter=QPainter(self);painter.setFont(self.font());painter.setOpacity(self.alpha)
+            painter.setPen(self.palette().color(QPalette.ColorRole.WindowText))
+            value=self.fontMetrics().elidedText(self.text(),Qt.TextElideMode.ElideRight,self.contentsRect().width())
+            painter.drawText(self.contentsRect(),self.alignment(),value)
+            return
         # Keep one renderer for a numeric caption at rest and in motion. Native
         # QLabel shaping and per-cell drawing differ in rounding/kerning; swapping
         # between them made the surrounding words move during every roll.

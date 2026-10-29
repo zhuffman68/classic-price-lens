@@ -107,11 +107,20 @@ class LupinUiTests(unittest.TestCase):
         w.exp_panel.stop_button.click()
         self.assertFalse(w.exp_enabled);self.assertFalse(w.exp_panel.requested)
 
-    def test_exp_overlay_toggle_is_one_setting_in_both_places(self):
-        w=self.window;w.exp_panel.overlay_check.setChecked(False)
+    def test_tracking_overlay_controls_are_independent_and_sync_with_settings(self):
+        w=self.window;w.on_exp_hotkey()
+        w.on_experience({'atMs':int(time.monotonic()*1000),'experience':payload(2000)})
+        w.exp_panel.overlay_check.setChecked(False)
         self.assertFalse(w.exp_overlay);self.assertFalse(w.exp_overlay_check.isChecked())
+        self.assertTrue(w.meso_overlay);self.assertTrue(w.meso_overlay_check.isChecked())
+        self.assertTrue(w.settings.values['meso-overlay'],'The inherited preference must survive an EXP-only change and restart')
+        self.assertEqual([r['key'] for r in w.overlay.rows],['meso-gain'])
+        w.meso_overlay_check.setChecked(False)
+        self.assertFalse(w.exp_panel.meso_overlay_check.isChecked());self.assertEqual(w.overlay.rows,[])
         w.exp_overlay_check.setChecked(True)
-        self.assertTrue(w.exp_overlay);self.assertTrue(w.exp_panel.overlay_check.isChecked())
+        self.assertTrue(w.exp_panel.overlay_check.isChecked());self.assertFalse(w.meso_overlay)
+        self.assertEqual([r['key'] for r in w.overlay.rows],['experience'])
+        self.assertTrue(w.settings.values['exp-overlay']);self.assertFalse(w.settings.values['meso-overlay'])
 
     def test_brief_detection_uncertainty_keeps_status_but_hides_game_labels(self):
         w=self.window;w.on_reading(self.fixture.reading(True))

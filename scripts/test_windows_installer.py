@@ -116,7 +116,9 @@ def main():
         assert not (programs / "Classic Price Lens/Classic Price Lens.lnk").exists(), "Legacy shortcut left behind"
         run([runtime, "-B", "-m", "price_lens", "--version"], app)
         run([runtime, "-B", "-m", "price_lens", "--self-test"], app)
-        run([runtime, "-B", "-m", "unittest", "discover", "-s", "tests", "-q"], app)
+        # Give the full suite its own deadline, separate from one transaction.
+        # Keep per-test bounds and verbose names so a stall remains diagnosable.
+        run([runtime, "-B", "-m", "unittest", "discover", "-s", "tests", "-v"], app, timeout=300)
         marker = cache_marker()
         if legacy_marker:
             assert marker == legacy_marker and marker.is_file(), "Rename changed or removed the user cache"

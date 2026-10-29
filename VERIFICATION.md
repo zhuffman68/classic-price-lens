@@ -1,5 +1,20 @@
 # Verification — 2026-10-29
 
+## Lupin v0.17.1
+
+- The final source suite passes 471 tests with three platform/offscreen skips. New checks exercise actual annotation pixels through native game-area detection at four window/UI-scale combinations, independent visibility settings, map-header rendering, native description validation and stale annotation-occlusion reset. Switching away from Both also clears the extra raw-EXP line in the reused compact card.
+- Painting the former 132-pixel tracker reproduces loss of the LV/HUD anchor. Compact vertical cards reserve that anchor and preserve detection through repeated frames. The native locator and its strict guard validation are unchanged. These are public/generated fixtures and a local render over a captured frame, not live gameplay acceptance.
+- An 18-second recording from the existing approved share reproduces the user's cyclic shop dimming. Replaying nine sampled frames accepts the bright shop pane as a description before the fix and rejects it afterward. Recognized borders now require a dark native interior, with our own annotation rectangles excluded from the evidence. Public real tooltips, warm translucent/comparison descriptions and partially covered panels retain their geometry checks. The nearby character's sole responsibility is not established.
+- The complete Tree Dungeon name was present in tracking data and native OCR; the narrow right-aligned header clipped its left edge. The header now omits a redundant street and elides at the right, keeping full data and hover text. A rendered regression verifies the actual paint direction.
+- UI handoffs reuse sharing helper 1807381 with its PID/start time unchanged, including final source preview 1871907. A fresh 1920 x 1080 frame was delivered without a new sharing chooser. The user subsequently closed Lupin, confirmed that closure and deferred testing the updated shop/tracking behavior. The app was left closed; live acceptance remains pending. No game input or game-process access is used. Uploads remain on hold.
+
+Post-build checks:
+
+- Windows/Wine, pacman, Debian 12 and Ubuntu 22.04 each pass all 471 installed application tests, with eight/four/five/five platform skips. Installation, offline OCR/overlay, upgrade/removal where supported, file checks and user-cache preservation pass. Debian/Ubuntu also pass isolated X11 and native market-helper checks. No check starts game capture or sends game input.
+- The initial Windows full-suite attempt exceeded its 120-second harness deadline without retaining the last test name. The final verbose run passes in 98.844 seconds; no individual failure is reproduced. The suite now has a separate 300-second harness deadline while per-test/transaction bounds remain. This is Wine evidence, not physical Windows gameplay acceptance.
+- All four artifacts have verified SHA-256 checksums in dist/SHA256SUMS-0.17.1.txt. Both staging trees match all 107 final application/resource files, and their readers match the unchanged compiled platform targets. Both verified translation bundles are retained. No private evidence, downloaded image/database caches or user settings ship. The Windows installer is 408,829,051 bytes.
+- Packaged verification records the source evidence available at staging time. This completed post-build record is also supplied separately as dist/VERIFICATION-0.17.1.md. No source push, GitHub release or itch.io upload has occurred; permanent host installation is deferred.
+
 ## Lupin v0.17.0
 
 - The source suite passes 461 tests with three platform/offscreen skips; both additional sizing/pause regressions pass in a 20-test targeted run. Native Rust parser/price/title checks pass. New tests cover pickup arrival confirmation, repeated equal amounts, continuously arriving lines, fading/scrolling, context loss, independent EXP/pickup replies, old asking-price retention, exact shop/box identities and cache behavior, popup Enter/late-copy behavior and Escape cancellation. Final packaged test counts are recorded after building.

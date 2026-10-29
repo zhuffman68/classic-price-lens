@@ -61,6 +61,28 @@ class NumberMotionTests(unittest.TestCase):
         label.hide();label.deleteLater()
 
 
+class ElidedMotionTextTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):NumberMotionTests.setUpClass();cls.app=NumberMotionTests.app
+
+    def test_right_aligned_long_map_uses_right_ellipsis_instead_of_cutting_its_start(self):
+        from PySide6.QtCore import Qt,QPoint
+        from PySide6.QtGui import QImage,QPainter
+        self.app.setProperty('reduceMotion',True)
+        label=MotionLabel('Tree Dungeon, Forest Up North V');label.setProperty('elideRight',True)
+        label.setAlignment(Qt.AlignmentFlag.AlignRight|Qt.AlignmentFlag.AlignVCenter)
+        label.setStyleSheet('background:transparent;color:#ffffff');label.resize(130,24);label.show();self.app.processEvents()
+        actual=QImage(130,24,QImage.Format.Format_ARGB32_Premultiplied);actual.fill(Qt.GlobalColor.black)
+        painter=QPainter(actual);label.render(painter,QPoint());painter.end()
+        expected=QImage(actual.size(),actual.format());expected.fill(Qt.GlobalColor.black)
+        painter=QPainter(expected);painter.setPen(Qt.GlobalColor.white);painter.setFont(label.font())
+        text=label.fontMetrics().elidedText(label.text(),Qt.TextElideMode.ElideRight,130)
+        self.assertTrue(text.startswith('Tree'));self.assertTrue(text.endswith('…'))
+        painter.drawText(label.contentsRect(),label.alignment(),text);painter.end()
+        self.assertEqual(actual,expected)
+        label.close();label.deleteLater();self.app.setProperty('reduceMotion',False)
+
+
 class WindowSizeTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):NumberMotionTests.setUpClass();cls.app=NumberMotionTests.app

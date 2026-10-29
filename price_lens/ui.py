@@ -31,6 +31,7 @@ from .chat import ChatTranslation
 from .translation_ui import TranslationPanel
 from .compose import KoreanComposer
 from .composer_ui import ComposerDialog
+from .overlay_layout import tracking_rows
 from .thumbnails import ThumbnailCache
 from .shortcut_defaults import load as load_shortcuts, label as shortcut_label
 from . import window_size
@@ -143,6 +144,8 @@ class LensWindow(QMainWindow):
         self.auto_game_area = self.settings.value("auto-game-area", True, type=bool)
         self.exp_enabled = False
         self.exp_overlay = self.settings.value("exp-overlay", True, type=bool)
+        self.meso_overlay = self.settings.value('meso-overlay',self.exp_overlay,type=bool)
+        self.settings.setValue('meso-overlay',self.meso_overlay)
         self.exp_display = self.settings.value("exp-display", "percent")
         if self.exp_display not in ("percent","raw","both"):self.exp_display = "percent"
         self.reduce_motion = self.settings.value("reduce-motion", False, type=bool)
@@ -327,9 +330,13 @@ class LensWindow(QMainWindow):
         self.exp_panel.enabled_changed.connect(self.set_exp_enabled)
         self.exp_panel.changed.connect(self.on_experience_changed)
         self.exp_panel.overlay_changed.connect(self.set_exp_overlay)
+        self.exp_panel.meso_overlay_changed.connect(self.set_meso_overlay)
         self.exp_panel.overlay_check.blockSignals(True)
         self.exp_panel.overlay_check.setChecked(self.exp_overlay)
         self.exp_panel.overlay_check.blockSignals(False)
+        self.exp_panel.meso_overlay_check.blockSignals(True)
+        self.exp_panel.meso_overlay_check.setChecked(self.meso_overlay)
+        self.exp_panel.meso_overlay_check.blockSignals(False)
         self.tabs = AnimatedTabs()
         self.prices_page = QWidget()
         prices_layout = QVBoxLayout(self.prices_page)
@@ -500,10 +507,14 @@ class LensWindow(QMainWindow):
         self.hover_check.setEnabled(self.labels_enabled)
         self.hover_check.toggled.connect(self.set_hover)
         layout.addWidget(self.hover_check)
-        self.exp_overlay_check = QCheckBox("Show tracking overlay in the bottom-left of the game")
+        self.exp_overlay_check = QCheckBox("Show EXP overlay at the bottom left of the game")
         self.exp_overlay_check.setChecked(self.exp_overlay)
         self.exp_overlay_check.toggled.connect(self.set_exp_overlay)
         layout.addWidget(self.exp_overlay_check)
+        self.meso_overlay_check=QCheckBox('Show meso overlay at the bottom left of the game')
+        self.meso_overlay_check.setChecked(self.meso_overlay)
+        self.meso_overlay_check.toggled.connect(self.set_meso_overlay)
+        layout.addWidget(self.meso_overlay_check)
         layout.addWidget(label("EXP rate display", "font-size: 12px; color: #a6b1bf"))
         self.exp_display_combo = QComboBox()
         for value,title in (("percent","Percentage (default)"),("raw","Raw EXP"),("both","Both · percentage first")):
@@ -882,6 +893,13 @@ class LensWindow(QMainWindow):
         self.exp_overlay = enabled
         self.settings.setValue("exp-overlay", enabled)
         for widget in (self.exp_panel.overlay_check,getattr(self,'exp_overlay_check',None)):
+            if widget is not None:
+                widget.blockSignals(True);widget.setChecked(enabled);widget.blockSignals(False)
+        self.render()
+
+    def set_meso_overlay(self,enabled):
+        self.meso_overlay=enabled;self.settings.setValue('meso-overlay',enabled)
+        for widget in (self.exp_panel.meso_overlay_check,getattr(self,'meso_overlay_check',None)):
             if widget is not None:
                 widget.blockSignals(True);widget.setChecked(enabled);widget.blockSignals(False)
         self.render()
@@ -1325,7 +1343,7 @@ class LensWindow(QMainWindow):
         self.last_screen = time.time() - max(0, time.monotonic() - self.reader.last_frame)
         if self.shop_tooltip_rect is not None:
             pixels=image.copy(self.reader.crop) if self.reader.crop else image
-            if not still_present(pixels,self.shop_tooltip_rect):
+            if not still_present(pixels,self.shop_tooltip_rect,self.annotation_exclusions()):
                 self.shop_tooltip_rect=None
                 # The market identities remain verified. Un-dim those cards
                 # immediately; listing amounts still wait for a fresh read.
@@ -1350,17 +1368,12 @@ class LensWindow(QMainWindow):
         hover=hover if isinstance(hover,dict) else {}
         shop_tooltip=hover.get('tooltip')
         shop_tooltip=shop_tooltip if isinstance(shop_tooltip,dict) else {}
-        exclusions=[]
-        if self.screen_index is not None and not self.reader.image.isNull():
-            geometry=self.screens[self.screen_index].geometry()
-            sx,sy=self.reader.image.width()/geometry.width(),self.reader.image.height()/geometry.height()
-            ox,oy=(self.reader.crop.x(),self.reader.crop.y()) if self.reader.crop else (0,0)
-            exclusions=[QRect(round(x*sx)-ox,round(y*sy)-oy,round(w*sx),round(h*sy)) for x,y,w,h in getattr(self.overlay,'layout_boxes',[])]
+        exclusions=self.annotation_exclusions()
         native = (shop_tooltip or {}).get('found') or ((tooltip or {}).get('found') if shop or self.shop_open else None)
         bounds=description_bounds(image,native.get('area'),exclusions) if native else None
         latest=self.reader.image.copy(self.reader.crop) if self.reader.crop else self.reader.image
-        if bounds is not None and not still_present(latest,bounds):bounds=None
-        if bounds is None and self.shop_tooltip_rect is not None and still_present(latest,self.shop_tooltip_rect):
+        if bounds is not None and not still_present(latest,bounds,exclusions):bounds=None
+        if bounds is None and self.shop_open and self.shop_tooltip_rect is not None and still_present(latest,self.shop_tooltip_rect,exclusions):
             bounds=self.shop_tooltip_rect
         if bounds is not None and self.shop_tooltip_rect is not None:
             if all(abs(a-b)<=3 for a,b in zip(bounds.getRect(),self.shop_tooltip_rect.getRect())):
@@ -1390,8 +1403,8 @@ class LensWindow(QMainWindow):
                 # This is the name line, not the whole tooltip. Tall tooltips
                 # can place it well above the pointer near the screen's edge.
                 near = read_point is not None and box.adjusted(-640, -640, 640, 640).contains(QPoint(*read_point))
-                popup=description_bounds(image,area) if found.get('pinned') else None
-                pinned=bool(popup and still_present(latest,popup))
+                popup=description_bounds(image,area,exclusions) if found.get('pinned') else None
+                pinned=bool(popup and still_present(latest,popup,exclusions))
                 moved = read_point is None or max(abs(pointer[0] - read_point[0]), abs(pointer[1] - read_point[1])) > 64
                 known = bool(name and (self.catalog is None or self.catalog.candidates(name, found.get("tier"))))
                 if not known and near and not moved and not result.get('tooltipRetried') and hasattr(self.reader,'retry_tooltip'):
@@ -1411,6 +1424,13 @@ class LensWindow(QMainWindow):
         self.update_price_status()
         if changed:
             self.render()
+
+    def annotation_exclusions(self):
+        if self.screen_index is None or self.reader.image.isNull():return []
+        geometry=self.screens[self.screen_index].geometry()
+        sx,sy=self.reader.image.width()/geometry.width(),self.reader.image.height()/geometry.height()
+        ox,oy=(self.reader.crop.x(),self.reader.crop.y()) if self.reader.crop else (0,0)
+        return [QRect(round(x*sx)-ox,round(y*sy)-oy,round(w*sx),round(h*sy)) for x,y,w,h in getattr(self.overlay,'layout_boxes',[])]
 
     def on_identity(self, identity, item):
         self.search_panel.accept_identity(identity,item)
@@ -1785,22 +1805,15 @@ class LensWindow(QMainWindow):
                     annotations[-1].pop('follow_pointer');annotations[-1].pop('pointer_region')
                     annotations[-1]['bounds']=[round(region.x()*sx),round(region.y()*sy),
                                                 round(region.width()*sx),round(region.height()*sy)]
-        if self.exp_enabled and self.exp_overlay and self.mode == "live" and game_visible and screen_matches and not screen_old:
-            tracking_rows = self.exp_panel.overlay_rows()
+        if self.exp_enabled and (self.exp_overlay or self.meso_overlay) and self.mode == "live" and game_visible and screen_matches and not screen_old:
+            rows=[row for row in self.exp_panel.overlay_rows()
+                  if self.exp_overlay and row['key']=='experience' or self.meso_overlay and row['key']=='meso-gain']
             area = self.reader.game_area if self.reader.auto_active else self.reader.crop
             if area:
-                scaled_width=round(area.width()*geometry.width()/image.width())
-                side_by_side=scaled_width>=610
-                for index,row in enumerate(tracking_rows):
-                    row.update(x=round(area.left()*geometry.width()/image.width())+4,
-                               y=round(area.bottom()*geometry.height()/image.height())-4,
-                               tracking_width=min(296,scaled_width-8),tracking_height=132,
-                               left_offset=index*304 if side_by_side else 0,
-                               bottom_offset=0 if side_by_side else index*138,
-                               anchor="bottom_left",bounds=[round(area.x()*geometry.width()/image.width()),
-                                      round(area.y()*geometry.height()/image.height()),
-                                      round(area.width()*geometry.width()/image.width()),round(area.height()*geometry.height()/image.height())])
-                    annotations.insert(index,row)
+                sx,sy=geometry.width()/image.width(),geometry.height()/image.height()
+                bounds=[round(area.x()*sx),round(area.y()*sy),round(area.width()*sx),round(area.height()*sy)]
+                guards=[rect for rect,_ in getattr(self.reader,'game_guards',[])]
+                annotations=tracking_rows(rows,bounds,guards,scale_y=sy)+annotations
         if self.chat_enabled and self.mode=="live" and game_visible and screen_matches and not screen_old:
             area=self.reader.game_area if self.reader.auto_active else self.reader.crop
             if area:

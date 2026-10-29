@@ -102,6 +102,8 @@ class AnnotationWindow(QWidget):
                 old_content=old.get('content_id',old_text) if old else None
                 old_alpha_target=old.get('_target_alpha',1.0) if old else None
                 row = old if old is not None else supplied
+                row['occlusion']=supplied.get('occlusion')
+                row['secondary']=supplied.get('secondary','')
                 if 'follow_pointer' not in supplied:
                     for field in ('follow_pointer','pointer_region','_cursor_offset'):row.pop(field,None)
                 row.update(supplied)
@@ -112,7 +114,7 @@ class AnnotationWindow(QWidget):
                                              metrics.horizontalAdvance(row.get("name",""))+20))
                 if row.get('kind')=='tracking':
                     row['_width']=max(180,min(350,int(row.get('tracking_width',296))))
-                    row['_height']=max(100,min(180,int(row.get('tracking_height',132))))
+                    row['_height']=max(64,min(160,int(row.get('tracking_height',90))))
                 if row.get("kind")=="translation":
                     row["_width"]=min(360,max(180,row.get("bounds",[0,0,360,0])[2]-8))
                     wrap=Qt.TextFlag.TextWordWrap|Qt.AlignmentFlag.AlignLeft
@@ -205,6 +207,7 @@ class AnnotationWindow(QWidget):
         if row.get('kind')=='experience':values['name']=row.get('name','')
         values.update({f'extra:{i}':line for i,line in enumerate(row.get('extra','').splitlines())})
         if row.get('kind')=='tracking':
+            values.pop('text',None)
             values.update({f'metric:{i}':value for i,(_,value) in enumerate(row.get('metrics',[])[:3])})
             values.update(clock=row.get('clock',''),progress=row.get('progress',''),footer=row.get('footer',''),secondary=row.get('secondary',''))
         for key in set(rolls)-set(values):
@@ -525,17 +528,18 @@ class AnnotationWindow(QWidget):
         self.paint_number(painter,row,'clock',QRect(x+w-62,y+7,62,15),row.get('clock',''),Qt.AlignmentFlag.AlignRight|Qt.AlignmentFlag.AlignVCenter)
         column=w//3
         for i,(caption,value) in enumerate(row.get('metrics',[])[:3]):
-            rect=QRect(x+i*column,y+33,column-4,17)
+            rect=QRect(x+i*column,y+22,column-4,13)
             painter.setFont(self.name_font);painter.setPen(QColor('#96a5bb'))
             painter.drawText(rect,Qt.AlignmentFlag.AlignVCenter,caption)
             painter.setFont(self.price_font);painter.setPen(QColor(row.get('color','#e4bd7b')))
-            self.paint_number(painter,row,f'metric:{i}',rect.translated(0,19),value)
+            self.paint_number(painter,row,f'metric:{i}',QRect(rect.x(),y+35,rect.width(),17),value)
         painter.setFont(self.name_font);painter.setPen(QColor('#d6dfeb'))
-        self.paint_number(painter,row,'footer',QRect(x,y+77,w-55,15),row.get('footer',''))
-        self.paint_number(painter,row,'progress',QRect(x+w-55,y+77,55,15),row.get('progress',''),Qt.AlignmentFlag.AlignRight|Qt.AlignmentFlag.AlignVCenter)
+        if row.get('key')=='experience':
+            self.paint_number(painter,row,'footer',QRect(x,y+55,w-55,15),row.get('footer',''))
+            self.paint_number(painter,row,'progress',QRect(x+w-55,y+55,55,15),row.get('progress',''),Qt.AlignmentFlag.AlignRight|Qt.AlignmentFlag.AlignVCenter)
         secondary=row.get('secondary','')
         painter.setPen(QColor('#a5b3c7'))
-        if secondary:self.paint_number(painter,row,'secondary',QRect(x,y+94,w,15),secondary)
+        if secondary:self.paint_number(painter,row,'secondary',QRect(x,y+70,w,15),secondary)
         status=painter.fontMetrics().elidedText(row.get('status',''),Qt.TextElideMode.ElideRight,w)
         painter.drawText(QRect(x,box.bottom()-18,w,14),Qt.AlignmentFlag.AlignVCenter,status)
         painter.restore()

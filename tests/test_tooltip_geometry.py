@@ -9,6 +9,34 @@ ROOT=Path(__file__).resolve().parents[1]
 
 
 class TooltipGeometryTests(unittest.TestCase):
+    def test_light_shop_pane_is_not_a_description_even_with_our_dark_labels(self):
+        from PySide6.QtGui import QPainter
+        image=QImage(800,600,QImage.Format.Format_RGBA8888);image.fill(QColor('#ad969e'))
+        pane=QRect(200,100,296,364)
+        painter=QPainter(image);painter.fillRect(pane,QColor('#e6dcbd'))
+        for x in (200,493):
+            painter.fillRect(x,100,3,364,QColor(30,26,40))
+            painter.fillRect(x+1,100,1,364,QColor(170,150,160))
+        painter.fillRect(200,100,296,3,QColor(30,26,40))
+        painter.fillRect(200,101,296,1,QColor(170,150,160));painter.end()
+        area=dict(x=212,y=111,width=160,height=18)
+        self.assertIsNone(description_bounds(image,area))
+        self.assertFalse(still_present(image,pane))
+        masks=[QRect(206,y,283,60) for y in (135,200,265,330)]
+        painter=QPainter(image)
+        for mask in masks:painter.fillRect(mask,QColor('#161c26'))
+        painter.end()
+        self.assertIsNone(description_bounds(image,area,masks))
+        self.assertFalse(still_present(image,pane,masks))
+
+    def test_name_inside_our_annotation_cannot_anchor_a_new_description(self):
+        from PySide6.QtGui import QPainter
+        image=QImage(800,600,QImage.Format.Format_RGBA8888);image.fill(QColor('#eeeeee'))
+        painter=QPainter(image);painter.fillRect(QRect(200,200,300,180),QColor('#464b78'))
+        painter.end();area=dict(x=212,y=211,width=160,height=12)
+        self.assertIsNotNone(description_bounds(image,area))
+        self.assertIsNone(description_bounds(image,area,[QRect(208,208,220,36)]))
+
     def test_own_price_cards_do_not_clip_the_native_panel_bounds(self):
         from PySide6.QtGui import QPainter
         image=QImage(800,600,QImage.Format.Format_RGBA8888);image.fill(QColor('#eeeeee'))

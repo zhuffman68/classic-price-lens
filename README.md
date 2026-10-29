@@ -50,7 +50,7 @@ Start a session and watch gain, per-minute and per-hour figures in matching colu
 - **EXP:** percentage progress by default, with raw EXP or both available in Settings.
 - **Pace:** a session timer, recent average rates and an estimated time to the next level.
 - **Mesos:** meso pickups, with per-minute and per-hour rates from the visible pickup log.
-- **In-game trackers:** separate compact EXP and meso cards at the bottom left, with session gain, rates, time and level-up ETA.
+- **In-game trackers:** compact EXP and meso cards stacked above the bottom-left status bar, with independent visibility switches, session gain, rates, time and level-up ETA.
 - **Session controls:** Start, Pause and Stop; tracking always begins stopped when Lupin opens.
 
 EXP rates and ETA use 30 seconds of valid tracking to establish a pace. The overlays update every two seconds. Pausing screen reading holds tracking; the Prices shortcut can pause prices independently.
@@ -61,7 +61,7 @@ Meso gain counts readable pickup messages, including while EXP is unchanged. Fas
 
 Add a map label and notes directly on the tracking page. Save sessions, compare runs by character and map, and export history to CSV. Map changes save segments automatically; history stays local.
 
-<!-- DEMO: docs/media/tracking.mp4 — real training, visible wallet and the in-game tracker. -->
+<!-- DEMO: docs/media/tracking.mp4 — real training, visible pickup log and the in-game trackers. -->
 <!-- SCREENSHOT: docs/media/training-history.png — labeled runs and CSV export. -->
 
 ## Korean translation
@@ -143,7 +143,7 @@ Requirements: a supported 64-bit desktop, about **3 GB free space** for installa
 1. Choose the display containing Classic World, click **Start reading**, and approve OS sharing if prompted.
 2. Keep the game's bottom status bar visible for automatic game-area detection.
 3. Open a shop, hover an item or use **Prices** to search by name.
-4. Open **EXP/Meso Tracking** and press **Start tracking**. Open the item inventory to read the wallet.
+4. Open **EXP/Meso Tracking** and press **Start tracking**. Keep the pickup log visible to count meso gains.
 5. Use **Translation → Read Korean** for incoming text, or **Write Korean** for a reply to copy.
 6. Open **Database** to browse items, monsters, locations, drops and skills. Screen sharing is optional for this tab.
 
@@ -154,7 +154,7 @@ Screenshots, translations and session history stay on the device. Market request
 - **Game not found:** uncover the bottom status bar, or use **Settings → Limit the reading area…**.
 - **Sharing stopped or labels misaligned:** reconnect the display and share that display or the full workspace.
 - **No market reports:** the item was recognized, but the source has no usable price.
-- **Meso balance is old:** reopen the item inventory while tracking.
+- **Meso pickups are missing:** keep the bottom-right pickup log visible; covered or fast-moving messages can be missed.
 - **Translation found nothing:** keep the text visible and scan again. The pointer does not limit the scan.
 
 Connection details and capture preview are in Settings. Windows desktop capture is verified in a Windows VM; game capture and mixed-DPI alignment still need a physical Windows playtest.
