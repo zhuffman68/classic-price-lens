@@ -13,6 +13,7 @@ import json
 from .stream import StreamClient, screen_pixels
 from .platform_paths import reader_binary
 from .capture_platform import uses_system_picker
+from .tracking_identity import name_proof
 
 
 class PixelReader(QObject):
@@ -38,6 +39,7 @@ class PixelReader(QObject):
         self.last_map_read = 0.0
         self.last_pickup = self.last_pickup_frame = 0.0
         self.pending_experience = False
+        self.experience_source = None
         self.pending_pickups = False
         self.exclude_regions = lambda: []
         self.timings = deque(maxlen=240)
@@ -376,6 +378,7 @@ class PixelReader(QObject):
         self.pending_pickups = self.pending_locate_only = False
         self.pending_generation = self.generation
         self.pending_since = self.last_experience = now
+        self.experience_source=(image,area.topLeft())
         if read_map:
             self.last_map_read = now
         request = {"path":str(path),"width":image.width(),"height":image.height(),
@@ -424,6 +427,12 @@ class PixelReader(QObject):
                 else:
                     if self.pending_experience or self.pending_pickups:
                         if self.experience_enabled and time.monotonic()*1000-result.get("atMs",0) < 3000:
+                            if self.pending_experience and self.experience_source:
+                                source,origin=self.experience_source
+                                self.experience_source=None
+                                experience=result.get('experience')
+                                if isinstance(experience,dict):
+                                    experience['nameProof']=name_proof(source,experience.get('area'),origin)
                             self.experience.emit(result)
                         continue
                     if self.auto_active and not self.pending_local_roi:

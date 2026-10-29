@@ -496,7 +496,7 @@ class AnnotationWindow(QWidget):
                 color=QColor(row.get("color","#98a3b1"))
                 painter.fillRect(QRect(x+2,box.y()+5,3,box.height()-10),color)
                 if row.get("deal_delta"):
-                    chip=QRect(box.right()-64,box.y()+4,58,16)
+                    chip=QRect(box.right()-64,box.y()+2,58,14)
                     tint=QColor(color);tint.setAlpha(40)
                     painter.setPen(Qt.PenStyle.NoPen);painter.setBrush(tint);painter.drawRoundedRect(chip,4,4)
                     painter.setPen(color);painter.setFont(self.price_font)
@@ -516,7 +516,8 @@ class AnnotationWindow(QWidget):
             painter.setOpacity(float(row.get("_alpha",1.0))*float(row.get("_text_alpha",1.0)))
             painter.setPen(QColor(row.get("color", "#dce1e8")))
             text=painter.fontMetrics().elidedText(row["text"],Qt.TextElideMode.ElideRight,width-18)
-            self.paint_number(painter,row,'text',QRect(x+9,y+10,width-18,18),text)
+            text_rect=QRect(x+9,box.y()+17,width-18,17) if row.get('kind')=='shop' else QRect(x+9,y+10,width-18,18)
+            self.paint_number(painter,row,'text',text_rect,text)
             if row.get("extra"):
                 painter.setFont(self.name_font);painter.setPen(QColor("#aab5c4"))
                 for i,line in enumerate(row['extra'].splitlines()):
@@ -531,18 +532,18 @@ class AnnotationWindow(QWidget):
         if not any(char.isdigit() for char in metrics[0]):unit=''
         gain=metrics[0].removesuffix('%')
         raw=row.get('secondary','').split(' · ',1)[0]
-        detail=row.get('footer','') if experience else 'Visible pickups'
+        detail=row.get('footer','')
         if experience and raw:detail+=' · '+raw
         return dict(gain=gain,unit=unit,minute=metrics[1]+'/min',hour=metrics[2]+'/hr',detail=detail,
-                    basis=row.get('compact_note') or row.get('basis','Recent pace' if experience else 'Session pace'),
+                    basis=row.get('compact_note') or row.get('basis',''),
                     context=row.get('clock',''))
 
     def tracking_gain_style(self,box):
         """Scale exceptional totals together while keeping both unit columns fixed."""
         font=QFont(self.tracking_gain_font)
-        units=[self.tracking_values(row)['unit'] for row in self.rows if row.get('kind')=='tracking']
-        unit_width=28 if 'EXP' in units else 20
-        available=max(1,box.width()-12-90-unit_width-4)
+        unit_width=28
+        rate_width=90 if box.width()>=240 else 76
+        available=max(1,box.width()-12-rate_width-unit_width-4)
         for size in range(self.tracking_gain_font.pixelSize(),9,-1):
             font.setPixelSize(size);metrics=QFontMetrics(font);cell=metrics.horizontalAdvance('0')
             lengths=[]
@@ -557,7 +558,7 @@ class AnnotationWindow(QWidget):
         """Keep totals beside one fixed unit column, below the separate timer."""
         _,unit_width=self.tracking_gain_style(box)
         x,y,w=box.x()+6,box.y(),box.width()-12
-        left=x+90;unit_x=x+w-unit_width
+        left=x+(90 if box.width()>=240 else 76);unit_x=x+w-unit_width
         return dict(gain=QRect(left,y+14,max(1,unit_x-left-4),29),
                     unit=QRect(unit_x,y+14,unit_width,29),
                     context=QRect(x+w-54,y+1,54,13))
@@ -582,12 +583,15 @@ class AnnotationWindow(QWidget):
         if values['unit']==gui_currency.TOKEN:
             unit=columns['unit'];gui_currency.paint_icon(painter,QRect(unit.center().x()-8,unit.center().y()-8,16,16))
         else:
-            painter.setFont(self.price_font)
+            unit_font=QFont(self.price_font)
+            if values['unit']=='%':unit_font.setPixelSize(min(22,max(16,gain_font.pixelSize())))
+            painter.setFont(unit_font)
             painter.drawText(columns['unit'],Qt.AlignmentFlag.AlignCenter,values['unit'])
         painter.setFont(self.name_font);painter.setPen(QColor('#a5b3c7'))
         self.paint_number(painter,row,'context',columns['context'],values['context'],Qt.AlignmentFlag.AlignRight|Qt.AlignmentFlag.AlignVCenter)
+        rate_width=86 if box.width()>=240 else 72
         for key,top in (('minute',15),('hour',29)):
-            self.paint_number(painter,row,key,QRect(x,y+top,86,13),values[key])
+            self.paint_number(painter,row,key,QRect(x,y+top,rate_width,13),values[key])
         detail=painter.fontMetrics().elidedText(values['detail'],Qt.TextElideMode.ElideRight,w)
         self.paint_number(painter,row,'detail',QRect(x,y+43,w,12),detail)
         painter.restore()

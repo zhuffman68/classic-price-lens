@@ -14,9 +14,9 @@ ROOT=Path(__file__).resolve().parents[1]
 
 def rows():
     return [dict(key='experience',kind='tracking',name='EXP · Character · Lv. 30',text='+1.20%',color='#e4bd7b',clock='01:20',
-                 metrics=[('Gained','+1.20%'),('Per minute','+0.90%'),('Per hour','+54.0%')],footer='Level 31 - ETA 1h 20m',basis='Last 5 min',progress='24.10%',status='Rates average the last 5m tracked'),
+                 metrics=[('Gained','+1.20%'),('Per minute','+0.90%'),('Per hour','+54.0%')],footer='Level 31 · ETA 1h 20m',basis='Last 5 min',progress='24.10%',status='Rates average the last 5m tracked'),
             dict(key='meso-gain',kind='tracking',name='Meso gained',text='1,200',clock='01:20',color='#b7d4a9',
-                 metrics=[('Picked up','1,200'),('Per minute','900'),('Per hour','54,000')],footer='',status='Watching pickup messages')]
+                 metrics=[('Picked up','+1,200'),('Per minute','+900'),('Per hour','+54,000')],footer='Last pickup: +29',status='Watching pickup messages')]
 
 
 class TrackingOverlayTests(unittest.TestCase):
@@ -74,7 +74,7 @@ class TrackingOverlayTests(unittest.TestCase):
                     width=sum(metrics.horizontalAdvance('0') if key is not None else metrics.horizontalAdvance(char) for key,char in roll.columns)
                     self.assertLessEqual(width,parts['gain'].width())
                     self.assertTrue(window.label_rect(row,QPoint()).contains(parts['unit']))
-                self.assertEqual(window.tracking_values(window.rows[1])['detail'],'Visible pickups')
+                self.assertEqual(window.tracking_values(window.rows[1])['detail'],'Last pickup: +29')
                 self.assertEqual(window.tracking_values(window.rows[0])['basis'],'Last 5 min')
                 self.assertEqual(window.tracking_values(window.rows[0])['gain'],'+1.20')
             supplied=rows()[1];supplied['metrics'][0]=('Picked up','—')
@@ -110,3 +110,20 @@ class TrackingOverlayTests(unittest.TestCase):
                 readings=read([clean,paths[0],clean,*([paths[1]]*4)])
                 self.assertIsNone(readings[1]['gameArea'],'Control: the old card must reproduce HUD occlusion')
                 for result in readings[2:]:self.assertEqual(result['gameArea'],area)
+
+    def test_narrow_corner_is_used_before_moving_above_the_hud(self):
+        window=AnnotationWindow(start_listener=False)
+        try:
+            for lane in (200,220,236):
+                bounds=[40,50,1280,720];guard=QRect(40+lane+12,730,36,37)
+                placed=tracking_rows(rows(),bounds,[guard])
+                window.read_command(json.dumps(dict(geometry=[0,0,1400,900],rows=placed,reduce_motion=True)))
+                boxes=[window.label_rect(row,QPoint()) for row in window.rows]
+                self.assertEqual(max(box.bottom() for box in boxes),765)
+                self.assertTrue(all(box.width()==lane and box.right()<guard.left() for box in boxes))
+                self.assertTrue(all(not box.intersects(guard) for box in boxes))
+            guard=QRect(40+160+12,730,36,37);placed=tracking_rows(rows(),[40,50,1280,720],[guard])
+            window.read_command(json.dumps(dict(geometry=[0,0,1400,900],rows=placed,reduce_motion=True)))
+            chat_top=guard.top()-round(guard.height()*.8)
+            self.assertTrue(all(window.label_rect(row,QPoint()).bottom()<chat_top for row in window.rows))
+        finally:window.close();window.deleteLater()

@@ -26,6 +26,12 @@ class Reading:
     percent: int  # Hundredths of a percent, as printed by the game.
     character: str = ""
     job: str = ""
+    identity_key: str = ""
+
+    def same_character(self,other):
+        if self.identity_key and other.identity_key:
+            return self.identity_key==other.identity_key
+        return self.character==other.character
 
     @property
     def bounds(self):
@@ -45,7 +51,7 @@ class Reading:
                     or not 1 <= level <= 200 or not 0 <= exp <= 10**12 or not 0 <= percent < 10_000):
                 return None
             result = cls(at, level, exp, percent, str(payload.get("character") or "")[:80],
-                         str(payload.get("job") or "")[:80])
+                         str(payload.get("job") or "")[:80],str(payload.get('identityKey') or '')[:64])
             return result if result.bounds[0] <= result.bounds[1] else None
         except (TypeError, ValueError, AttributeError):
             return None
@@ -89,6 +95,7 @@ class ExperienceTracker:
         self.recovery = deque(maxlen=4)
         self.read_issue = ''
         self.events = deque()
+        self.pace_seconds = 0.0
         self.completed = []
         self.map_name = ""
         self.map_candidate = None
@@ -97,6 +104,9 @@ class ExperienceTracker:
 
     def fresh(self, now):
         return self.current is not None and 0 <= now-self.current.at <= MAX_GAP
+
+    def reset_pace(self):
+        self.events.clear();self.pace_seconds=0.0
 
     def start(self, map_name="", notes="", started=None):
         if self.current is None or self.run:
@@ -108,7 +118,6 @@ class ExperienceTracker:
                        notes[:240], r.level, r.level)
         self.baseline = r
         self.paused = False
-        self.events.clear()
         self.recovery.clear()
         self.message = "Recording · standing still counts toward your rate."
         return True
@@ -126,13 +135,14 @@ class ExperienceTracker:
         self.candidate = None
         self.recovery.clear()
 
-    def finish(self, reason="Saved"):
+    def finish(self, reason="Saved", *, keep_pace=False):
         if self.run is None:
             return None
         self.run.reason = reason
         result = self.run
         self.run = None
-        self.events.clear()
+        if not keep_pace:
+            self.reset_pace()
         self.paused = False
         self.baseline = None
         self.recovery.clear()
@@ -159,7 +169,7 @@ class ExperienceTracker:
             self.map_candidate, self.map_count = name, 1
         if self.map_count >= 2:
             if self.run and self.map_name and name != self.map_name:
-                self.finish("Map changed")
+                self.finish("Map changed",keep_pace=True)
             self.map_name = name
             if self.run and self.run.map_name == "Unlabelled map":
                 self.run.map_name = name
@@ -176,8 +186,8 @@ class ExperienceTracker:
             return None
         low, high = reading.bounds
         compatible = bool(previous and 0 < reading.at-previous.at <= MAX_GAP
-                          and (reading.character,reading.job,reading.level) ==
-                              (previous.character,previous.job,previous.level)
+                          and reading.same_character(previous) and reading.job==previous.job
+                          and reading.level==previous.level
                           and reading.exp >= previous.exp and reading.percent >= previous.percent)
         if compatible:
             low = max(low,*(r.bounds[0] for r in self.recovery))
@@ -207,7 +217,7 @@ class ExperienceTracker:
             return False
         if old and reading.at <= old.at:
             return False
-        switched = bool(old and old.character and reading.character and reading.character != old.character)
+        switched = bool(old and old.character and reading.character and not reading.same_character(old))
         changed_level = bool(old and reading.level != old.level)
         recovered = False
         if old and not switched and not changed_level and self.bounds:
@@ -228,7 +238,7 @@ class ExperienceTracker:
         if (switched or changed_level or decrease or jump) and not recovered:
             candidate = self.candidate
             compatible = (candidate is not None and 0 < reading.at-candidate.at <= MAX_GAP
-                          and candidate.level == reading.level and candidate.character == reading.character
+                          and candidate.level == reading.level and candidate.same_character(reading)
                           and reading.exp >= candidate.exp
                           and max(candidate.bounds[0], reading.bounds[0]) <= min(candidate.bounds[1], reading.bounds[1]))
             if not compatible:
@@ -279,8 +289,9 @@ class ExperienceTracker:
                     self.run.exp += raw
                     self.run.approximate_exp |= approximate
                     self.run.end_level = reading.level
-                    self.events.append((self.run.seconds, elapsed, progress, raw))
-                    while self.events and self.events[0][0] < self.run.seconds-3600:
+                    self.pace_seconds += elapsed
+                    self.events.append((self.pace_seconds, elapsed, progress, raw))
+                    while self.events and self.events[0][0] < self.pace_seconds-3600:
                         self.events.popleft()
             self.baseline = reading
             self.message = "Recording · standing still counts toward your rate."
@@ -291,9 +302,9 @@ class ExperienceTracker:
         return True
 
     def window(self, seconds):
-        if not self.run:
+        if not self.current or not self.events:
             return {"seconds":0.0, "progress":0.0, "exp":0.0, "rate":None, "exp_hour":None, "eta":None}
-        start = max(0, self.run.seconds-seconds)
+        start = max(0, self.pace_seconds-seconds)
         progress = raw = duration = 0.0
         for end, elapsed, change, exp in self.events:
             overlap = max(0, end-max(start, end-elapsed))

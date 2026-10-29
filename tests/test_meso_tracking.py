@@ -68,3 +68,36 @@ class MesoTrackingTests(unittest.TestCase):
         self.assertEqual(first['meso_basis'],'pickups');self.assertNotIn('wallet_end',first)
         self.confirm(29,50);self.assertEqual(self.tracker.checkpoint()['mesos'],50)
         self.assertEqual(self.tracker.gain,79)
+
+    def test_recent_pace_excludes_old_pickups_without_reducing_session_gain(self):
+        self.sample();self.confirm(600)
+        self.assertEqual(self.tracker.last_pickup,600)
+        for _ in range(310):self.sample(600,step=1)
+        self.assertEqual(self.tracker.gain,600);self.assertEqual(self.tracker.rate(self.at),0)
+        self.confirm(600,300)
+        self.assertAlmostEqual(self.tracker.rate(self.at),60)
+        self.assertEqual(self.tracker.gain,900);self.assertEqual(self.tracker.last_pickup,300)
+
+    def test_paused_time_does_not_expire_the_recent_pace_or_last_pickup(self):
+        self.sample();self.confirm(600)
+        for _ in range(20):self.sample(600,step=1)
+        before=self.tracker.rate(self.at);self.tracker.pause(True)
+        for _ in range(600):self.sample(600,step=1)
+        self.assertEqual(self.tracker.rate(self.at),before);self.assertEqual(self.tracker.last_pickup,600)
+        self.tracker.pause(False);self.sample(600)
+        self.assertGreater(self.tracker.rate(self.at),0)
+
+    def test_rate_history_is_bounded_and_checkpoints_do_not_reset_it(self):
+        self.sample()
+        for _ in range(700):
+            self.confirm();self.confirm(10)
+        before=self.tracker.rate(self.at);last=self.tracker.last_pickup
+        self.tracker.checkpoint()
+        self.assertEqual(self.tracker.rate(self.at),before);self.assertEqual(self.tracker.last_pickup,last)
+        self.assertLessEqual(len(self.tracker.recent),301)
+
+    def test_rate_has_only_a_ten_second_minimum_and_seeded_lines_are_not_last_pickup(self):
+        self.sample(900);self.assertIsNone(self.tracker.last_pickup)
+        for _ in range(9):self.sample(900,step=1)
+        self.assertIsNone(self.tracker.rate(self.at))
+        self.sample(900,step=1);self.assertEqual(self.tracker.rate(self.at),0)

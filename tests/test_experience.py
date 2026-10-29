@@ -49,6 +49,24 @@ class ExperienceTests(unittest.TestCase):
         self.assertAlmostEqual(tracker.run.progress,6)
         self.assertEqual(tracker.window(60)["progress"],0)
 
+    def test_map_segments_keep_the_existing_five_minute_pace(self):
+        tracker=self.tracker()
+        for second in range(1,42):tracker.ingest(payload(2000+second*10),second)
+        tracker.map_name='Old map';before=tracker.window(300)
+        for at in (42,43):tracker.observe_map({'mapRead':True,'map':{'map':'New map'}},at)
+        self.assertIsNone(tracker.run);self.assertEqual(tracker.window(300),before)
+        self.assertTrue(tracker.start());self.assertEqual(tracker.window(300),before)
+        tracker.ingest(payload(2440),44)
+        self.assertIsNotNone(tracker.window(300)['rate'])
+        self.assertEqual(tracker.run.map_name,'New map')
+
+    def test_stopping_and_starting_a_new_session_requires_a_new_pace(self):
+        tracker=self.tracker()
+        for second in range(1,42):tracker.ingest(payload(2000+second*10),second)
+        self.assertIsNotNone(tracker.window(300)['rate']);tracker.finish('Stopped');tracker.start()
+        self.assertIsNone(tracker.window(300)['rate'])
+        self.assertEqual(tracker.window(300)['seconds'],0)
+
     def test_level_up_carries_progress_and_marks_inferred_raw_total(self):
         tracker = self.tracker(exp=9900)
         self.assertFalse(tracker.ingest(payload(80,12_000,28),1))

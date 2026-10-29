@@ -1,5 +1,6 @@
 """Confirmed arrivals in the visible pickup log, never a guessed wallet/profit."""
 import math
+from collections import deque
 
 
 class PickupTracker:
@@ -20,6 +21,9 @@ class PickupTracker:
         self.instances = []
         self.empty_at = None
         self.open_empty = False
+        self.recent = deque()
+        self.recent_gain = 0
+        self.last_pickup = None
 
     def tick(self, now, connected=True):
         if not math.isfinite(now):return
@@ -77,20 +81,37 @@ class PickupTracker:
         ambiguous=bool(previous and rows and not overlap and not self.open_empty)
         if ambiguous:self.gaps+=1;self.segment_gaps+=1
         current=known+[(key,amount,at,ambiguous) for key,amount in rows[overlap:]]
-        confirmed=[];pending=False
+        confirmed=[];pending=False;batch=0
         for key,amount,first,counted in current:
             if not counted and at-first>=.08:
                 self.gain+=amount or 0;self.segment_gain+=amount or 0;counted=True
+                batch+=amount or 0
+                if amount:self.last_pickup=amount
                 self.open_empty=False
             pending|=not counted;confirmed.append((key,amount,first,counted))
         self.lines=rows;self.instances=confirmed;self.candidate=pending
+        if batch:
+            # At most one aggregate per second, independent of log arrival rate.
+            second=int(self.seconds)
+            if self.recent and self.recent[-1][0]==second:
+                self.recent[-1]=(second,self.recent[-1][1]+batch)
+            else:self.recent.append((second,batch))
+            self.recent_gain+=batch
+        self.trim_recent()
         return not pending
 
     def fresh(self, now):
         return self.last_seen is not None and 0<=now-self.last_seen<=self.MAX_GAP
 
     def rate(self, now):
-        return self.gain/self.seconds*60 if self.observed and self.seconds>=10 else None
+        self.trim_recent()
+        duration=min(self.seconds,300)
+        return self.recent_gain/duration*60 if self.observed and duration>=10 else None
+
+    def trim_recent(self):
+        cutoff=int(self.seconds)-300
+        while self.recent and self.recent[0][0]<=cutoff:
+            self.recent_gain-=self.recent.popleft()[1]
 
     def checkpoint(self):
         result=dict(mesos=self.segment_gain if self.observed else None,

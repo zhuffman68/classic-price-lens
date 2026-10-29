@@ -2,6 +2,7 @@
 from PySide6.QtCore import QRect
 
 TRACKING_HEIGHT = 56
+MIN_TRACKING_WIDTH = 200
 
 
 def tracking_rows(rows,bounds,guards=(),*,scale_x=None,scale_y=1.0):
@@ -13,13 +14,14 @@ def tracking_rows(rows,bounds,guards=(),*,scale_x=None,scale_y=1.0):
     game=QRect(*bounds);bottom=game.bottom()+1
     scale_x=scale_y if scale_x is None else scale_x
     lane=min(round(rect.left()*scale_x) for rect in guards)-game.left()-12 if guards else 0
-    width=min(316,lane) if lane>=240 else min(316,game.width()-8)
-    reserve=round((44 if guards else 90)*scale_y)
+    width=min(316,lane) if lane>=MIN_TRACKING_WIDTH else min(316,game.width()-8)
+    reserve=44 if guards else 90
     if guards:
         top=min(round(rect.top()*scale_y) for rect in guards)
-        rim=max(8,max(rect.height() for rect in guards)/4)
+        # One measured status-row height also clears the chat/input strip.
+        rim=max(8,max(rect.height() for rect in guards))
         reserve=max(reserve,bottom-top+round(rim*scale_y))
-    offset=0 if lane>=240 else reserve;placed=[]
+    offset=0 if lane>=MIN_TRACKING_WIDTH else reserve;placed=[]
     for row in reversed(rows):
         height=TRACKING_HEIGHT
         card=dict(row,x=game.left()+4,y=game.bottom()-4,anchor='bottom_left',bounds=bounds,

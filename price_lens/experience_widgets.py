@@ -30,7 +30,7 @@ def build(panel,layout):
         QLabel#expLevel { font-size:11px; color:#b5c2d4; background:#283344; border-radius:5px; padding:3px 7px; }
         QLabel#expMap, QLabel#expMuted { color: #a7b2c2; font-size: 11px; }
         QLabel#trackingFigure { color: #edc68a; font-size: 21px; font-weight: 500; }
-        QLabel#mesoFigure { color: #edc68a; font-size: 19px; font-weight: 500; }
+        QLabel#mesoFigure { color: #b7d4a9; font-size: 19px; font-weight: 500; }
         QLabel#expMetric { font-size: 18px; font-weight: 600; color: #e5eaf2; }
         QLabel#trackingClock { font-size: 29px; font-weight: 500; color: #e5eaf2; }
         QLabel#expPosition { font-size: 16px; font-weight: 600; color: #dce4ef; }
@@ -44,6 +44,7 @@ def build(panel,layout):
     identity=QHBoxLayout();identity.setContentsMargins(15,0,15,0);identity.setSpacing(8)
     panel.character=label('', 'expIdentity');panel.character.setWordWrap(False)
     panel.level_label=label('','expLevel');panel.level_label.setWordWrap(False)
+    panel.level_label.setIndent(0)
     panel.level_label.setSizePolicy(QSizePolicy.Policy.Maximum,QSizePolicy.Policy.Fixed)
     panel.level_label.setProperty('currencyIcon',False)
     panel.map_label=label('', 'expMap');panel.map_label.setWordWrap(False)

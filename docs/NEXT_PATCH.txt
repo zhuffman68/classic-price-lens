@@ -1,5 +1,19 @@
 Local patch status
 
+v0.17.4 is built, verified and ready for local installation. Both trackers keep recent
+five-minute rate windows through map segments and pauses; Stop/Start resets them.
+Captured name proofs prevent OCR spelling flips from splitting a character.
+Clocks tick each second; other figures retain their two-second snapshot cadence.
+Cards narrow before moving above the HUD, with larger percent units, signed green
+meso figures, a last-pickup footer and retained Paused state. Badge indentation,
+middle-dot ETA and price-change/last-sale spacing are corrected.
+The 503-test source suite and installed Windows/Wine, pacman, Debian 12 and
+Ubuntu 22.04 suites pass. All four artifact checksums verify. A normal source
+preview, 2117207, retains helper 1984295 and its approved share; the prior test
+session is saved and tracking starts stopped. Permanent host installation is
+deferred to the command in docs/PATCH_0.17.4.md. Physical Windows gameplay and
+real pickup arrivals remain live checks. Uploads remain on hold.
+
 v0.17.3 is built and verified locally. It adds bounded EXP numerical
 recovery, distinct unreadable/checking statuses and clear-reading warmup wording.
 Tracking cards have bold headings and large gain totals beside smaller rate lines,

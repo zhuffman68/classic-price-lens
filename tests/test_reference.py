@@ -208,7 +208,11 @@ class ReferenceRefreshTests(unittest.TestCase):
         finished=[];self.service.updated.connect(lambda:finished.append(threading.get_ident()))
         self.service.start();self.service.start(True)
         deadline=time.monotonic()+3
-        while self.service.busy and time.monotonic()<deadline:QTest.qWait(10)
+        while self.service.busy and time.monotonic()<deadline:
+            QTest.qWait(10)
+            # Give the Python worker a scheduling point as well as pumping Qt.
+            # Tight QTest-only waits can starve it under the Windows runtime.
+            time.sleep(.001)
         self.assertEqual(finished,[threading.get_ident()]);self.assertFalse(self.service.busy)
         self.assertEqual(self.calls.count(API+'meta.json'),1)
         self.assertEqual(self.service.timer.interval(),86400000)

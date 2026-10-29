@@ -9,6 +9,7 @@ from PySide6.QtGui import QColor, QImage, QPainter
 from PySide6.QtWidgets import QApplication
 
 from price_lens.capture import PixelReader
+from price_lens.tracking_identity import proof_pixels
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -47,6 +48,7 @@ class ExperienceCaptureTests(unittest.TestCase):
             reader.on_stream_frame(frame,time.monotonic())
             self.wait(lambda:bool(shops) and bool(exp))
             self.assertEqual(exp[-1]["experience"]["bar"]["exp"],100300)
+            self.assertIsNotNone(proof_pixels(exp[-1]['experience']['nameProof']))
             self.assertTrue(shops[-1]["shop"]["rows"])
             count = len(shops)
             reader.last_experience = time.monotonic()-2
