@@ -13,7 +13,7 @@ Lupin reads shared screen pixels and draws independent overlays. It never hooks 
 
 ## Market prices
 
-See market references beside player-shop listings, with item names and colors that make lower, similar and higher asking prices easy to compare. Hover inventory or equipped items for their market reference, including while a shop is open.
+See market references beside player-shop listings, with item names and colors that make lower, similar and higher asking prices easy to compare. Hover inventory or equipped items for their market reference, including while a shop is open. Standard item descriptions from trades use the same reader.
 
 - Supports equipment, scrolls, materials, consumables and cash/NX resale prices when market reports exist.
 - Shows item images beside shop entries in the Prices page.
@@ -49,11 +49,13 @@ Start a session and watch gain, per-minute and per-hour figures in matching colu
 
 - **EXP:** percentage progress by default, with raw EXP or both available in Settings.
 - **Pace:** a session timer, recent average rates and an estimated time to the next level.
-- **Mesos:** wallet balance, net change and live rates while the item inventory's wallet is visible.
-- **In-game tracker:** an optional bottom-left overlay for pace, level-up ETA and meso change.
+- **Mesos:** meso pickups, with per-minute and per-hour rates from the visible pickup log.
+- **In-game trackers:** separate compact EXP and meso cards at the bottom left, with session gain, rates, time and level-up ETA.
 - **Session controls:** Start, Pause and Stop; tracking always begins stopped when Lupin opens.
 
-EXP rates and ETA use 30 seconds of valid tracking to establish a pace. Hidden wallet readings show their age; reopening the inventory updates the balance. Net meso change includes purchases, sales and trades. Carried potions and unsold loot are not valued as farming profit.
+EXP rates and ETA use 30 seconds of valid tracking to establish a pace. The overlays update every two seconds. Pausing screen reading holds tracking; the Prices shortcut can pause prices independently.
+
+Meso gain counts readable pickup messages, including while EXP is unchanged. Fast bursts or covered text can be missed. Purchases, trades, potion costs and unsold loot are excluded; this is a pickup total, not farming profit.
 
 ### Training history
 
@@ -74,7 +76,7 @@ Results appear as soon as they are ready, with the Korean original kept alongsid
 
 ### Write Korean
 
-Open the writer, type an English message and review the Korean preview. Press **Enter** or **Translate & Copy** to copy it; a notification confirms the copy. Choose where to paste with **Ctrl+V** and when to send.
+Open the writer, type an English message and review the Korean preview. Press **Enter** or **Translate & Copy** to submit it. The popup closes smoothly while translation finishes, then copies the Korean text and confirms it in the game overlay. The writer inside the Translation tab stays open. Choose where to paste with **Ctrl+V** and when to send.
 
 Common trade and party shorthand is recognized. Known item names stay in English, and explicit numbers, prices and percentages are checked: `250` stays `250`, `250k` stays `250k`, and `2.5m` stays `2.5m`.
 
@@ -92,7 +94,7 @@ Browse **Items**, **Monsters**, **Skills**, **Maps** and **Quests** without shar
 - **Maps:** minimaps, map symbols, linked monsters, published spawn-point counts and connections. Spawn markers appear only when image-coordinate alignment verifies.
 - **Quests:** quest-giver portraits, level and location, illustrated requirements and rewards, and linked prerequisite/next quests where recorded. Item Sources link back to named reward quests.
 
-Selected item cards share a compact price column and sliding Overview/Sources panel. Equipment separates stats from requirements; scrolls show success rate and effects. Quest reward totals keep their units beside their values.
+Selected item cards share a compact price column and sliding Overview/Sources panel. Equipment separates stats from requirements; scrolls show success rate and effects. Sources put named NPC shops and reported reward boxes first, followed by monster and quest sources, with images and links to database entries. NPC shop costs are kept separate from player-market references. Quest reward totals keep their units beside their values.
 
 Browsing includes content supported by release or observed-market evidence, including previously available items. GM/test and unconfirmed code-only entries are excluded. Cash pages show relevant information without generic drop-report sections.
 
@@ -104,7 +106,7 @@ The database updates in the background and remains available offline after its f
 
 ## Desktop controls
 
-Choose a display and Lupin finds the Classic World area automatically. Windows reads that display directly; Wayland also asks for OS sharing approval. A manual area selection is available in Settings. The window remembers its size, supports resizing and minimizing, and does not maximize. New installations start at 509 × 829 pixels, bounded to the display. The minimum width is 460 pixels.
+Choose a display and Lupin finds the Classic World area automatically. Windows reads that display directly; Wayland also asks for OS sharing approval. A manual area selection is available in Settings. The compact window follows the display's size and remembers manual resizing. It supports minimizing and does not maximize. Its minimum width is 460 pixels.
 
 - Configurable shortcuts for prices, tracking, reading Korean and opening the writer.
 - The current tool's shortcut shown at the bottom of each tab.

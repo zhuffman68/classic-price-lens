@@ -1,6 +1,6 @@
 # Lupin architecture
 
-Lupin v0.16.0 provides market references, EXP/meso tracking, local Korean translation and a searchable Classic World database for MapleStory Classic World.
+Lupin v0.17.0 provides market references, EXP/meso tracking, local Korean translation and a searchable Classic World database for MapleStory Classic World.
 
 ## Observation boundary
 
@@ -20,7 +20,7 @@ flowchart LR
     Cache --> UI
     Search[Search and watched items] --> Cache
     Images[Exact-ID item images] --> Search
-    Reader --> Tracking[EXP and wallet session]
+    Reader --> Tracking[EXP and pickup ledger]
     Tracking --> UI
     Stream --> Translate[Local Korean OCR and translation]
     Translate --> UI
@@ -76,17 +76,19 @@ Thumbnail downloads share a two-request queue, bounded memory/disk caches and ne
 
 ## Tracking and translation
 
-EXP/wallet tracking always starts stopped. Explicit Start enables its reader. Rates use 30 seconds of valid observations; pause/context loss excludes unseen changes. Percent is the default EXP unit; raw/both are available. Meso tracking records net wallet change, including purchases, sales and trades, without estimating carried-potion costs or unsold loot. History/CSV stay local. The optional bottom-left tracker appears only for running/paused tracking.
+Tracking starts stopped. Explicit Start enables EXP sampling once a second and a bounded bottom-right pickup-log crop at up to five samples a second, in the existing OCR process. The old wallet reader is removed. The pickup reader recognizes complete system messages, caches up to 128 line masks and never saves frames or chat. A bounded arrival ledger confirms lines in independent captures, aligns scrolling suffixes/prefixes, distinguishes repeated amounts, seeds existing messages on Start/Resume and after coverage gaps, and holds when known windows cover the log. It records gross visible pickups, not profit or wallet changes. Missed/ambiguous bursts can undercount. Legacy saved runs retain their wallet basis; new history/CSV records use pickups and record coverage gaps.
+
+EXP pace needs 30 seconds; pickup rates need 10 seconds. Percent is the default EXP unit; raw/both remain available. Separate fixed-grid EXP and meso cards sit at bottom left, side by side when they fit and stacked for narrow captures. Their numeric snapshots update every two seconds, with immediate pause/context/settings changes. Reading Pause holds the session clock and rebaselines future samples; the Prices shortcut leaves tracking active. History/CSV stay local.
 
 The Korean reader scans the detected full game area for a short configurable window, independent of cursor proximity. New scans supersede old work. Matching source pixels retain cards through modest movement; linger and no-result timers are bounded. The Korean original is retained and unstated price/percentage units are not invented.
 
-The writer uses conservative trade/party shorthand and numeric validation before explicit Translate & Copy. Editing/canceling invalidates pending copies. Both verified int8 model bundles remain included. See [Korean notes](docs/KOREAN_CHAT.md).
+The writer uses conservative trade/party shorthand and numeric validation before explicit Translate & Copy. Enter in the popup begins a short fade/slide dismissal while the current validated draft finishes; this intentional dismissal preserves only that explicit copy authorization. Escape/edit revokes it. Successful copying shows an expiring bottom-right notification. Editing/canceling invalidates pending copies. Both verified int8 model bundles remain included. See [Korean notes](docs/KOREAN_CHAT.md).
 
 ## Presentation, persistence and packaging
 
 Inter is bundled for consistent interface/price typography. The GUI uses a small coin for currency words, except MESO on the tracking panel and EXP/Meso Tracking on its tab; game-overlay text remains plain. Tracking unit coins appear only alongside available numbers. The larger, left-aligned rolling tracking timer shares a borderless row with the tracking controls above both metric panels. The timer adds hours while retaining seconds; its reserved width prevents the adjacent buttons from shifting. Digit-place animation keeps surrounding text/columns steady. Page slides and section transitions are interruptible and respect Reduce motion.
 
-Maximization and control-panel pinning are disabled. Fresh default geometry is 509 × 829, bounded to the display, with a 460-pixel minimum width. Normal user sizes persist; desktop-sized/maximized geometry cannot replace a compact preference. Long item/history lists can scroll independently. Tabs use plain labels, warm selected text and a filled active background.
+Maximization and control-panel pinning are disabled. Fresh default geometry is 27.0833% × 77.7778% of logical screen dimensions (520 × 840 at 1920 × 1080), clamped to available space with a 460-pixel minimum width. Resizes persist as screen-relative fractions; OS DPI is applied once. Valid older custom sizes migrate without losing the preference; desktop-sized/maximized geometry cannot replace a compact preference. Long item/history lists can scroll independently. Tabs use plain labels, warm selected text and a filled active background.
 
 Programs install to `/opt/lupin` or `%LOCALAPPDATA%\\Programs\\Lupin`; launchers/readers use Lupin names. Windows upgrades move the old program directory, preserve additional files, remove obsolete shipped modules and support rollback before commit. Shutdown sends Quit through Lupin's own local pipe and waits for that specific server process to finish unloading; synchronization-only access comes from the pipe's server PID, with no process enumeration or termination. Stable settings/socket/portal IDs preserve data and approved sharing. The WebView2 SDK, loader and official setup bootstrapper have pinned download hashes. Windows setup checks/prepares the shared runtime before closing an existing installation; Linux package dependencies provide WebKitGTK. The browser engine is not bundled. Both runtime/model manifests are pinned; install roots stay read-only in normal use. Private evidence, credentials, screenshots and caches are excluded. See [packaging](packaging/README.md) and [verification](VERIFICATION.md).
 
@@ -144,3 +146,7 @@ headers. Exact upgrade-suffix validation also applies to independent second read
 colored title pixels participate in their cache fingerprint. Frame structure and
 exact catalog identity remain required. No hooks, process access or game input
 are introduced.
+
+## Named item sources
+
+`reference_sources.py` imports one bounded public NPC-shop page daily. An exact canonical icon ID and name must match the local item, and the NPC ID/name must match its local entry. Published shop prices remain NPC purchase costs, never market references or historical shop asking prices. Selected-item reward-box relationships use separately verified public item-index bindings for both the item and box. Successes/empty results cache for a day, failures for 30 minutes, and failed updates preserve last-good rows. These calls retrieve database relationships, not individual market prices. Sources sort named shops and boxes first, use compact image rows, and navigate to proven NPC/item entries. Raw versioned reference payloads remain hash-verified and unchanged; conservative scroll-family corrections apply only to the local presentation records.

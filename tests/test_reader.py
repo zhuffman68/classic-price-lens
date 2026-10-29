@@ -196,6 +196,22 @@ class ShopReaderTests(unittest.TestCase):
             self.assertEqual(reading['found']['area']['x'],268)
         self.assertEqual(readings[2:],['none','none'])
 
+    def test_item_descriptions_on_both_sides_of_a_trade_sized_panel(self):
+        from PySide6.QtGui import QImage,QColor,QPainter
+        source=QImage(str(ROOT/'vendor/minerva/samples/item-tooltip/screw@60,20.png'))
+        with tempfile.TemporaryDirectory() as directory:
+            requests=[]
+            for index,x in enumerate((100,800)):
+                frame=QImage(1366,768,QImage.Format.Format_RGBA8888);frame.fill(QColor('#373f45'))
+                painter=QPainter(frame);painter.fillRect(90,140,1170,470,QColor('#cbd5df'))
+                painter.drawImage(x,200,source);painter.end()
+                path=Path(directory)/f'description-{index}.png';frame.save(str(path))
+                requests.append(json.dumps({'path':str(path),'tooltip':True,'pointer':{'x':x+60,'y':220}}))
+            result=subprocess.run([str(BINARY)],input='\n'.join(requests)+'\n',text=True,capture_output=True,
+                                  check=True,timeout=20,env={**os.environ,'RAYON_NUM_THREADS':'2'})
+        readings=[json.loads(line) for line in result.stdout.splitlines()]
+        self.assertEqual([r['tooltip']['found']['name'] for r in readings],['Screw','Screw'])
+
     def test_small_shop_capture_keeps_desktop_coordinates(self):
         path = ROOT / "vendor/minerva/samples/player-shop/gems-and-ores.png"
         request = {"path": str(path), "at_ms": 123, "pointer": None, "origin": {"x": 140, "y": 80}}

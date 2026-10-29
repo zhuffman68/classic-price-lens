@@ -392,11 +392,11 @@ class ContextUiTests(unittest.TestCase):
         self.assertEqual(section.body.content.height(),contents)
         middle=section.body.height();section.set_expanded(True)
         self.assertEqual(section.body.height(),middle)
-        section.body.animation.setCurrentTime(200)
+        section.body.animation.setCurrentTime(section.body.animation.duration())
         self.assertEqual(section.body.height(),full)
         for expanded in (False,True):
             section.set_expanded(expanded);positions=[]
-            for ms in range(0,201,20):
+            for ms in range(0,section.body.animation.duration()+1,20):
                 section.body.animation.setCurrentTime(ms);self.app.processEvents()
                 positions.append(section.body.content.mapTo(w,QPoint()).y())
             self.assertEqual(len(set(positions)),1,positions)
@@ -405,7 +405,7 @@ class ContextUiTests(unittest.TestCase):
         from price_lens.domain import Item
         w=self.window;w.resize(509,829);w.render();w.show();self.app.processEvents()
         w.watchlist.toggle(Item(1,'Example Hat'))
-        section=w.search_panel.watched_items;QTest.qWait(230)
+        section=w.search_panel.watched_items;QTest.qWait(section.body.animation.duration()+60)
         ready=next(iter(w.card_views.values()))
         ready_top=ready.mapTo(w,QPoint()).y()
         w.search_panel.select_watched(1);self.app.processEvents()
@@ -415,7 +415,7 @@ class ContextUiTests(unittest.TestCase):
         self.assertEqual(ready.mapTo(w,QPoint()).y(),ready_top)
         QTest.qWait(180)
         section.set_expanded(False)
-        for ms in range(0,201,20):
+        for ms in range(0,section.body.animation.duration()+1,20):
             section.body.animation.setCurrentTime(ms);self.app.processEvents()
             gap=ready.mapTo(w,QPoint()).y()-section.mapTo(w,QPoint()).y()-section.height()
             self.assertEqual(gap,w.prices_layout.spacing())

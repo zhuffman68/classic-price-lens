@@ -61,7 +61,11 @@ class RecentItems(QWidget):
             item=catalog.resolve(row.get('name'),row.get('tier'))
             if item is None:continue
             identity=item.game_id;current.add(identity);previous=self.entries.get(identity)
-            entry=dict(item=item,seen=now,price=dict(row.get('price') or {}) or (previous.get('price') if previous else None))
+            price=row.get('price') or {}
+            # A partial OCR read or an occluded listing must never erase the
+            # last complete asking price. This is history, not a live verdict.
+            complete=compare(item,price.get('quantity'),price.get('mesos'),None).unit_price is not None
+            entry=dict(item=item,seen=now,price=dict(price) if complete else previous.get('price') if previous else None)
             self.entries[identity]=entry
             if previous is None or identity not in self.active:self.entries.move_to_end(identity,last=False)
         self.active=current
@@ -85,7 +89,8 @@ class RecentItems(QWidget):
             identity=row['item'].game_id;item=previous.get(identity)
             if item is None:item=QListWidgetItem();item.setSizeHint(QSize(0,59));self.rows.insertItem(index,item)
             elif self.rows.row(item)!=index:self.rows.takeItem(self.rows.row(item));self.rows.insertItem(index,item)
-            item.setData(Qt.ItemDataRole.UserRole,row);quote=quotes[identity];price=quote.price if quote else None
+            if item.data(Qt.ItemDataRole.UserRole)!=row:item.setData(Qt.ItemDataRole.UserRole,row)
+            quote=quotes[identity];price=quote.price if quote else None
             item.setData(Qt.ItemDataRole.UserRole+1,price);item.setToolTip(row['item'].name)
             item.setData(Qt.ItemDataRole.UserRole+2,bool(quote and quote.fresh(now,ttl)))
             roll=self.rolls.setdefault(identity,NumberRoll());changed_price=roll.set_text(f'{price:,.0f}' if price is not None else '—',enabled(self)) or changed_price
@@ -105,7 +110,8 @@ class RecentItems(QWidget):
 
     def set_image(self,identity,image):
         item=self.rows_by_id.get(identity)
-        if item and not image.isNull():item.setIcon(QIcon(QPixmap.fromImage(image)))
+        if item and not image.isNull() and item.data(Qt.ItemDataRole.UserRole+3)!=image.cacheKey():
+            item.setIcon(QIcon(QPixmap.fromImage(image)));item.setData(Qt.ItemDataRole.UserRole+3,image.cacheKey())
 
     def clear(self):
         fade_away(self)

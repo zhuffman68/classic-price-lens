@@ -58,6 +58,7 @@ class DatabasePanel(QWidget):
         self.query.textChanged.connect(self.schedule);self.query.returnPressed.connect(self.open_first)
         self.media.ready.connect(self.image_ready);self.service.updated.connect(self.reloaded);self.service.changed.connect(self.update_status)
         self.service.extra.updated.connect(self.extra_updated);self.service.extra.changed.connect(self.update_status)
+        self.service.sources.updated.connect(self.extra_updated)
         self.service.geometry.updated.connect(self.geometry_updated)
         self.focus_shortcut=QShortcut(QKeySequence('Ctrl+F'),self);self.focus_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         self.focus_shortcut.activated.connect(lambda:(self.query.setFocus(),self.query.selectAll()))
@@ -212,13 +213,14 @@ class DatabasePanel(QWidget):
         if not record or not self.store.available(*key):return
         if remember:self.history.append(self.state());self.history=self.history[-32:]
         self.timer.stop();self.content.begin()
-        if key[0]!=self.kind:
+        if key[0]!=self.kind and key[0] in KINDS:
             self.kind=key[0];self.scope=();self.query.blockSignals(True);self.query.clear();self.query.blockSignals(False)
         self.sync_kind();self.selected,row=record
         self.dispose_entry();self._entry=EntryDetails(self,self.selected,row);self._entry.media_changed.connect(self.observe_media)
         self.pages.addWidget(self._entry);self.pages.setCurrentWidget(self._entry)
         self._entry.set_active(self.active);self.summary.setText('');self.update_navigation();self.content.complete(direction)
         self.service.extra.select(self.selected if self.active else None);QTimer.singleShot(0,self.observe_media)
+        self.service.sources.select(self.selected if self.active else None)
 
     def open_external(self,key):
         self.external_return=(self.state(),list(self.history));self.history=[]

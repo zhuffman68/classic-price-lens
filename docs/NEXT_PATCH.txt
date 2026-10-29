@@ -1,21 +1,40 @@
 Local patch status
 
-v0.16.0 final refinements, platform builds and isolated package checks are complete.
-The source and documentation are committed locally.
+v0.17.0 implements the approved compact design and pickup-based meso tracking.
+Linux/Windows builds and isolated package checks are complete.
+See docs/PATCH_0.17.0.md for changes, limits and install commands.
 Uploads remain on hold: do not push source, publish a GitHub release, or upload
 itch.io channels until the user authorizes publication again.
 
-The source includes released-content category/job/region browsing, compact shared
-item cards with sliding Overview/Sources, stable price refreshes, and bright clear
-controls. Session history retains 100 unique items with thumbnails and large
-market references. Quests include portraits, requirements and rewards; Maps include
-minimaps, connections and published spawn counts. Marker placement is conditional
-on verified image projection. Current curated data exposes 332 maps and 332 quests.
+EXP and meso gain have separate fixed-grid overlays at bottom left, with two-second
+numeric updates. EXP retains percentage/raw/both modes, session gain, recent pace,
+current progress, timer and level-up ETA. Meso gain counts visible pickup-message
+arrivals, including while EXP is unchanged; it does not read the wallet or estimate
+profit. Known occlusion, reading pause and capture gaps prevent old messages from
+being treated as new arrivals. Fast/obscured bursts may be missed. Actual game-log
+and trade-window acceptance remain live checks, separate from fixtures.
 
-The market-report button is removed. Quest reward totals keep units beside their
-numbers. The design fits 509 x 829 and the 460-pixel minimum width. Design previews
-were transferred to the Pixel 6a; the user accepted the layout after these changes.
+The tracking page has an inset character/compact level badge, a rolling mm:ss or
+h:mm:ss clock, aligned rate columns and inline coin units. Main Pause reading holds
+tracking; the Prices shortcut remains independent. The Korean writer fades/slides
+closed on Enter while its explicitly submitted draft finishes, copies to the
+clipboard and shows an expiring game-overlay notice. It never pastes or sends keys;
+Escape/edit still cancels pending copy authorization.
 
-Our native reader and Python name validation handle colored and scrolled titles.
-Rebuild both packaged reader targets before staging. The pinned Minerva checkout
-and both local translation model bundles remain unchanged.
+Prices reuse existing cards across geometry-only/irrelevant changes and repaint
+only visible price/status/age changes. Recent items hydrate cached thumbnails and
+preserve the last valid asking price across incomplete/covered/tooltip observations.
+Selected cards place Overview/Sources higher, with compact source subtitles and
+inset Overview facts. Named NPC shops and verified reported reward boxes appear
+first, with images and database links. NPC prices never replace market prices.
+All 44 current raw scroll records whose target was Other normalize conservatively
+by matching ID family and canonical name; raw verified files are unchanged.
+
+Defaults use 27.0833% width and 77.7778% height of logical screen geometry, equivalent
+to 520 x 840 at 1920 x 1080. Manual sizes persist as proportions; minimum width is
+460. Ordinary pages fit at the base size; populated inner lists can scroll.
+Connection/resume layout, common buttons and right-aligned translation timing
+fields are updated. The unused wallet reader and old EXP-window option are removed.
+The pinned Minerva checkout, models and game-access boundary remain unchanged.
+
+See VERIFICATION.md for final tests/build evidence and remaining live checks.

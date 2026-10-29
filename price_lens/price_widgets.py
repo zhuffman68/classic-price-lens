@@ -1,5 +1,5 @@
 """Persistent price cards: update fields in place instead of rebuilding on every quote."""
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt,QSize
 from PySide6.QtWidgets import QFrame,QHBoxLayout,QPushButton,QVBoxLayout,QWidget
 
 from .domain import WORLD,age_text,compare
@@ -9,12 +9,41 @@ from .thumbnails import ItemImage
 from .watchlist_ui import WatchButton
 
 
+class SelectedCardBody(QWidget):
+    """A stable price column; the detail panel begins beneath the item title."""
+    def __init__(self,card,panel):
+        super().__init__(card)
+        self.card,self.panel=card,panel
+        for child in (card.header_widget,card.price_column,panel):child.setParent(self);child.show()
+        self.setMinimumHeight(224)
+
+    def sizeHint(self):return QSize(420,224)
+
+    def resizeEvent(self,event):
+        super().resizeEvent(event)
+        card=self.card;width=self.width()
+        name_width=max(120,width-92)
+        title_height=max(19,card.fields['name'].heightForWidth(name_width))
+        header=max(42,title_height+18)
+        card.header_widget.setGeometry(0,0,width,header)
+        card.price_column.setGeometry(0,header+8,174,max(140,self.height()-header-8))
+        self.panel.setGeometry(184,title_height+5,max(140,width-184),188)
+
+
+def display_age(quote,now,ttl):
+    """Only changes that can alter visible reference text invalidate a card."""
+    if quote is None:return None
+    return (quote.cache_valid(now,ttl),quote.fresh(now,ttl),
+            age_text(max(0,now-quote.observed_at)) if quote.observed_at is not None else '',
+            age_text(max(0,now-quote.fetched_at)) if quote.source!='MesoWatch' else '')
+
+
 class PriceCard(QFrame):
     def __init__(self,watchlist=None,watch_button=None,**data):
         super().__init__()
         self.setObjectName("card")
         layout=QVBoxLayout(self)
-        layout.setContentsMargins(14,12,14,12)
+        layout.setContentsMargins(12,10,12,10)
         layout.setSpacing(7)
         self.fields={}
         def field(name,parent,style="font-size: 11px; color: #98a3b1",wrap=True):
@@ -24,16 +53,19 @@ class PriceCard(QFrame):
             self.fields[name]=widget
             parent.addWidget(widget)
             return widget
-        header=self.header=QHBoxLayout();self.thumbnail=ItemImage();self.thumbnail.hide();header.addWidget(self.thumbnail)
+        self.header_widget=QWidget();self.header_widget.setStyleSheet('background:transparent')
+        header=self.header=QHBoxLayout(self.header_widget);header.setContentsMargins(0,0,0,0);header.setSpacing(8)
+        self.thumbnail=ItemImage();self.thumbnail.hide();header.addWidget(self.thumbnail)
         names=QVBoxLayout();names.setContentsMargins(0,0,0,0);names.setSpacing(4)
         field("name",names,"font-size: 14px; font-weight: 650")
         field("context",names,"font-size: 10px; color: #98a3b1")
         header.addLayout(names,1)
         self.watch_button=watch_button if watch_button is not None else WatchButton(self)
         if watchlist is not None:self.watch_button.bind(watchlist)
-        header.addWidget(self.watch_button,0,Qt.AlignmentFlag.AlignTop);layout.addLayout(header)
+        header.addWidget(self.watch_button,0,Qt.AlignmentFlag.AlignTop);layout.addWidget(self.header_widget)
         self.selected_mode=bool(data.get('selected'))
-        self.columns=QHBoxLayout();self.columns.setSpacing(12);layout.addLayout(self.columns)
+        self.columns_widget=QWidget();self.columns_widget.setStyleSheet('background:transparent')
+        self.columns=QHBoxLayout(self.columns_widget);self.columns.setContentsMargins(0,0,0,0);self.columns.setSpacing(10);layout.addWidget(self.columns_widget)
         self.price_column=QWidget();self.price_column.setStyleSheet('background:transparent')
         values=QVBoxLayout(self.price_column);values.setContentsMargins(0,0,0,0);values.setSpacing(6)
         self.columns.addWidget(self.price_column,4)
@@ -51,7 +83,7 @@ class PriceCard(QFrame):
         field("market",market,"font-size: 17px; font-weight: 650")
         numbers.addLayout(market)
         values.addLayout(numbers)
-        field('recent',values,'font-size:11px;color:#b3c0d2')
+        field('recent',values,'font-size:10px;color:#b3c0d2')
         field('sales',values,'font-size:10px;color:#a5b5ca')
         if self.selected_mode:
             field('status',values);self.fields['status'].setFixedHeight(44)
@@ -63,8 +95,13 @@ class PriceCard(QFrame):
         self.update_data(**data)
 
     def set_panel(self,panel):
-        self.columns.addWidget(panel,6);self.price_column.setMinimumWidth(142)
-        panel.setMinimumWidth(0);panel.setFixedHeight(200)
+        self.layout().removeWidget(self.header_widget);self.layout().removeWidget(self.columns_widget)
+        self.columns.removeWidget(self.price_column)
+        self.fields['context'].setWordWrap(False)
+        self.price_column.setMinimumWidth(174);self.price_column.setMaximumWidth(174)
+        panel.setMinimumWidth(0);panel.setFixedHeight(188)
+        self.selected_body=SelectedCardBody(self,panel);self.layout().addWidget(self.selected_body)
+        self.columns_widget.hide();self.columns_widget.deleteLater()
 
     def put(self,name,text,style=None):
         label=self.fields[name]
@@ -80,6 +117,12 @@ class PriceCard(QFrame):
     def update_data(self,*,item,row,quote,now,ttl,paused=False,old_capture=False,lookup_error=False,
                     lookup_state="",open_source=None,
                     hovered=False,example=False,context_name=None,selected=False):
+        self.data={"open_source":open_source,"quote":quote}
+        price=row.get('price') or {}
+        signature=(item,row.get('name') if item is None else None,price.get('quantity'),price.get('mesos'),
+                   quote,ttl,paused,old_capture,lookup_error,lookup_state,hovered,example,context_name,selected,display_age(quote,now,ttl))
+        if signature==getattr(self,'display_signature',None):return
+        self.display_signature=signature
         identity=item.game_id if item else None
         changing=selected and getattr(self,'selected_identity',None)!=identity
         self.selected_identity=identity
@@ -115,7 +158,7 @@ class PriceCard(QFrame):
         else:message,tone="Store price unclear","muted"
         self.put("name",item.name if item else row.get("name") or "Item name unclear")
         self.fields['name'].setProperty('currencyIcon',False)
-        self.put("context","EXAMPLE PRICES" if example else (context_name or "Inventory / equipment item") if hovered else "")
+        self.put("context","EXAMPLE PRICES" if example else (context_name or "Item description") if hovered else "")
         self.put("status",message,f"color: {COLORS[tone]}; font-size: 11px")
         self.store.setVisible(not hovered)
         self.put("store",mesos(verdict.unit_price)+(" mesos" if verdict.unit_price is not None else ""))
@@ -124,10 +167,10 @@ class PriceCard(QFrame):
                  f"font-size: 17px; font-weight: 650; color: {'#e8d2ac' if fresh and not stale else '#98a3b1'}")
         self.put("units",('Per set' if item and item.per_set else '') if selected else (("Prices are per set" if item.per_set else "Prices are per item")+
                           (" · resale value in mesos" if item.cash else "")) if item else "")
-        age=f'Price checked {age_text(max(0,now-quote.fetched_at))} ago' if compatible else ''
+        age=f'Price checked {age_text(max(0,now-quote.fetched_at))} ago' if compatible and quote.source!='MesoWatch' else ''
         if compatible and quote.source!='MesoWatch':
             age+=' · latest market report '+(age_text(max(0,now-quote.observed_at))+' ago' if quote.observed_at else 'unknown')
-        if compatible and quote.published_at is not None:age+=f' · snapshot {age_text(now-quote.published_at)} old'
+        if compatible and quote.source!='MesoWatch' and quote.published_at is not None:age+=f' · snapshot {age_text(now-quote.published_at)} old'
         self.put('age',age if not example and not selected else '')
         # Refresh progress belongs to the shared market status. Per-card progress
         # changed card height on every refresh and shifted surrounding content.

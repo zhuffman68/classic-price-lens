@@ -184,6 +184,7 @@ class PriceSearch(QWidget):
     def set_reference(self,service,media,market):
         self.reference=service;self.store=service.store;self.media=media;self.market=market
         media.ready.connect(self.on_reference_image);service.extra.updated.connect(self.on_reference_reports)
+        service.sources.updated.connect(self.on_reference_reports)
 
     def catalog_item(self,entry):
         return next((item for item in self.catalog.items if item.game_id==entry.id and key(item.name)==key(entry.name)),None) if self.catalog else None
@@ -207,7 +208,9 @@ class PriceSearch(QWidget):
         if isinstance(card,EntryDetails) and self.selected and card.entry.key==tuple(key):card.refresh_drops();self.reference_changed.emit()
 
     def refresh_reference(self):
-        if self.selected:self.card_key=None;self.render()
+        if self.selected:
+            self.card_key=None;self.render()
+            if isinstance(self.price_view,EntryDetails):self.price_view.refresh_drops()
 
     def select_watched(self,identity):
         if identity is None:
@@ -390,7 +393,8 @@ class PriceSearch(QWidget):
         if self.inline_detail:
             self.detail_scroll.setVisible(bool(self.selected or self.pending_identity))
             self.layout().setStretch(self.bottom_spacer,0 if self.selected or self.pending_identity else 1)
-        state = (self.selected,self.pending_identity,self.quote,self.error,self.lookup_state,self.ttl,int(time.time()//5))
+        from .price_widgets import display_age
+        state = (self.selected,self.pending_identity,self.quote,self.error,self.lookup_state,self.ttl,display_age(self.quote,time.time(),self.ttl))
         if state == self.card_key:return
         self.card_key = state
         card = getattr(self,"price_view",None)
@@ -410,14 +414,12 @@ class PriceSearch(QWidget):
                     card=self.price_view=EntryDetails(self,*record);self.watch_button=card.watch_button
                     card.media_changed.connect(self.reference_changed.emit);self.detail_layout.insertWidget(0,card)
                     if previous:card.restore(previous)
-                card.update_data(**data);card.refresh_drops()
+                card.update_data(**data)
             elif card:card.update_data(**data)
             else:
                 card = self.price_view = price_card(watch_button=self.watch_button,**data)
                 self.detail_layout.insertWidget(0,card)
             self.card_item = self.selected.game_id
-            if self.watchlist is not None and card.header.indexOf(self.watch_button)<0:
-                card.header.addWidget(self.watch_button,0,Qt.AlignmentFlag.AlignTop)
             card.show()
             if self.thumbnails:
                 image=self.thumbnails.image(self.selected.game_id)

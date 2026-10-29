@@ -13,6 +13,11 @@ import uuid
 MAX_GAP = 5.0
 
 
+def clock_text(seconds):
+    seconds=max(0,int(seconds));hours,remainder=divmod(seconds,3600);minutes,seconds=divmod(remainder,60)
+    return f'{hours}:{minutes:02}:{seconds:02}' if hours else f'{minutes:02}:{seconds:02}'
+
+
 @dataclass(frozen=True)
 class Reading:
     at: float
@@ -68,6 +73,8 @@ class Run:
     wallet_start: int | None = None
     wallet_end: int | None = None
     session_seconds: float | None = None
+    meso_basis: str = "wallet"  # Legacy saved runs retain their original meaning.
+    pickup_gaps: int = 0
 
 
 class ExperienceTracker:

@@ -99,6 +99,7 @@ def main():
         window.service.pool.shutdown(wait=True, cancel_futures=True)
         window.reference.pool.shutdown(wait=True,cancel_futures=True)
         window.reference.extra.pool.shutdown(wait=True,cancel_futures=True)
+        window.reference.sources.pool.shutdown(wait=True,cancel_futures=True)
         return result
     finally:
         control.close()

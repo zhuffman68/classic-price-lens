@@ -12,6 +12,7 @@ from .outgoing_text import LIMIT,clean,expand,protect,template,validate,warnings
 class KoreanComposer(QObject):
     changed=Signal()
     copied=Signal(str)
+    copy_submitted=Signal(int)
 
     def __init__(self,root,parent=None):
         super().__init__(parent);self.root=Path(root)
@@ -61,7 +62,9 @@ class KoreanComposer(QObject):
 
     def request_copy(self):
         if not self.text:return
+        if self.copy_pending==self.identity:return
         self.copy_pending=self.identity;self.timer.stop()
+        self.copy_submitted.emit(self.identity)
         if self.result_id==self.identity and self.result:self.copy_result()
         else:self.preview()
 

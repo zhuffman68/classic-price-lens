@@ -1,5 +1,5 @@
 """Clipboard-only Korean composer shared by the Translation page and hotkey popup."""
-from PySide6.QtCore import Qt,QTimer,QPropertyAnimation,QEasingCurve
+from PySide6.QtCore import Qt,QTimer,QVariantAnimation,QEasingCurve,QPoint
 from PySide6.QtGui import QFontDatabase,QFont
 from PySide6.QtWidgets import QWidget,QVBoxLayout,QHBoxLayout,QLineEdit,QPushButton,QFrame,QProgressBar,QDialog,QScrollArea
 from .motion import MotionLabel,visibility,enabled,reveal
@@ -18,7 +18,7 @@ class ComposerWidget(QWidget):
         if configure:self.shortcut.clicked.connect(configure)
         else:self.shortcut.hide()
         title.addWidget(self.shortcut);layout.addLayout(title)
-        hint=MotionLabel('Type English. Enter translates and copies the Korean draft.');hint.setWordWrap(True)
+        hint=MotionLabel('Type English. Enter translates and copies the Korean message.');hint.setWordWrap(True)
         hint.setStyleSheet('color:#a6b1bf;font-size:11px');layout.addWidget(hint)
         self.input=QLineEdit();self.input.setMaxLength(LIMIT);self.input.setClearButtonEnabled(True)
         self.input.setPlaceholderText('WTS Work Gloves 250k ea, pmo')
@@ -77,26 +77,61 @@ class ComposerDialog(QDialog):
         layout=QVBoxLayout(self);layout.setContentsMargins(18,12,18,16)
         self.editor=ComposerWidget(composer,shortcut,configure,self)
         scroll=QScrollArea(self);scroll.setWidgetResizable(True);scroll.setFrameShape(QFrame.Shape.NoFrame);scroll.setWidget(self.editor);layout.addWidget(scroll)
-        self.copy_identity=None
-        self.dismiss=QTimer(self);self.dismiss.setSingleShot(True);self.dismiss.setInterval(180);self.dismiss.timeout.connect(self.finish_copy)
-        composer.copied.connect(self.copied)
-        self.finished.connect(lambda *_:(self.dismiss.stop(),composer.cancel_copy()))
-        self.fade=QPropertyAnimation(self,b'windowOpacity',self);self.fade.setDuration(110);self.fade.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self.scroll=scroll;self.motion_origin=QPoint();self.closing_result=None
+        self.submitting=False
+        composer.copy_submitted.connect(self.submitted)
+        self.finished.connect(self.closed)
+        self.fade=QVariantAnimation(self);self.fade.setDuration(120);self.fade.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self.fade.valueChanged.connect(self.animate);self.fade.finished.connect(self.motion_finished)
         self.focus_timer=QTimer(self);self.focus_timer.setSingleShot(True);self.focus_timer.setInterval(0)
         self.focus_timer.timeout.connect(lambda:self.editor.input.setFocus(Qt.FocusReason.ShortcutFocusReason))
 
-    def copied(self,*_):
-        if self.isVisible():self.copy_identity=self.composer.identity;self.dismiss.start()
+    def submitted(self,identity):
+        if not self.isVisible():return
+        # Enter is an explicit one-shot copy authorization. Closing this popup
+        # for submission must not cancel it; Escape and ordinary closes still do.
+        self.submitting=True
+        self.accept()
 
-    def finish_copy(self):
-        if self.copy_identity==self.composer.identity:self.accept()
+    def animate(self,value):
+        self.setWindowOpacity(float(value))
+        # Animate our own contents so Wayland does not need to reposition the
+        # top-level surface. Its layout and native window frame stay steady.
+        self.scroll.move(self.motion_origin+QPoint(0,round((1-float(value))*8)))
+
+    def motion_finished(self):
+        if self.closing_result is None:
+            self.scroll.move(self.motion_origin);return
+        result=self.closing_result;self.closing_result=None
+        super().done(result)
+        self.submitting=False
+
+    def done(self,result):
+        if not self.isVisible():return super().done(result)
+        self.focus_timer.stop();self.fade.stop()
+        if result!=QDialog.DialogCode.Accepted:
+            self.submitting=False;self.composer.cancel_copy()
+        self.closing_result=result
+        if not enabled(self):self.motion_finished();return
+        self.editor.setEnabled(False)
+        self.fade.setDuration(110);self.fade.setStartValue(self.windowOpacity());self.fade.setEndValue(0.0);self.fade.start()
+
+    def accept(self):self.done(QDialog.DialogCode.Accepted)
+    def reject(self):self.done(QDialog.DialogCode.Rejected)
+
+    def closed(self,*_):
+        if not self.submitting:self.composer.cancel_copy()
 
     def showEvent(self,event):
         super().showEvent(event)
         self.fade.stop()
-        if enabled(self):self.fade.setStartValue(.8);self.fade.setEndValue(1.0);self.fade.start()
+        self.closing_result=None;self.editor.setEnabled(True);self.submitting=False
+        self.layout().activate();self.motion_origin=self.scroll.pos()
+        if enabled(self):self.fade.setDuration(120);self.fade.setStartValue(0.0);self.fade.setEndValue(1.0);self.fade.start()
         else:self.setWindowOpacity(1)
         self.focus_timer.start()
 
     def hideEvent(self,event):
-        self.fade.stop();self.dismiss.stop();self.focus_timer.stop();self.composer.cancel_copy();super().hideEvent(event)
+        self.fade.stop();self.focus_timer.stop()
+        if not self.submitting:self.composer.cancel_copy()
+        super().hideEvent(event)

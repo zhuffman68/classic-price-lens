@@ -1,4 +1,21 @@
-# Verification — 2026-10-28
+# Verification — 2026-10-29
+
+## Lupin v0.17.0
+
+- The source suite passes 461 tests with three platform/offscreen skips; both additional sizing/pause regressions pass in a 20-test targeted run. Native Rust parser/price/title checks pass. New tests cover pickup arrival confirmation, repeated equal amounts, continuously arriving lines, fading/scrolling, context loss, independent EXP/pickup replies, old asking-price retention, exact shop/box identities and cache behavior, popup Enter/late-copy behavior and Escape cancellation. Final packaged test counts are recorded after building.
+- Native OCR reads synthetic outlined pickup messages at 12/14/16 pixels and retains repeated equal amounts as separate rows. Unchanged line masks reuse recognition. This proves the fixture pipeline, not real-game font/occlusion/pet-burst accuracy. The user has been invited to expose actual pickup messages; that acceptance remains pending. Meso totals count visible pickups and can miss obscured/fast bursts. Legacy saved wallet runs retain their basis.
+- The generic tooltip reader passes descriptions placed on both sides of a synthetic trade-sized panel using public tooltip pixels. Actual live trades remain untested. The pinned Minerva checkout is unchanged; the removed wallet reader is replaced only in our own bounded pixel bridge. No game process, files, memory, packets or input are accessed.
+- Production widgets were rendered at 520 x 840 and 460 x 840 with sample tracking/price values and a read-only snapshot of public references. Normal tracking, selected item and Translation pages have no page scroll range. Sources/history lists scroll independently when populated. Title width, compact level badge, rate/coin alignment, right-aligned timing values, lifted Overview/Sources and separate bottom-left overlays were inspected. These are isolated renders, not screenshots of live game acceptance.
+- Named NPC import matched 599 exact item/NPC rows across 31 NPCs on the public page; Stolen Fence resolves to Silver's published 2,000-meso NPC purchase entry. Reward-box parsing finds the two reported boxes on Green Bamboo Hat. Source identities remain verified separately, and NPC costs never become market prices. All 44 existing raw Other-target scroll records normalize through a matching ID family/name while their original payloads remain unchanged.
+- New defaults are screen-relative logical geometry (27.0833% x 77.7778%, equivalent to 520 x 840 at 1920 x 1080), clamped to the work area/minimum width. Existing custom sizes migrate and manual resizing persists. Both local translation models and their allowlists are retained. All uploads remain on hold.
+
+Post-build checks:
+
+- Windows/Wine, pacman, Debian 12 and Ubuntu 22.04 each run all 463 application tests, with eight/four/five/five platform skips respectively. Installation, offline OCR/overlay, running-app upgrade/removal where supported, file checks and user-cache preservation pass. Debian/Ubuntu also pass isolated X11 and native market-helper self-tests. These checks never start screen sharing or send game input.
+- All four artifacts have verified SHA-256 checksums. Both staging trees match all 107 current application/resource files byte for byte; the package readers match the newly compiled musl/Windows targets. No private evidence, downloaded item/database caches or user settings ship. Both translation model bundles remain intact. The Windows installer is 408,829,686 bytes.
+- Linux preview 1709184 reconnects through the original sharing helper 1622436. Its log is clean and a current 1920 x 1080 frame is delivered without a new sharing chooser. No Classic World window is visible on that shared display during this check, so pickup/pet-burst accuracy and live trade acceptance remain pending. Permanent installation remains deferred to the user's package command. Physical Windows game capture/paste are not established by Wine.
+- Reproducing Resume with an existing session keeps the reading panel at 102 pixels and the tab origin at 224 pixels in both states. Production-render checks also catch and correct title sizing and keep the level badge close to the name. These are isolated widget checks, distinct from live acceptance.
+- Staging-time verification ships inside the artifacts; this post-build record is supplied separately as dist/VERIFICATION-0.17.0.md. No upload or source push has occurred.
 
 ## Lupin v0.16.0
 

@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
 )
 
 from .capture import PixelReader, pointer_in_shop
-from .domain import DEFAULT_TTL, WORLD, compare
+from .domain import DEFAULT_TTL, WORLD, compare, age_text
 from .service import PriceService
 from .price_status import reference_status
 from .overlay import Overlay
@@ -41,6 +41,7 @@ from .watchlist import Watchlist, WatchEncounters
 from .reference_service import ReferenceService
 from .reference_ui import DatabasePanel
 from .recent_items import RecentItems
+from .overlay_notice import OverlayNotice
 from . import APP_NAME, LEGACY_APP_NAME
 
 COLORS = {"green": "#86ceac", "red": "#ed9394", "amber": "#e4bd7b", "blue": "#9ebde3", "muted": "#98a3b1"}
@@ -189,6 +190,9 @@ class LensWindow(QMainWindow):
         self.chat_hotkeys.changed.connect(self.on_chat_hotkey_changed)
         self.chat_hotkeys.status.connect(self.on_chat_status)
         self.composer=KoreanComposer(self.root,self)
+        self.write_notice=OverlayNotice();self.write_pending_identity=None
+        self.composer.copy_submitted.connect(self.on_translation_submitted)
+        self.composer.changed.connect(self.on_writer_changed)
         self.composer.copied.connect(self.on_translation_copied)
         self.composer_dialog=None
         self.write_sequence=shortcuts['write']
@@ -216,6 +220,7 @@ class LensWindow(QMainWindow):
         self.service.refresh_snapshot = True
         self.service.set_refresh_interval(self.ttl)
         self.reader = PixelReader(root, self)
+        self.reader.exclude_regions=self.pickup_capture_exclusions
         self.reader.auto_enabled = self.auto_game_area
         self.reader.tooltip_enabled = self.hover_enabled and self.labels_enabled and self.prices_enabled
         self.reader.experience_enabled = self.exp_enabled
@@ -241,8 +246,10 @@ class LensWindow(QMainWindow):
         heading.addWidget(self.brand,1)
         heading.addStretch()
         self.shortcuts_button=QPushButton("Hotkeys…")
+        self.shortcuts_button.setObjectName('ghost')
         self.shortcuts_button.clicked.connect(self.configure_shortcuts)
         self.settings_button = QPushButton("Settings")
+        self.settings_button.setObjectName('ghost')
         self.settings_button.clicked.connect(self.open_settings)
         corner=QVBoxLayout();corner.setSpacing(4);corner.setContentsMargins(0,0,0,0)
         corner.addWidget(self.settings_button,0,Qt.AlignmentFlag.AlignRight)
@@ -316,8 +323,7 @@ class LensWindow(QMainWindow):
         self.recent_items=RecentItems(self.cards)
         self.cards_layout.addWidget(self.recent_items)
         self.scroll.setWidget(self.cards)
-        self.exp_panel = ExperiencePanel(data_directory()/"exp-sessions.sqlite", enabled=self.exp_enabled,
-                                        window_minutes=self.settings.value("exp-window", 5, type=int), parent=self)
+        self.exp_panel = ExperiencePanel(data_directory()/"exp-sessions.sqlite",parent=self)
         self.exp_panel.enabled_changed.connect(self.set_exp_enabled)
         self.exp_panel.changed.connect(self.on_experience_changed)
         self.exp_panel.overlay_changed.connect(self.set_exp_overlay)
@@ -405,7 +411,8 @@ class LensWindow(QMainWindow):
         self.setStyleSheet("""
             QMainWindow, QWidget { background: #171c25; color: #dce1e8; font-family: 'INTERFACE_FONT'; font-size: 12px; }
             QLabel { background: transparent; }
-            QPushButton, QComboBox, QKeySequenceEdit { background: #252d3b; border: 1px solid #354052; border-radius: 6px; padding: 7px 9px; }
+            QPushButton { background:#252e3d;border:1px solid #3a475b;border-radius:7px;padding:7px 12px;min-height:16px;font-weight:500; }
+            QComboBox, QKeySequenceEdit { background: #252d3b; border: 1px solid #354052; border-radius: 6px; padding: 7px 9px; }
             QPushButton:hover { background: #323c4c; border-color: #927b58; }
             QPushButton:pressed { background: #404655; }
             QPushButton:disabled { background: #202630; border-color: #2c333e; color: #727c8b; }
@@ -417,6 +424,8 @@ class LensWindow(QMainWindow):
             QPushButton#captureToggle:disabled { background:#2b303a; color:#828b97; border-color:#39414e; }
             QPushButton#quiet { background: transparent; border: 0; color: #b1bac7; padding: 5px 2px; text-align: left; }
             QPushButton#quiet:hover { color: #ebc483; }
+            QPushButton#ghost { background:transparent;border-color:transparent;color:#b4c0d0;padding:5px 8px; }
+            QPushButton#ghost:hover { background:#273244;border-color:#3c4a60;color:#edcf9e; }
             QCheckBox { color: #b5bfcc; padding: 3px 0; }
             QCheckBox:hover, QCheckBox:checked { color:#f0deb9; }
             QCheckBox::indicator { width:16px;height:16px;border:1px solid #687991;border-radius:4px;background:#1b2534; }
@@ -622,7 +631,11 @@ class LensWindow(QMainWindow):
                 if identity:
                     item=next((item for item in self.catalog.items if item.game_id==identity),None)
                     if item:items.append(item)
-            items+=self.recent_items.visible_items()
+            recent=self.recent_items.visible_items()
+            # Cached images do not emit a download-completed signal. Hydrate
+            # new history rows immediately, then observe any missing images.
+            for item in recent:self.recent_items.set_image(item.game_id,self.thumbnails.image(item.game_id))
+            items+=recent
         self.search_panel.set_screen_items(items)
 
     def on_shop_thumbnail(self,identity):
@@ -709,7 +722,28 @@ class LensWindow(QMainWindow):
         if isinstance(token,str) and 0<len(token)<4096 and '\x00' not in token:self.write_activation_token=token
 
     def on_translation_copied(self,*_):
-        if hasattr(self,'tray') and not self.closing:self.tray.translation_copied()
+        if self.closing:return
+        self.write_pending_identity=None
+        self.write_notice.show('Translation copied to clipboard','Paste with Ctrl+V')
+        self.draw_labels(time.time(),time.time()-self.last_screen>3)
+        QTimer.singleShot(2600,lambda:self.draw_labels(time.time(),time.time()-self.last_screen>3) if not self.closing else None)
+        if hasattr(self,'tray') and (self.mode!='live' or self.reader.game_area is None):self.tray.translation_copied()
+
+    def on_translation_submitted(self,identity):
+        self.write_pending_identity=identity
+        self.write_notice.show('Translating to Korean…','The result will be copied to your clipboard.',seconds=65)
+        self.draw_labels(time.time(),time.time()-self.last_screen>3)
+
+    def on_writer_changed(self):
+        if self.closing or self.write_pending_identity is None:return
+        composer=self.composer
+        if composer.identity!=self.write_pending_identity:
+            self.write_pending_identity=None;self.write_notice.message=None
+        elif composer.error:
+            self.write_pending_identity=None
+            self.write_notice.show('Translation could not be copied','Open the Korean writer to review the message.',seconds=4,warning=True)
+        else:return
+        self.draw_labels(time.time(),time.time()-self.last_screen>3)
 
     def on_chat_status(self,message):
         if hasattr(self,"translation_panel"):self.translation_panel.set_status(message)
@@ -755,6 +789,21 @@ class LensWindow(QMainWindow):
                 exclude.append([round(rect.x()*sx),round(rect.y()*sy),round(rect.width()*sx),round(rect.height()*sy)])
         self.chat.request(image,region,exclude)
 
+    def pickup_capture_exclusions(self):
+        image=self.reader.image
+        if self.screen_index is None or image.isNull():return []
+        geometry=self.screens[self.screen_index].geometry()
+        sx,sy=image.width()/geometry.width(),image.height()/geometry.height()
+        regions=[QRect(round(x*sx),round(y*sy),round(w*sx),round(h*sy)) for x,y,w,h in getattr(self.overlay,'layout_boxes',[])]
+        for owned in (self,self.composer_dialog):
+            if owned is not None and owned.isVisible() and not owned.isMinimized():
+                rect=owned.frameGeometry().translated(-geometry.x(),-geometry.y())
+                regions.append(QRect(round(rect.x()*sx),round(rect.y()*sy),round(rect.width()*sx),round(rect.height()*sy)))
+        offset=self.reader.crop.topLeft() if self.reader.crop else QPoint()
+        for rect in (self.reader.shop_context,self.shop_tooltip_rect):
+            if rect:regions.append(rect.translated(offset))
+        return regions
+
     def set_exp_enabled(self, enabled):
         self.exp_enabled = enabled
         self.reader.experience_enabled = enabled
@@ -793,7 +842,9 @@ class LensWindow(QMainWindow):
 
     def update_reference_context(self):
         if not hasattr(self,'database_panel') or self.closing:return
-        if self.tabs.currentIndex()==self.search_tab_index:self.reference.extra.select(self.search_panel.reference_entry())
+        if self.tabs.currentIndex()==self.search_tab_index:
+            entry=self.search_panel.reference_entry()
+            self.reference.extra.select(entry);self.reference.sources.select(entry)
         self.database_panel.observe_media()
 
     def on_reference_data(self):
@@ -986,6 +1037,7 @@ class LensWindow(QMainWindow):
             return ("Screen reading needs attention", self.capture_error, "amber", "Reconnect display")
         if self.capture_starting:
             if uses_system_picker():
+                if self.session_available:return ('Resuming reading', 'Reusing the shared display.', 'blue', '')
                 hint = f"In the system sharing dialog, select {display}. Full-workspace sharing also works."
                 if time.monotonic() - self.starting_at > 10:
                     hint += " The dialog may be behind another window; finish it or cancel setup below."
@@ -1046,7 +1098,7 @@ class LensWindow(QMainWindow):
         self.status_badge.setStyleSheet(f"color: {COLORS[tone]}; font-weight: 650; font-size: 13px")
         self.capture_info.setText(detail)
         self.capture_info.setVisible(True)
-        self.setup_details.setVisible(bool(self.capture_error or self.capture_starting or action))
+        self.setup_details.setVisible(bool(self.capture_error or self.capture_starting and not self.session_available or action))
         self.recovery_button.setVisible(bool(action))
         self.recovery_button.setText(action)
         if hasattr(self, "crop_button"):
@@ -1570,14 +1622,20 @@ class LensWindow(QMainWindow):
             self.summary.clear()
         # Keep the UI small at rest. Rebuild only when content/state changes or
         # the five-second age bucket changes; screen frames never rebuild cards.
-        tooltip_content = {key: value for key, value in self.tooltip_result.items() if key not in ("area", "_pointer")} if self.tooltip_result else None
-        card_key = (repr(self.rows), repr(tooltip_content), repr(self.quotes), repr(self.errors),
+        visible=[]
+        for row,hovered in ([(self.tooltip_result,True)] if self.tooltip_result else [])+[(row,False) for row in self.rows]:
+            item=self.catalog.resolve(row.get('name'),row.get('tier')) if self.catalog else None
+            quote=self.quote_for(item);price=row.get('price') or {}
+            visible.append((hovered,item.game_id if item else row.get('name'),row.get('tier'),
+                            price.get('quantity'),price.get('mesos'),quote,
+                            bool(item and item.game_id in self.errors),
+                            quote.cache_valid(now,self.ttl) if quote else False,
+                            quote.fresh(now,self.ttl) if quote else False,
+                            age_text(now-quote.observed_at) if quote and quote.observed_at is not None else '',
+                            self.service.state_for(item.game_id) if item else ''))
+        card_key = (tuple(visible),
                     self.mode, self.shop_open, screen_old, self.capture_starting, self.catalog_loading,
-                    self.catalog_error, id(self.catalog), self.ttl, int(now // 5),
-                    tuple((key, quote.cache_valid(now, self.ttl), quote.fresh(now, self.ttl), self.service.state_for(key))
-                          for key, quote in self.quotes.items()),
-                    tuple((item.game_id, self.service.state_for(item.game_id)) for row in observations
-                          if self.catalog and (item := self.catalog.resolve(row.get("name"), row.get("tier")))))
+                    self.catalog_error, id(self.catalog), self.ttl,self.prices_enabled)
         if card_key != getattr(self, "card_key", None):
             self.card_key = card_key
             position = self.scroll.verticalScrollBar().value()
@@ -1728,16 +1786,21 @@ class LensWindow(QMainWindow):
                     annotations[-1]['bounds']=[round(region.x()*sx),round(region.y()*sy),
                                                 round(region.width()*sx),round(region.height()*sy)]
         if self.exp_enabled and self.exp_overlay and self.mode == "live" and game_visible and screen_matches and not screen_old:
-            row = self.exp_panel.overlay_row()
-            if row:
-                area = self.reader.game_area if self.reader.auto_active else self.reader.crop
-                if area:
+            tracking_rows = self.exp_panel.overlay_rows()
+            area = self.reader.game_area if self.reader.auto_active else self.reader.crop
+            if area:
+                scaled_width=round(area.width()*geometry.width()/image.width())
+                side_by_side=scaled_width>=610
+                for index,row in enumerate(tracking_rows):
                     row.update(x=round(area.left()*geometry.width()/image.width())+4,
                                y=round(area.bottom()*geometry.height()/image.height())-4,
+                               tracking_width=min(296,scaled_width-8),tracking_height=132,
+                               left_offset=index*304 if side_by_side else 0,
+                               bottom_offset=0 if side_by_side else index*138,
                                anchor="bottom_left",bounds=[round(area.x()*geometry.width()/image.width()),
                                       round(area.y()*geometry.height()/image.height()),
                                       round(area.width()*geometry.width()/image.width()),round(area.height()*geometry.height()/image.height())])
-                    annotations.insert(0,row)
+                    annotations.insert(index,row)
         if self.chat_enabled and self.mode=="live" and game_visible and screen_matches and not screen_old:
             area=self.reader.game_area if self.reader.auto_active else self.reader.crop
             if area:
@@ -1745,6 +1808,13 @@ class LensWindow(QMainWindow):
                 bounds=[round(area.x()*sx),round(area.y()*sy),round(area.width()*sx),round(area.height()*sy)]
                 # Shop and EXP references paint above a manually requested chat card.
                 annotations=self.chat.annotations(image,sx,sy,bounds,occupied=annotations)+annotations
+        if self.mode=='live' and game_visible and screen_matches and not screen_old:
+            area=self.reader.game_area if self.reader.auto_active else self.reader.crop
+            if area:
+                sx,sy=geometry.width()/image.width(),geometry.height()/image.height()
+                bounds=[round(area.x()*sx),round(area.y()*sy),round(area.width()*sx),round(area.height()*sy)]
+                notice=self.write_notice.row(bounds)
+                if notice:annotations.append(notice)
         self.watch_encounters.apply(annotations, self.watchlist.ids, page=self.shop_rows.page_revision)
         self.overlay.update(list(geometry.getRect()), annotations, hover_enabled=self.prices_enabled and self.labels_enabled and self.mode == "live" and game_visible and screen_matches and not screen_old)
         if (annotations and ready_price and not self.first_price_seen):

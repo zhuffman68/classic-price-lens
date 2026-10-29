@@ -13,7 +13,7 @@ class WatchButton(QPushButton):
     def __init__(self,parent=None):
         super().__init__('☆',parent);self.watches=None;self.item=None
         self.setCheckable(True);self.setFixedSize(32,32)
-        self.setStyleSheet('QPushButton {background:transparent;border:1px solid transparent;font-size:20px;color:#b5c1d2;border-radius:6px;} QPushButton:hover {background:#303c4e;border-color:#53647b;} QPushButton:checked {background:#403525;border-color:#c8a363;color:#f5d798;}')
+        self.setStyleSheet('QPushButton {background:transparent;border:1px solid transparent;font-size:20px;color:#b5c1d2;border-radius:6px;padding:0;} QPushButton:hover {background:#303c4e;border-color:#53647b;} QPushButton:checked {background:#403525;border-color:#c8a363;color:#f5d798;}')
         self.clicked.connect(self.toggle_item);self.hide()
 
     def bind(self,watches):
@@ -42,7 +42,7 @@ class ClippedSection(QWidget):
     """Keep list contents at full height while only their viewport slides."""
     def __init__(self,parent=None):
         super().__init__(parent);self.content=QWidget(self);self.expanded=False
-        self.animation=QVariantAnimation(self);self.animation.setDuration(200)
+        self.animation=QVariantAnimation(self);self.animation.setDuration(220)
         self.animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
         self.animation.valueChanged.connect(self.advance)
         self.animation.finished.connect(self.finish)
@@ -62,6 +62,7 @@ class ClippedSection(QWidget):
         self.update()
 
     def finish(self):
+        self.setFixedHeight(self.full_height if self.expanded else 0)
         self.content.setVisible(self.expanded);self.update()
 
     def set_expanded(self,shown):

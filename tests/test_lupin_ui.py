@@ -65,7 +65,7 @@ class LupinUiTests(unittest.TestCase):
 
     def test_exp_start_pause_resume_survives_price_toggle_and_stop_hides_overlay(self):
         w=self.window
-        self.assertFalse(w.exp_enabled);self.assertIsNone(w.exp_panel.overlay_row())
+        self.assertFalse(w.exp_enabled);self.assertEqual(w.exp_panel.overlay_rows(),[])
         w.exp_hotkeys.activated.emit();self.assertTrue(w.exp_enabled)
         w.on_experience({'atMs':int(time.monotonic()*1000),'experience':payload(2000)})
         self.assertIsNotNone(w.exp_panel.tracker.run)
@@ -73,11 +73,21 @@ class LupinUiTests(unittest.TestCase):
         self.assertFalse(w.prices_enabled);self.assertTrue(w.exp_enabled)
         self.assertEqual(w.mode,'live')
         w.exp_hotkeys.activated.emit();self.assertTrue(w.exp_panel.user_paused)
-        self.assertIn('paused',w.exp_panel.overlay_row()['name'])
+        self.assertEqual(w.exp_panel.overlay_rows()[0]['status'],'Paused')
         w.exp_hotkeys.activated.emit();self.assertFalse(w.exp_panel.user_paused)
         w.exp_panel.stop_button.click()
         self.assertFalse(w.exp_enabled);self.assertFalse(w.reader.experience_enabled)
-        self.assertIsNone(w.exp_panel.overlay_row())
+        self.assertEqual(w.exp_panel.overlay_rows(),[])
+
+    def test_main_reading_pause_holds_tracking_and_dismisses_all_overlay_labels(self):
+        w=self.window;w.on_exp_hotkey()
+        w.on_experience({'atMs':int(time.monotonic()*1000),'experience':payload(2000)})
+        before=w.exp_panel.mesos.seconds;w.pause()
+        self.assertTrue(w.exp_panel.requested);self.assertFalse(w.exp_panel.connected)
+        self.assertEqual(w.mode,'paused');self.assertFalse(w.overlay.rows)
+        w.exp_panel.mesos.tick(time.monotonic()+30,False)
+        self.assertLess(w.exp_panel.mesos.seconds-before,.1)
+        self.assertIn('paused',w.exp_panel.meso_status.text())
 
     def test_search_uses_prices_page_and_has_space_priority_without_capture(self):
         w=self.window;w.on_reading(self.fixture.reading(True));w.mode='idle'

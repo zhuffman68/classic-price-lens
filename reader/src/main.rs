@@ -9,7 +9,7 @@ use std::time::Instant;
 mod experience;
 mod game_area;
 mod text;
-mod wallet;
+mod pickups;
 mod tooltip_text;
 mod tooltip_surface;
 mod centered_tooltip;
@@ -40,7 +40,7 @@ struct Request {
     #[serde(default)]
     read_map: bool,
     #[serde(default)]
-    read_wallet: bool,
+    pickups_only: bool,
 }
 
 fn main() {
@@ -49,7 +49,7 @@ fn main() {
     let mut centered_titles = centered_tooltip::CenteredTitles::default();
     let mut locator = Locator::new();
     let mut experience = None;
-    let mut wallet = wallet::WalletReader::default();
+    let mut pickups = pickups::PickupLogReader::default();
     let mut price_recovery = shop_prices::PriceRecovery::default();
     let stdin = io::stdin();
     let mut stdout = io::BufWriter::new(io::stdout());
@@ -133,12 +133,15 @@ fn main() {
                 frame
             };
             if request.experience_only {
-                let balance = if request.read_wallet {wallet.read(&frame,origin)} else {serde_json::Value::Null};
                 let result = experience
                     .get_or_insert_with(experience::ExperienceReader::new)
                     .read(frame, origin, request.read_map);
-                return Ok(serde_json::json!({"atMs":request.at_ms,"experience":result,"wallet":balance,"walletRead":request.read_wallet,
+                return Ok(serde_json::json!({"atMs":request.at_ms,"experience":result,
                     "experienceOnly":true,"ocrMs":started.elapsed().as_secs_f64()*1000.0}));
+            }
+            if request.pickups_only {
+                return Ok(serde_json::json!({"atMs":request.at_ms,"pickups":pickups.read(&frame),
+                    "pickupsRead":true,"ocrMs":started.elapsed().as_secs_f64()*1000.0}));
             }
             let capture = ShopCapture {
                 frame,

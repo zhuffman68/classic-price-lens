@@ -1,9 +1,11 @@
 """Stable reference rows, nearby-image demand and interruptible navigation."""
 from pathlib import Path
-from PySide6.QtCore import QSize,Qt,Signal
+from PySide6.QtCore import QSize,Qt,Signal,QRectF
 from PySide6.QtGui import QColor,QFont,QFontMetrics,QIcon,QImage,QPainter,QPixmap,QTextLayout,QTextOption
 from PySide6.QtWidgets import QListWidget,QListWidgetItem,QWidget,QStyledItemDelegate,QStyle
 from .motion import ContentArea,enabled
+from . import gui_currency
+from .number_motion import NumberRoll
 
 
 def thumbnail(media,url,size=32,dpr=1.0):
@@ -44,6 +46,27 @@ class DropDelegate(QStyledItemDelegate):
         painter.drawText(left,rect.bottom()-10,QFontMetrics(font).elidedText(caption,Qt.TextElideMode.ElideRight,width));painter.restore()
 
 
+class SourceDelegate(QStyledItemDelegate):
+    """Keep the second line close to its title, independent of native metrics."""
+    def paint(self,painter,option,index):
+        record=index.data(Qt.ItemDataRole.UserRole+3) or {};rect=option.rect.adjusted(1,1,-1,-1)
+        painter.save();painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        selected=bool(option.state & QStyle.StateFlag.State_Selected);hover=bool(option.state & QStyle.StateFlag.State_MouseOver)
+        painter.setPen(QColor('#718098' if selected else '#475970') if selected or hover else Qt.PenStyle.NoPen)
+        painter.setBrush(QColor('#303d51' if selected else '#29374b' if hover else '#202a38'));painter.drawRoundedRect(rect,7,7)
+        icon=index.data(Qt.ItemDataRole.DecorationRole)
+        if isinstance(icon,QIcon):painter.drawPixmap(rect.left()+7,rect.top()+(rect.height()-32)//2,icon.pixmap(32,32))
+        left=rect.left()+46;width=max(10,rect.width()-54);font=QFont(option.font);font.setPixelSize(11);painter.setFont(font)
+        top=rect.top()+(8 if record.get('subtitle') else (rect.height()-15)//2)
+        painter.setPen(QColor('#e4dfd4' if selected else '#d9e2ef'))
+        painter.drawText(QRectF(left,top,width,15),Qt.AlignmentFlag.AlignVCenter,painter.fontMetrics().elidedText(record.get('name',''),Qt.TextElideMode.ElideRight,width))
+        if record.get('subtitle'):
+            font.setPixelSize(10);painter.setFont(font);painter.setPen(QColor('#a4b4c9'))
+            caption=gui_currency.visual_text(record['subtitle']);roll=NumberRoll(caption)
+            roll.paint(painter,QRectF(left,top+15,width,14),Qt.AlignmentFlag.AlignLeft|Qt.AlignmentFlag.AlignVCenter,gui_currency.paint_icon)
+        painter.restore()
+
+
 class ReferenceList(QListWidget):
     chosen=Signal(object)
     viewport_changed=Signal()
@@ -57,7 +80,9 @@ class ReferenceList(QListWidget):
         if self.tiles:
             self.setViewMode(QListWidget.ViewMode.IconMode);self.setResizeMode(QListWidget.ResizeMode.Adjust)
             self.setMovement(QListWidget.Movement.Static);self.setWordWrap(True)
-        if drop_tiles:self.setItemDelegate(DropDelegate(self));self.setMouseTracking(True)
+        if drop_tiles:self.setItemDelegate(DropDelegate(self))
+        elif not self.tiles:self.setItemDelegate(SourceDelegate(self))
+        self.setMouseTracking(True)
         self.itemClicked.connect(self.activate_row);self.itemActivated.connect(self.activate_row)
         self.verticalScrollBar().valueChanged.connect(lambda *_:self.viewport_changed.emit())
 
@@ -83,7 +108,7 @@ class ReferenceList(QListWidget):
             item.setData(Qt.ItemDataRole.UserRole+3,record)
             if self.tiles:
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter);item.setSizeHint(QSize(max(110,self.gridSize().width()-10),86 if self.drop_tiles else 94))
-            else:item.setSizeHint(QSize(0,58 if record.get('subtitle') else 43))
+            else:item.setSizeHint(QSize(0,48 if record.get('subtitle') else 40))
         self.records=records;self.current_structure=structure;self.blockSignals(False);self.viewport_changed.emit()
 
     def nearby_urls(self):

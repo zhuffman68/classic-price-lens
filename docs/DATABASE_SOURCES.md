@@ -177,3 +177,11 @@ monster, subpage and list position.
 
 The source has automated validation and public/generated fixtures. Saved private
 research copies and live captures are excluded from source, installers and archives.
+
+## NPC shops and reward boxes
+
+Checked October 29, 2026. The public [Nia NPC shop list](https://meowdb.com/msclassic/npc-shops) supplies named shop inventories, locations and published NPC purchase prices. Lupin requires each canonical item icon ID/name and NPC ID/name to match the local database; provider item IDs alone are not used as canonical IDs. The checked page yielded 599 matching item/NPC rows across 31 NPCs. Historical launch-price qualifications remain attached to the source. These prices never replace market references or a player shop asking price.
+
+Selected item pages may also publish player-reported reward boxes, for example [Green Bamboo Hat](https://meowdb.com/msclassic/item-db/790). Both ends require a fresh matching public index binding before a box is linked to a canonical database entry. Box relationships are reports, not drop rates. Shops refresh daily; selected-item source checks cache successful/empty results for a day and errors for 30 minutes. Failures preserve matching last-good relationships.
+
+Known incomplete scroll targets are normalized by exact scroll-family ID plus canonical name. This corrects Hat, Topwear, Bottomwear and Pet equipment targets without changing verified raw files, success rates or effects. An unfamiliar or mismatched name stays unclassified.

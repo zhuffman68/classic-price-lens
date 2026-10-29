@@ -8,6 +8,7 @@ from .reference_data import ReferenceStore,API,FILES,DAY,drop_url,validate_meta
 from .reference_community import CommunityDrops
 from .reference_availability import AvailabilityLoader,market_proofs
 from .reference_geometry import MapGeometry
+from .reference_sources import ItemSources
 
 
 class ReferenceService(QObject):
@@ -20,6 +21,7 @@ class ReferenceService(QObject):
         self.fetch_bytes=fetch_bytes or get_bytes;self.fetch_json=fetch_json or get_json
         self.extra=CommunityDrops(self.store,self,fetch_bytes=fetch_bytes,fetch_json=fetch_json)
         self.geometry=MapGeometry(self.store,self,fetch_bytes=fetch_bytes,fetch_json=fetch_json)
+        self.sources=ItemSources(self.store,self.extra.item_identity,self,fetch_bytes=fetch_bytes)
         self.pool=ThreadPoolExecutor(max_workers=1,thread_name_prefix='lupin-reference')
         self.busy=False;self.closed=False;self.error='';self.drop_error='';self.availability_error='';self.token=None
         self.core_changed=False;self.manifest_before=None
@@ -32,6 +34,7 @@ class ReferenceService(QObject):
         self.timer.stop();self.busy=True;self.error=self.drop_error=self.availability_error='';self.token=RequestToken()
         self.manifest_before=self.store.metadata().get('manifest')
         self.extra.enabled=True
+        self.sources.enabled=True
         token=self.token
         future=self.pool.submit(self.refresh,token,force)
         future.add_done_callback(lambda result:self._finished.emit(result) if not self.closed else None)
@@ -58,6 +61,9 @@ class ReferenceService(QObject):
                 try:AvailabilityLoader(self.store,self.fetch_json,self.fetch_bytes).refresh(token,force)
                 except CancelledError:raise
                 except Exception:errors['availability']='Release availability update unavailable'
+                try:self.sources.refresh_shops(token,force)
+                except CancelledError:raise
+                except Exception:errors['sources']='Shop sources update unavailable'
             if state.get('counts') and (force or not 0<=time.time()-state.get('drops_checked_at',0)<DAY):
                 try:
                     rows=[]
@@ -89,6 +95,7 @@ class ReferenceService(QObject):
     def close(self):
         self.closed=True;self.timer.stop()
         self.extra.close()
+        self.sources.close()
         self.geometry.close()
         if self.token:self.token.cancel()
         self.pool.shutdown(wait=False,cancel_futures=True)

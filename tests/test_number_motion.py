@@ -65,12 +65,22 @@ class WindowSizeTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):NumberMotionTests.setUpClass();cls.app=NumberMotionTests.app
 
+    def test_default_proportions_use_logical_geometry_without_applying_dpi_twice(self):
+        class Screen:
+            def __init__(self,w,h):self.area=QRect(0,0,w,h)
+            def geometry(self):return self.area
+            def devicePixelRatio(self):raise AssertionError('QScreen geometry is already logical')
+        self.assertEqual(window_size.relative_size(Screen(1920,1080)),QSize(520,840))
+        self.assertEqual(window_size.relative_size(Screen(2560,1440)),QSize(693,1120))
+        self.assertEqual(window_size.relative_size(Screen(1920,1080),(.3,.7)),QSize(576,756))
+
     def test_screen_filling_saved_geometry_reopens_at_compact_width(self):
         class Settings:
             def value(self,key,default=None):
                 return QSize(1896,948) if key=='window-size' else default
         window=QWidget();window_size.restore(window,Settings())
-        self.assertEqual(window.width(),509)
+        screen=self.app.primaryScreen()
+        self.assertEqual(window.width(),max(460,window_size.relative_size(screen).width()))
         self.assertLess(window.width(),self.app.primaryScreen().availableGeometry().width()*.95)
         window.close();window.deleteLater()
 

@@ -145,7 +145,7 @@ class ContentArea(QWidget):
     def __init__(self,parent=None):
         super().__init__(parent)
         self.before=None;self.outgoing=None
-        self.animation=QVariantAnimation(self);self.animation.setDuration(150)
+        self.animation=QVariantAnimation(self);self.animation.setDuration(130)
         self.animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
         self.animation.valueChanged.connect(self.advance)
         self.animation.finished.connect(self.finish)
@@ -247,7 +247,7 @@ class AnimatedTabs(QTabWidget):
         self.stack=None
         self.mouse_before={}
         self.animation=QVariantAnimation(self)
-        self.animation.setDuration(300)
+        self.animation.setDuration(260)
         self.animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
         self.animation.valueChanged.connect(self.move_pages)
         self.animation.finished.connect(self.finish_slide)

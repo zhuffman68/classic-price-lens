@@ -78,7 +78,7 @@ class EntryDetails(QFrame):
 
     def __init__(self,panel,entry,row):
         super().__init__();self.panel=panel;self.store=panel.store;self.media=panel.media;self.entry=entry;self.row=row
-        self.lists=[];self.rank_slider=None;self.animation_url='';self.market_label=None;self.drop_list=None;self.drop_key=None
+        self.lists=[];self.rank_slider=None;self.animation_url='';self.market_label=None;self.drop_list=None;self.source_list=None;self.drop_key=None
         layout=QVBoxLayout(self);layout.setContentsMargins(0,0,0,0);layout.setSpacing(7)
         self.summary_card=None;self.sprite=None;self.map_preview=None
         if entry.kind=='items':
@@ -113,18 +113,21 @@ class EntryDetails(QFrame):
             self.map_preview=MapPreview(self.media,row);self.map_preview.chosen.connect(lambda mid:self.panel.open(('monsters',mid)))
             layout.addWidget(self.map_preview)
         self.tabs=AnimatedTabs()
+        self.tabs.animation.setDuration(240)
         if self.summary_card:self.summary_card.set_panel(self.tabs);layout.addStretch()
         else:layout.addWidget(self.tabs,1)
         self.tabs.tabBar().setDrawBase(False)
         self.tabs.setStyleSheet('QTabWidget::pane{border:0;background:transparent;} QTabWidget::tab-bar{alignment:center;} QTabBar::tab{padding:6px 9px;margin:0 3px 2px 0;} QScrollArea,QScrollArea>QWidget>QWidget{background:transparent;}')
         if self.summary_card:
-            self.tabs.setStyleSheet('QTabWidget{background:#222b39;border-radius:8px;} QTabWidget::pane{border:0;padding:0;} QTabWidget QWidget{background:transparent;} QTabWidget::tab-bar{alignment:center;} QTabBar::tab{padding:6px 9px;margin:3px 2px 0 0;border-radius:5px;} QTabBar::tab:selected{background:#3a495f;color:#f1dfbf;} QScrollArea{border:0;}')
+            self.tabs.setStyleSheet('QTabWidget{background:#222b39;border-radius:8px;} QTabWidget::pane{border:0;padding:0;} QTabWidget QWidget{background:transparent;} QTabWidget::tab-bar{alignment:center;} QTabBar::tab{padding:6px 9px;margin:0 2px 0 0;border-radius:5px;} QTabBar::tab:selected{background:#3a495f;color:#f1dfbf;} QScrollArea{border:0;}')
         overview,self.overview,body=page();self.tabs.addTab(overview,'Overview')
+        if entry.kind=='items':body.setContentsMargins(7,3,7,0);body.setSpacing(7)
         if entry.kind=='items':self.item(body)
         elif entry.kind=='monsters':self.monster(body)
         elif entry.kind=='skills':self.skill(body)
         elif entry.kind=='quests':self.quest(body)
         elif entry.kind=='maps':self.map(body)
+        elif entry.kind=='npcs':self.npc(body)
         body.addStretch()
         self.tabs.tabBar().setVisible(self.tabs.count()>1)
         self.tabs.currentChanged.connect(lambda *_:self.media_changed.emit())
@@ -173,11 +176,20 @@ class EntryDetails(QFrame):
             if record.get('source')=='market':continue
             labels.extend(part.strip() for part in record.get('label','').split('/') if part.strip() not in ('Quest','Monster drop'))
         if labels:source_body.addWidget(text(' · '.join(dict.fromkeys(labels)),10,'#aab8ca'))
-        if cash:
-            source_body.addStretch();return
-        self.drop_list=self.add_list(source_body)
+        self.source_list=self.add_list(source_body)
+        if not cash:self.drop_list=self.source_list
         self.drop_note=text('',11,'#a1afc2');source_body.addWidget(self.drop_note)
         self.report_button=self.report_link(source_body)
+
+    def npc(self,layout):
+        rows=self.store.shop_inventory(self.entry.id);locations=[];items=[]
+        for row in rows:
+            location=relationship(self.store,'maps',row.get('map_id'),'Shop location')
+            if location and location not in locations:locations.append(location)
+            item=relationship(self.store,'items',row['item_id'],f"Shop · {row['price']:,} mesos")
+            if item:items.append(item)
+        if locations:heading(layout,'Location');self.add_list(layout).populate(locations)
+        heading(layout,'Shop inventory');self.add_list(layout).populate(items)
 
     def monster(self,layout):
         row=self.row
@@ -307,12 +319,21 @@ class EntryDetails(QFrame):
         if url:self.panel.source_requested.emit(url)
 
     def refresh_drops(self):
-        if self.drop_list is None:return
-        rows=self.store.drops_for(self.entry.kind,self.entry.id)
+        listing=self.source_list if self.entry.kind=='items' else self.drop_list
+        if listing is None:return
+        rows=[] if self.row.get('cash') else self.store.drops_for(self.entry.kind,self.entry.id)
         quests=item_quest_sources(self.store,self.entry.id) if self.entry.kind=='items' else []
-        fingerprint=json.dumps([rows,quests],sort_keys=True)
+        sources=self.store.sources_for(self.entry.id) if self.entry.kind=='items' else []
+        fingerprint=json.dumps([rows,quests,sources],sort_keys=True)
         if fingerprint==self.drop_key:return
         self.drop_key=fingerprint;records=[]
+        for row in sources:
+            kind='npcs' if row['kind']=='npc' else 'items';source=self.store.entry(kind,row['id'])
+            if source is None:continue
+            detail=f"Shop · {row['price']:,} mesos" if row['kind']=='npc' else 'Reward box · player reported'
+            records.append(dict(key=('source',row['kind'],row['id']),target=source[0].key if self.store.available(*source[0].key) else None,
+                name=source[0].name,subtitle=detail,icon=source[0].icon,
+                tip=' · '.join(filter(None,(row.get('map_name'),row.get('basis'),row.get('source_url'))))))
         for row in rows:
             kind,identity=('monsters',row['monster_id']) if self.entry.kind=='items' else ('items',row['item_id'])
             target=self.store.entry(kind,identity) if identity is not None else None
@@ -334,8 +355,8 @@ class EntryDetails(QFrame):
             records.append(dict(key=(row['monster_id'],row['item_id'],row['category']),target=target[0].key if target else None,
                 name=name,subtitle=' · '.join(details),rate=rate,icon=target[0].icon if target else ':meso' if row['category']=='meso' else '',tip='\n'.join(tip)))
         records+=quests
-        self.drop_list.populate(records);self.report_button.setVisible(bool(rows))
-        self.drop_note.setText('' if rows else 'No confirmed monster-drop reports recorded.' if self.entry.kind=='items' else 'No confirmed drop reports recorded.')
+        listing.populate(records);self.report_button.setVisible(bool(rows))
+        self.drop_note.setText('' if rows or self.row.get('cash') else 'No confirmed monster-drop reports recorded.' if self.entry.kind=='items' else 'No confirmed drop reports recorded.')
         self.drop_note.setVisible(not records);self.media_changed.emit()
 
     def item_identity(self):

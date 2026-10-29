@@ -146,7 +146,38 @@ class ReferenceStore:
                 CREATE TABLE IF NOT EXISTS community_checks(kind TEXT,id INTEGER,saved REAL,detail TEXT,PRIMARY KEY(kind,id));
                 CREATE TABLE IF NOT EXISTS availability(kind TEXT,id INTEGER,name TEXT,source TEXT,first_seen REAL,last_seen REAL,detail TEXT,PRIMARY KEY(kind,id,source));
                 CREATE INDEX IF NOT EXISTS available_entity ON availability(kind,id,name);
+                CREATE TABLE IF NOT EXISTS item_sources(kind TEXT,item_id INTEGER,source_id INTEGER,body TEXT,PRIMARY KEY(kind,item_id,source_id));
+                CREATE TABLE IF NOT EXISTS source_checks(item_id INTEGER PRIMARY KEY,saved REAL,error INTEGER);
             ''')
+
+    def save_sources(self,kind,rows,*,item_id=None,guard=lambda:None):
+        with self.connect() as db:
+            guard()
+            if kind=='npc':db.execute('DELETE FROM item_sources WHERE kind=?',(kind,))
+            else:db.execute('DELETE FROM item_sources WHERE kind=? AND item_id=?',(kind,item_id))
+            db.executemany('INSERT OR REPLACE INTO item_sources VALUES(?,?,?,?)',[(kind,row['item_id'],row['id'],json.dumps(row)) for row in rows])
+            if kind=='npc':self.put_meta(db,'npc_shops_checked',time.time())
+            else:db.execute('INSERT OR REPLACE INTO source_checks VALUES(?,?,0)',(item_id,time.time()))
+            guard()
+
+    def source_check(self,item_id):
+        with self.connect() as db:return db.execute('SELECT saved,error FROM source_checks WHERE item_id=?',(item_id,)).fetchone()
+
+    def source_failed(self,item_id,guard=lambda:None):
+        with self.connect() as db:
+            guard();db.execute('INSERT OR REPLACE INTO source_checks VALUES(?,?,1)',(item_id,time.time()));guard()
+
+    def sources_for(self,item_id):
+        with self.connect() as db:rows=db.execute("SELECT body FROM item_sources WHERE item_id=? ORDER BY CASE kind WHEN 'npc' THEN 0 ELSE 1 END,source_id",(item_id,)).fetchall()
+        result=[]
+        for body, in rows:
+            row=json.loads(body);item=self.entry('items',item_id);source=self.entry('npcs' if row['kind']=='npc' else 'items',row['id'])
+            if item and source and item[0].name==row['item_name'] and source[0].name==row['name']:result.append(row)
+        return result
+
+    def shop_inventory(self,npc_id):
+        with self.connect() as db:rows=db.execute("SELECT body FROM item_sources WHERE kind='npc' AND source_id=? ORDER BY item_id",(npc_id,)).fetchall()
+        return [json.loads(body) for body, in rows]
 
     @contextmanager
     def connect(self):
@@ -187,6 +218,9 @@ class ReferenceStore:
             for source in rows:
                 if not source['name'].strip():continue # Unnamed client placeholders are not searchable entities.
                 row=dict(source);identity=row.get('id',row.get('item_id'));row['id']=identity
+                if kind=='items':
+                    from .reference_items import normalize
+                    row=normalize(row)
                 if name=='cash_shop.json':
                     if (kind,identity) in records:continue
                     row['cash']=True;row['category']='Cash';row['nx_price']=row.pop('price',None)
@@ -258,9 +292,17 @@ class ReferenceStore:
     def entry(self,kind,identity):
         with self.connect() as db:
             row=db.execute('SELECT e.kind,e.id,e.name,e.category,e.level,'+CLASS_LABEL+',e.icon,e.body FROM entities e WHERE e.kind=? AND e.id=?',(kind,identity)).fetchone()
-        return (Entry(*row[:7]),json.loads(row[7])) if row else None
+        if not row:return None
+        body=json.loads(row[7])
+        if kind=='items':
+            from .reference_items import normalize
+            body=normalize(body)
+        return Entry(*row[:7]),body
 
     def available(self,kind,identity):
+        if kind=='npcs':
+            record=self.entry(kind,identity)
+            return bool(record and any(row['name']==record[0].name for row in self.shop_inventory(identity)))
         if kind=='skills':
             record=self.entry(kind,identity);return bool(record and record[0].category!='Crafting')
         with self.connect() as db:

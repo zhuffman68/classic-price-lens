@@ -34,7 +34,7 @@ class ExperienceCaptureTests(unittest.TestCase):
         reader.experience_enabled = True
         shops, exp = [], []
         reader.reading.connect(shops.append)
-        reader.experience.connect(exp.append)
+        reader.experience.connect(lambda result:exp.append(result) if 'experience' in result else None)
         frame = QImage(1366,768,QImage.Format.Format_RGBA8888)
         frame.fill(QColor("#373f45"))
         painter = QPainter(frame)

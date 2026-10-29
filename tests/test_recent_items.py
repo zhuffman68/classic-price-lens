@@ -41,6 +41,14 @@ class RecentItemsTests(unittest.TestCase):
         self.see(1);other=RecentItems();self.assertEqual(len(other.entries),0);other.deleteLater()
         self.panel.clear();self.assertFalse(self.panel.entries);self.assertEqual(self.panel.rows.count(),0)
 
+    def test_partial_shop_and_tooltip_reads_keep_the_last_valid_asking_price(self):
+        self.see(1)
+        for price in (None,dict(mesos=None,quantity=1),dict(mesos=10,quantity=None)):
+            self.panel.observe([dict(name='Item 1',price=price)],self.catalog,self.now+1)
+            self.assertEqual(self.panel.entries[1]['price'],dict(mesos=1000,quantity=1))
+        self.panel.observe([dict(name='Item 1',price=dict(mesos=1200,quantity=1))],self.catalog,self.now+2)
+        self.assertEqual(self.panel.entries[1]['price']['mesos'],1200)
+
     def test_latest_reference_repaints_without_moving_rows_or_creating_price_requests(self):
         self.see(1);self.panel.observe([],self.catalog,self.now)
         quote=Quote(1,1000,self.now,self.now,10,'MesoWatch','','24h')

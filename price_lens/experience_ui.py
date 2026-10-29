@@ -6,9 +6,8 @@ import time
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QFileDialog, QTableWidgetItem, QVBoxLayout, QWidget
 
-from .experience import ExperienceTracker, SessionHistory, Run, duration_text
-from .mesos import MesoTracker
-from .domain import age_text
+from .experience import ExperienceTracker, SessionHistory, Run, duration_text, clock_text
+from .mesos import PickupTracker
 
 
 
@@ -17,10 +16,13 @@ class ExperiencePanel(QWidget):
     enabled_changed = Signal(bool)
     overlay_changed = Signal(bool)
 
-    def __init__(self, history_path, *, enabled=True, window_minutes=5, parent=None):
+    def __init__(self, history_path, *, parent=None):
         super().__init__(parent)
         self.tracker = ExperienceTracker()
-        self.mesos = MesoTracker()
+        self.mesos = PickupTracker()
+        self.overlay_snapshot = []
+        self.overlay_at = 0.0
+        self.overlay_state = None
         self.session_checkpoint = 0.0
         self.history = None
         self.storage_error = ""
@@ -39,7 +41,7 @@ class ExperiencePanel(QWidget):
         self.watch_epoch = time.time()
         self.watch_totals = {"seconds":0.0,"progress":0.0,"exp":0.0}
         from .experience_widgets import build
-        build(self, QVBoxLayout(self), enabled, window_minutes)
+        build(self, QVBoxLayout(self))
         self.refresh_history()
         self.refresh()
 
@@ -84,7 +86,7 @@ class ExperiencePanel(QWidget):
         payload = result.get("experience") or {}
         at = result.get("atMs", 0)/1000
         previous = self.tracker.current
-        accepted = self.tracker.ingest(payload, at)
+        accepted = self.tracker.ingest(payload, at) if 'experience' in result else False
         if accepted:
             self.tracker.observe_map(payload, at)
             current = self.tracker.current
@@ -100,12 +102,12 @@ class ExperiencePanel(QWidget):
             self.watch_epoch = time.time()
             self.mesos.reset(time.monotonic())
             self.session_checkpoint = 0.0
-        # Never accept a wallet from an unconfirmed character switch.
+        # Never accept pickups from an unconfirmed character switch.
         character = payload.get('character')
         same_character = not previous or not character or character == previous.character or accepted
-        if result.get('walletRead') and same_character:
+        if result.get('pickupsRead') and same_character and self.tracker.candidate is None:
             self.mesos.tick(time.monotonic(), self.connected)
-            self.mesos.ingest(result.get('wallet'), at)
+            self.mesos.ingest(result.get('pickups'), at)
         if accepted and self.connected and not self.tracker.run and self.tracker.current.character:
             self.begin_run()
         self.refresh()
@@ -130,7 +132,7 @@ class ExperiencePanel(QWidget):
 
     def stop(self):
         self.mesos.tick(time.monotonic(), self.connected)
-        self.finish_wallet_only('Stopped')
+        self.finish_meso_only('Stopped')
         self.tracker.finish("Stopped");self.persist_completed()
         self.requested=False;self.user_paused=False;self.paused_window=None
         self.enabled_changed.emit(False);self.refresh();self.changed.emit()
@@ -165,11 +167,11 @@ class ExperiencePanel(QWidget):
         while self.tracker.completed:
             try:
                 run = self.tracker.completed[0]
-                if not getattr(run, '_wallet_saved', False):
+                if not getattr(run, '_meso_saved', False):
                     for key,value in self.mesos.checkpoint().items():setattr(run,key,value)
                     run.session_seconds = max(0,self.mesos.seconds-self.session_checkpoint)
                     self.session_checkpoint = self.mesos.seconds
-                    run._wallet_saved = True
+                    run._meso_saved = True
                 self.history.save(self.tracker.completed[0])
             except (OSError, sqlite3.Error) as error:
                 self.storage_error = "Could not save session: " + str(error)
@@ -189,8 +191,10 @@ class ExperiencePanel(QWidget):
         fresh = self.connected and tracker.fresh(time.monotonic())
         if self.requested:self.mesos.tick(time.monotonic(),self.connected)
         if reading:
-            self.character.setText(f"{reading.character or 'Character'} · Level {reading.level}")
+            self.character.setText(reading.character or 'Character')
+            self.level_label.setText(f'Level {reading.level}')
         self.character.setVisible(reading is not None)
+        self.level_label.setVisible(reading is not None)
         self.pause_button.setEnabled(self.enabled)
         self.pause_button.setText("Resume" if self.user_paused else "Pause")
         self.start_button.setVisible(not self.requested)
@@ -201,30 +205,29 @@ class ExperiencePanel(QWidget):
         map_name = (run.map_name if run and run.map_name != 'Unlabelled map' else self.map_input.text().strip() or tracker.map_name)
         self.map_label.setText(map_name)
         self.map_label.setVisible(bool(map_name))
-        for unit in self.exp_units:unit.setText('EXP' if self.display_mode=='raw' else '')
         totals = self.totals()
         if run:
             window = self.paused_window if self.user_paused and self.paused_window else tracker.window(300)
             rate,hour = window["rate"],window["exp_hour"]
             prefix = "≈" if run.approximate_exp else ""
             if self.display_mode=="raw":
-                self.rate.setText(f"{prefix}{hour/60:,.0f}" if hour is not None else "—")
-                self.hour_rate.setText(f"{prefix}{hour:,.0f}" if hour is not None else "—")
+                self.rate.setText(f"{prefix}{hour/60:,.0f} EXP" if hour is not None else "—")
+                self.hour_rate.setText(f"{prefix}{hour:,.0f} EXP" if hour is not None else "—")
             else:
                 self.rate.setText(f"{rate*60:+.2f}%" if rate is not None else "—")
                 self.hour_rate.setText(f"{rate*3600:+.1f}%" if rate is not None else "—")
-            self.raw_hint.setText(f"{prefix}{hour/60:,.0f} EXP/min · {prefix}{hour:,.0f} EXP/hour" if hour is not None else '')
+            self.raw_hint.setText(f"{prefix}{totals['exp']:+,.0f} EXP gained · {prefix}{hour/60:,.0f}/min · {prefix}{hour:,.0f}/hour" if hour is not None else '')
             self.raw_hint.setVisible(self.display_mode=="both" and hour is not None)
             self.observation.setText(f"Recent pace · {duration_text(window['seconds'])} of training" if rate is not None else f"Measuring pace · {max(0,30-round(window['seconds']))}s of readings remaining")
             approximate = self.watch_approximate or run.approximate_exp or any(r.approximate_exp for r in tracker.completed if r.started>=self.watch_epoch)
             total_prefix = "≈" if approximate else ""
-            self.gain.setText(f"{total_prefix}{totals['exp']:+,.0f}" if self.display_mode=="raw" else f"{totals['progress']:+.2f}%")
-            self.elapsed.setText(duration_text(self.mesos.seconds,seconds_in_hours=True))
+            self.gain.setText(f"{total_prefix}{totals['exp']:+,.0f} EXP" if self.display_mode=="raw" else f"{totals['progress']:+.2f}%")
+            self.elapsed.setText(clock_text(self.mesos.seconds))
             self.eta.setText(duration_text(window["eta"]) if rate is not None and rate>0 else "—")
         else:
             self.rate.setText("—");self.hour_rate.setText("—");self.raw_hint.hide()
             self.observation.setText('')
-            self.gain.setText("—");self.elapsed.setText(duration_text(self.mesos.seconds,seconds_in_hours=True));self.eta.setText("—")
+            self.gain.setText("—");self.elapsed.setText(clock_text(self.mesos.seconds));self.eta.setText("—")
         self.observation.setVisible(bool(self.observation.text()))
         state=('' if not self.requested else
                "Screen reading is paused · tracking is held." if not self.connected else
@@ -236,60 +239,69 @@ class ExperiencePanel(QWidget):
         self.refresh_mesos()
 
     def refresh_mesos(self):
-        wallet = self.mesos
+        pickups = self.mesos
         now = time.monotonic()
-        if self.requested:wallet.tick(now, self.connected)
-        self.meso_gain.setText(f'{wallet.gain:+,}' if wallet.observed else '—')
-        self.wallet_balance.setText(f'{wallet.current:,}' if wallet.current is not None else '—')
-        rate = wallet.rate(now) if self.requested and not self.user_paused else None
-        self.meso_rate.setText(f'{rate:+,.0f}' if rate is not None else '—')
-        self.meso_hour.setText(f'{rate*60:+,.0f}' if rate is not None else '—')
-        from .motion import fading_visibility
-        for unit,available in zip(self.meso_units,(wallet.observed,rate is not None,rate is not None)):
-            fading_visibility(unit,available)
-        fading_visibility(self.wallet_unit,wallet.current is not None)
+        if self.requested:pickups.tick(now, self.connected)
+        self.meso_gain.setText(f'{pickups.gain:,} mesos' if pickups.observed else '—')
+        rate = pickups.rate(now) if pickups.observed else None
+        self.meso_rate.setText(f'{rate:,.0f} mesos' if rate is not None else '—')
+        self.meso_hour.setText(f'{rate*60:,.0f} mesos' if rate is not None else '—')
         if not self.requested:
-            status = 'Open the item inventory while tracking to read your wallet.'
+            status = ''
+        elif not self.connected:
+            status = 'Screen reading paused · pickups are held.'
         elif self.user_paused:
-            status = 'Paused · wallet changes are excluded until tracking resumes.'
-        elif wallet.fresh(now):
-            status = 'Wallet visible · net change includes purchases, sales and trades.'
-        elif wallet.candidate:
-            status = 'Confirming wallet balance…'
-        elif wallet.last_seen is not None:
-            status = f'Last seen {age_text(now-wallet.last_seen)} ago · reopen inventory to update.'
+            status = 'Paused · pickups are held.'
+        elif pickups.fresh(now):
+            status = 'Reading pickup messages' + (f' · {pickups.gaps} coverage gap(s)' if pickups.gaps else '')
+        elif pickups.candidate:
+            status = 'Confirming pickup message…'
+        elif pickups.last_seen is not None:
+            status = 'Pickup messages obscured · waiting for a clear view.'
         else:
-            status = 'Open the item inventory to read your meso balance.'
+            status = 'Watching for pickup messages…'
         self.meso_status.setText(status)
+        self.meso_status.setVisible(bool(status))
+        for caption in self.meso_captions:caption.setVisible(pickups.observed)
 
-    def overlay_row(self):
-        tracker = self.tracker
-        run = tracker.run
-        if not self.requested:return None
-        if not run or (not self.user_paused and not tracker.fresh(time.monotonic())):
-            if not self.mesos.observed:return None
-            wallet=self.mesos;now=time.monotonic();rate=wallet.rate(now)
-            return {'key':'experience','kind':'experience','color':'#e4bd7b',
-                    'name':'EXP/Meso tracking paused' if self.user_paused else 'Meso tracking · EXP bar unreadable',
-                    'text':f'Net mesos {wallet.gain:+,}'+(f' · {rate:+,.0f}/min' if rate is not None and not self.user_paused else ''),
-                    'extra':f'Wallet {wallet.current:,}'+(' · last seen' if not wallet.fresh(now) else '')}
-        window = self.paused_window if self.user_paused and self.paused_window else tracker.window(300)
-        rate,hour = window["rate"],window["exp_hour"]
-        eta = window["eta"]
-        title = "EXP tracking paused" if self.user_paused else f"Lv. {tracker.current.level+1} in ≈ {duration_text(eta)}" if eta is not None else "EXP tracking · estimating pace…"
-        percentage = f"{rate*60:+.2f}%/min · {rate*3600:+.1f}%/hour" if rate is not None else f"Estimating pace · {round(window['seconds'])}/30 seconds"
-        prefix = "≈" if run.approximate_exp else ""
-        raw = f"{prefix}{hour/60:,.0f} EXP/min · {prefix}{hour:,.0f} EXP/hour" if hour is not None else ""
-        text = f"{duration_text(self.mesos.seconds)} tracked" if self.user_paused else raw if self.display_mode=="raw" and raw else percentage
-        details = [raw] if self.display_mode=="both" and not self.user_paused and raw else []
-        if self.mesos.observed:
-            rate = self.mesos.rate(time.monotonic())
-            detail = f'Meso {self.mesos.gain:+,}'
-            if rate is not None and not self.user_paused:detail += f' · {rate:+,.0f}/min'
-            elif not self.user_paused and not self.mesos.fresh(time.monotonic()):detail += ' · last seen'
-            details.append(detail)
-        return {"key":"experience","kind":"experience","name":title,"text":text,
-                "extra":'\n'.join(details),"color":"#e4bd7b"}
+    def overlay_rows(self, now=None):
+        now=time.monotonic() if now is None else now
+        tracker=self.tracker;run=tracker.run;reading=tracker.current
+        state=(self.requested,self.user_paused,self.connected,self.display_mode,
+               run.id if run else None,tracker.fresh(now),reading.character if reading else '')
+        if not self.requested:
+            self.overlay_snapshot=[];self.overlay_state=state;return []
+        if state==self.overlay_state and now-self.overlay_at<2:
+            return [dict(row) for row in self.overlay_snapshot]
+        self.overlay_state=state;self.overlay_at=now
+        window=self.paused_window if self.user_paused and self.paused_window else tracker.window(300)
+        rate,hour=window['rate'],window['exp_hour'];totals=self.totals()
+        held=self.user_paused or not self.connected
+        raw=self.display_mode=='raw'
+        prefix='≈' if self.watch_approximate or run and run.approximate_exp else ''
+        gain=f"{prefix}{totals['exp']:+,.0f} EXP" if raw else f"{totals['progress']:+.2f}%"
+        minute=f'{prefix}{hour/60:,.0f} EXP' if raw and hour is not None else f'{rate*60:+.2f}%' if rate is not None else '—'
+        hourly=f'{prefix}{hour:,.0f} EXP' if raw and hour is not None else f'{rate*3600:+.1f}%' if rate is not None else '—'
+        status='Paused' if held else f"Measuring pace · {max(0,30-round(window['seconds']))}s" if rate is None else 'Recent 5-minute pace'
+        if not held and not tracker.fresh(now):status='EXP bar unreadable · estimates held'
+        eta=duration_text(window['eta']) if window['eta'] is not None else '—'
+        progress=f'{reading.percent/100:.2f}%' if reading else '—'
+        exp=dict(key='experience',kind='tracking',name='EXP'+(f' · {reading.character} · Lv. {reading.level}' if reading else ''),
+            text=gain,color='#e4bd7b',metrics=[('Gained',gain),('Per minute',minute),('Per hour',hourly)],
+            footer=f'Next level · {eta}',status=status,clock=clock_text(self.mesos.seconds),progress=progress)
+        if self.display_mode=='both' and hour is not None:
+            exp['secondary']=f"{prefix}{totals['exp']:+,.0f} EXP · {prefix}{hour/60:,.0f} EXP/min · {prefix}{hour:,.0f} EXP/hour"
+        pickups=self.mesos;meso_rate=pickups.rate(now)
+        meso_status=('Paused' if held else 'Watching pickup messages' if pickups.fresh(now) else 'Waiting for a clear pickup log')
+        if pickups.gaps:meso_status+=f' · {pickups.gaps} gap(s)'
+        total=f'{pickups.gain:,}' if pickups.observed else '—'
+        meso=dict(key='meso-gain',kind='tracking',name='Meso gained',text=total,color='#b7d4a9',
+            metrics=[('Picked up',total),('Per minute',f'{meso_rate:,.0f}' if meso_rate is not None else '—'),
+                     ('Per hour',f'{meso_rate*60:,.0f}' if meso_rate is not None else '—')],
+            footer='Pickup log · purchases/trades excluded',status=meso_status,
+            clock=clock_text(pickups.seconds),progress='')
+        self.overlay_snapshot=[exp,meso]
+        return [dict(row) for row in self.overlay_snapshot]
 
     def refresh_history(self, *_):
         if not self.history:
@@ -325,7 +337,7 @@ class ExperiencePanel(QWidget):
                       f"{row['mesos']:+,}" if row.get('mesos') is not None else '—']
             for column, value in enumerate(values):
                 item = QTableWidgetItem(value)
-                item.setToolTip(f"{row['character']} · {row['job']}\n{row['notes']}\n{row['reason']} · {row['gaps']} gap(s)")
+                item.setToolTip(f"{row['character']} · {row['job']}\n{row['notes']}\n{row['reason']} · {row['gaps']} EXP gap(s)\nMeso basis: {row.get('meso_basis','wallet')} · {row.get('pickup_gaps',0)} pickup gap(s)")
                 self.table.setItem(index, column, item)
             self.table.setRowHeight(index, 44)
             current = self.tracker.current
@@ -346,12 +358,12 @@ class ExperiencePanel(QWidget):
                 self.refresh()
 
     def close_session(self):
-        self.finish_wallet_only('App closed')
+        self.finish_meso_only('App closed')
         self.tracker.finish("App closed")
         self.persist_completed()
 
-    def finish_wallet_only(self,reason):
-        if not self.requested or self.tracker.run or self.mesos.segment_start is None:return
+    def finish_meso_only(self,reason):
+        if not self.requested or self.tracker.run or not self.mesos.observed:return
         import uuid
         reading=self.tracker.current
         self.tracker.completed.append(Run(uuid.uuid4().hex,self.watch_epoch,

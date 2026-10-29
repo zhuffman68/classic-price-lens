@@ -2,7 +2,20 @@
 from PySide6.QtCore import QSize, QTimer
 from PySide6.QtWidgets import QApplication
 
-DEFAULT_SIZE = QSize(509, 829)
+DEFAULT_SIZE = QSize(520, 840)
+DEFAULT_FRACTIONS = (DEFAULT_SIZE.width()/1920, DEFAULT_SIZE.height()/1080)
+
+
+def relative_size(screen,fractions=DEFAULT_FRACTIONS):
+    # QScreen uses logical coordinates on both platforms: the OS applies DPI
+    # once, rather than scaling the application size for a second time.
+    geometry=screen.geometry()
+    return QSize(round(geometry.width()*fractions[0]),round(geometry.height()*fractions[1]))
+
+
+def valid_fractions(value):
+    return (isinstance(value,(list,tuple)) and len(value)==2
+            and all(type(n) in (int,float) and .05<=n<=.94 for n in value))
 
 
 def fills_work_area(size, screen):
@@ -21,10 +34,14 @@ def restore(window, settings):
     cap = QSize(max(1, available.width()-24), max(1, available.height()-32))
     window.setMinimumSize(min(460, cap.width()), min(560, cap.height()))
     saved = settings.value('window-size', None)
-    desired = saved if isinstance(saved, QSize) and saved.isValid() else DEFAULT_SIZE
+    fractions=settings.value('window-size-fractions',None)
+    if valid_fractions(fractions):desired=relative_size(screen,fractions)
+    elif isinstance(saved,QSize) and saved.isValid() and saved not in (QSize(509,829),QSize(509,835)):
+        desired=saved
+    else:desired=relative_size(screen)
     size = desired.expandedTo(window.minimumSize()).boundedTo(cap)
     if fills_work_area(size, screen):
-        size = DEFAULT_SIZE.expandedTo(window.minimumSize()).boundedTo(cap)
+        size = relative_size(screen).expandedTo(window.minimumSize()).boundedTo(cap)
     window.resize(size)
     window._normal_size = size
     window._size_timer = QTimer(window)
@@ -46,4 +63,7 @@ def save(window, settings):
     size = getattr(window, '_normal_size', None)
     if size is None or fills_work_area(size, window.screen()):return
     settings.setValue('window-size', size)
-    if window.screen():settings.setValue('window-screen', window.screen().name())
+    if window.screen():
+        screen=window.screen();settings.setValue('window-screen',screen.name())
+        geometry=screen.geometry()
+        settings.setValue('window-size-fractions',[size.width()/geometry.width(),size.height()/geometry.height()])

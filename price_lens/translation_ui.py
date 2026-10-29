@@ -39,6 +39,8 @@ class TranslationPanel(QWidget):
         self.timing_labels=[]
         for text,spin in (('Keep checking for',self.scan),('Keep after disappearance',self.linger)):
             spin.setDecimals(1);spin.setFixedWidth(96)
+            spin.setAlignment(Qt.AlignmentFlag.AlignRight)
+            spin.lineEdit().setTextMargins(0,0,0,0)
             spin.setStyleSheet('QDoubleSpinBox {background:#222c3b;color:#e7edf5;border:1px solid #45536a;border-radius:6px;padding:4px 6px;}')
             row=QHBoxLayout();row.setSpacing(8)
             caption=QLabel(text);self.timing_labels.append(caption)

@@ -95,6 +95,26 @@ class ComposerTests(unittest.TestCase):
         p=self.pipe();self.c.set_text('Please come here');self.c.request_copy();identity=p.requests[-1]['id'];self.c.cancel_copy()
         self.reply(p,identity,'여기로 와 주세요.');self.assertTrue(self.c.result);self.clipboard.setText.assert_not_called()
 
+    def test_enter_animates_popup_closed_and_copies_later_without_a_second_action(self):
+        from price_lens.composer_ui import ComposerDialog
+        from PySide6.QtCore import Qt
+        pipe=self.pipe();dialog=ComposerDialog(self.c,'Super+F8');dialog.show();self.app.processEvents()
+        dialog.editor.input.setText('Please come here');self.c.timer.stop()
+        QTest.keyClick(dialog.editor.input,Qt.Key.Key_Return)
+        identity=pipe.requests[-1]['id'];self.assertEqual(self.c.copy_pending,identity)
+        QTest.qWait(160);self.assertFalse(dialog.isVisible());self.assertEqual(self.c.copy_pending,identity)
+        self.reply(pipe,identity,'여기로 와 주세요.');self.clipboard.setText.assert_called_once_with('여기로 와 주세요.')
+        dialog.deleteLater()
+
+    def test_escape_during_submission_animation_revokes_pending_copy(self):
+        from price_lens.composer_ui import ComposerDialog
+        from PySide6.QtCore import Qt
+        pipe=self.pipe();dialog=ComposerDialog(self.c,'Super+F8');dialog.show();self.app.processEvents()
+        dialog.editor.input.setText('Please come here');self.c.timer.stop()
+        QTest.keyClick(dialog.editor.input,Qt.Key.Key_Return);identity=pipe.requests[-1]['id']
+        dialog.reject();QTest.qWait(160);self.reply(pipe,identity,'여기로 와 주세요.')
+        self.clipboard.setText.assert_not_called();dialog.deleteLater()
+
     def test_catalog_arrival_invalidates_a_pending_unprotected_draft(self):
         p=self.pipe();self.c.set_text('Please bring Blue Hawkeye');self.c.request_copy();old=p.requests[-1]['id']
         self.c.set_names([type('Item',(),{'name':'Blue Hawkeye'})()]);self.c.timer.stop();self.c.preview()

@@ -17,10 +17,10 @@ The user drives game actions; recording must remain ordinary OS screen capture.
 | Inventory/equipment | Hover an inventory item and an equipped item; keep the native name and market card readable | `inventory-equipment.png` |
 | Price search | Type a name, show item thumbnails, select a result, inspect the price age, then clear it | `item-search.gif` |
 | Watched items | Watch a searched item, open a real shop containing it, show two pulses and the persistent star | `watched-items.gif` |
-| EXP/meso tracking | Track real training with a visible wallet; show aligned rates, timer, ETA and bottom-left overlay | `tracking.mp4` |
+| EXP/meso tracking | Track real training with visible pickup messages; show aligned rates, timer, ETA and separate bottom-left overlays | `tracking.mp4` |
 | History | Show actual labeled runs, character/map filtering and the CSV export control | `training-history.png` |
 | Read Korean | Show Korean text, activate the scan and capture the English/original popup | `read-korean.gif` |
-| Write Korean | Type a trade message, review the Korean preview and explicitly copy it; include the notification | `write-korean.gif` |
+| Write Korean | Type a trade message, review the Korean preview and explicitly copy it; show the popup closing on Enter and include the copy notification | `write-korean.gif` |
 | Desktop controls | Show the display dropdown, horizontal page slide, hotkey editor and tray menu | `desktop-controls.mp4` |
 
 One clear still can cover several related options. The overview should be a
@@ -31,7 +31,7 @@ desktop.
 ## Recording order
 
 1. Capture shop prices, inventory/equipped items and search while in a market.
-2. Record training once rates have stabilized. Keep the inventory wallet visible
+2. Record training once rates have stabilized. Keep the bottom-right pickup log unobscured
    for the meso example; record enough real progress to show useful values.
 3. Save the run, then capture history with map labels and notes.
 4. Capture a real Korean message when one is visible. The writer and desktop

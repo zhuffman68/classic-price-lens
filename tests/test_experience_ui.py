@@ -40,7 +40,7 @@ class ExperienceUiTests(unittest.TestCase):
         self.panel.set_connected(True);self.feed(2000)
         self.assertIsNone(self.panel.tracker.run)
         self.assertFalse(self.panel.enabled)
-        self.assertIsNone(self.panel.overlay_row())
+        self.assertEqual(self.panel.overlay_rows(),[])
         self.assertTrue(hasattr(self.panel,'start_button'))
         self.assertFalse(hasattr(self.panel,'enabled_check'))
         self.assertFalse(hasattr(self.panel,'details_button'))
@@ -64,17 +64,17 @@ class ExperienceUiTests(unittest.TestCase):
         self.train()
         self.assertEqual(self.panel.rate.text(),"+6.00%")
         self.assertEqual(self.panel.hour_rate.text(),"+360.0%")
-        self.assertEqual(self.panel.elapsed.text(),"0m 31s")
-        self.assertIn("%/min",self.panel.overlay_row()["text"])
-        self.assertNotIn("EXP/min",self.panel.overlay_row()["text"])
-        self.assertTrue(self.panel.overlay_row()["name"].startswith("Lv."))
+        self.assertEqual(self.panel.elapsed.text(),"00:31")
+        self.assertIn("%",self.panel.overlay_rows()[0]["metrics"][1][1])
+        self.assertNotIn("EXP",self.panel.overlay_rows()[0]["metrics"][1][1])
+        self.assertIn("Lv.",self.panel.overlay_rows()[0]["name"])
 
     def test_tracking_clock_adds_hours_and_keeps_seconds_without_shifting_controls(self):
-        from price_lens.experience import duration_text
+        from price_lens.experience import clock_text
         self.panel.resize(428,650);self.panel.show();self.panel.set_connected(True);self.panel.start()
         self.app.processEvents();before=self.panel.pause_button.geometry()
-        for seconds,expected in ((3599,'59m 59s'),(3600,'1h 00m 00s'),(3661,'1h 01m 01s'),(36061,'10h 01m 01s')):
-            self.panel.elapsed.setText(duration_text(seconds,seconds_in_hours=True));self.app.processEvents()
+        for seconds,expected in ((3599,'59:59'),(3600,'1:00:00'),(3661,'1:01:01'),(36061,'10:01:01')):
+            self.panel.elapsed.setText(clock_text(seconds));self.app.processEvents()
             self.assertEqual(self.panel.elapsed.text(),expected)
             self.assertGreaterEqual(self.panel.elapsed.width(),self.panel.elapsed.fontMetrics().horizontalAdvance(expected))
             self.assertEqual(self.panel.pause_button.geometry(),before)
@@ -84,28 +84,26 @@ class ExperienceUiTests(unittest.TestCase):
         self.assertEqual(self.panel.minute_caption.text(), 'Per minute')
         self.assertEqual(self.panel.hour_caption.text(), 'Per hour')
         self.assertEqual([w.text() for w in self.panel.meso_captions][1:], ['Per minute','Per hour'])
-        self.assertEqual([w.accessibleName() for w in self.panel.meso_units], ['meso']*3)
-        self.assertTrue(all(not w.pixmap().isNull() for w in self.panel.meso_units))
         self.assertTrue(all('%' in w.text() for w in (self.panel.gain,self.panel.rate,self.panel.hour_rate)))
         self.panel.set_display('raw')
-        self.assertEqual([w.text() for w in self.panel.exp_units], ['EXP']*3)
+        self.assertTrue(all('EXP' in w.text() for w in (self.panel.gain,self.panel.rate,self.panel.hour_rate)))
         self.panel.set_display('both')
         self.assertTrue(all('%' in w.text() for w in (self.panel.gain,self.panel.rate,self.panel.hour_rate)))
-        self.assertIn('EXP/min', self.panel.raw_hint.text())
+        self.assertIn('EXP gained', self.panel.raw_hint.text())
 
-    def test_meso_units_wait_for_numbers_without_moving_the_columns(self):
+    def test_meso_units_wait_for_confirmed_log_then_remain_inline(self):
         self.panel.show();self.app.processEvents()
         self.assertEqual(self.panel.meso_heading.text(),'MESO')
-        self.assertTrue(all(unit.isHidden() for unit in self.panel.meso_units))
-        before=[value.geometry() for value in (self.panel.meso_gain,self.panel.meso_rate,self.panel.meso_hour)]
+        self.assertEqual(self.panel.meso_gain.text(),'—')
         self.panel.set_connected(True);self.panel.start()
-        for _ in range(2):
-            self.now+=1;self.panel.feed({'atMs':int(self.now*1000),'walletRead':True,'wallet':{'mesos':70000}})
-        self.app.processEvents()
-        self.assertFalse(self.panel.meso_units[0].isHidden())
-        self.assertTrue(self.panel.meso_units[1].isHidden())
-        self.assertTrue(self.panel.meso_units[2].isHidden())
-        self.assertEqual([value.geometry() for value in (self.panel.meso_gain,self.panel.meso_rate,self.panel.meso_hour)],before)
+        self.pickup();self.pickup(29);self.pickup(29)
+        self.assertEqual(self.panel.meso_gain.text(),'29 mesos')
+        self.assertTrue(all(not w.isHidden() for w in self.panel.meso_captions))
+
+    def pickup(self,*amounts):
+        from test_meso_tracking import log
+        self.now+=.2
+        self.panel.feed({'atMs':int(self.now*1000),'pickupsRead':True,'pickups':log(*amounts)})
 
     def test_warmup_is_explicit_only_during_a_session(self):
         self.assertEqual(self.panel.observation.text(), '')
@@ -130,13 +128,13 @@ class ExperienceUiTests(unittest.TestCase):
     def test_raw_and_both_keep_percentage_first(self):
         self.train()
         self.panel.set_display("raw")
-        self.assertEqual(self.panel.rate.text(),"600")
-        self.assertEqual(self.panel.hour_rate.text(),"36,000")
-        self.assertIn("600 EXP/min",self.panel.overlay_row()["text"])
+        self.assertEqual(self.panel.rate.text(),"600 EXP")
+        self.assertEqual(self.panel.hour_rate.text(),"36,000 EXP")
+        self.assertEqual(self.panel.overlay_rows()[0]["metrics"][1][1],"600 EXP")
         self.panel.set_display("both")
         self.assertIn("%",self.panel.rate.text())
-        self.assertIn("%/min",self.panel.overlay_row()["text"])
-        self.assertIn("EXP/min",self.panel.overlay_row()["extra"])
+        self.assertIn("%",self.panel.overlay_rows()[0]["metrics"][1][1])
+        self.assertIn("EXP/min",self.panel.overlay_rows()[0]["secondary"])
 
     def test_pause_excludes_unseen_gain_and_stop_saves_without_restarting(self):
         self.train()
@@ -150,7 +148,7 @@ class ExperienceUiTests(unittest.TestCase):
         self.assertEqual(len(self.panel.history.rows()),1)
         self.assertIsNone(self.panel.tracker.run)
         self.assertFalse(self.panel.enabled)
-        self.assertIsNone(self.panel.overlay_row())
+        self.assertEqual(self.panel.overlay_rows(),[])
         self.assertFalse(self.panel.user_paused)
 
     def test_global_context_loss_does_not_count_hidden_gain(self):
@@ -169,38 +167,35 @@ class ExperienceUiTests(unittest.TestCase):
     def test_stale_readings_hold_the_overlay_and_watch_timer(self):
         self.train();before=self.panel.tracker.run.seconds
         self.now+=6;self.panel.refresh()
-        self.assertIsNone(self.panel.overlay_row())
+        self.assertIn("unreadable",self.panel.overlay_rows()[0]["status"])
         self.assertEqual(self.panel.tracker.run.seconds,before)
         self.assertIn("EXP estimates held",self.panel.state.text())
 
-    def test_shared_wallet_tracking_counts_net_change_and_holds_pause(self):
-        self.train()
-        def wallet(value,step=1):
-            self.now+=step
-            self.panel.feed({'atMs':int(self.now*1000),'experience':payload(self.panel.tracker.current.exp),
-                             'walletRead':True,'wallet':{'mesos':value} if value is not None else None})
-        wallet(70000);wallet(70000)
-        wallet(None);wallet(71200);wallet(71200)
-        self.assertEqual(self.panel.meso_gain.text(),'+1,200')
-        self.assertIn('Meso +1,200',self.panel.overlay_row()['extra'])
-        self.panel.toggle_pause();wallet(50000);wallet(50000)
+    def test_shared_pickup_tracking_holds_pause_and_saves_its_basis(self):
+        self.train();self.pickup();self.pickup(1200);self.pickup(1200)
+        self.assertEqual(self.panel.meso_gain.text(),'1,200 mesos')
+        self.assertEqual(self.panel.overlay_rows()[1]['text'],'1,200')
+        self.assertNotIn('meso',self.panel.overlay_rows()[0]['footer'].lower())
+        self.panel.toggle_pause();self.pickup(5000);self.pickup(5000)
         self.assertEqual(self.panel.mesos.gain,1200)
-        self.panel.toggle_pause();wallet(50000);wallet(50000);wallet(50100);wallet(50100)
-        self.assertEqual(self.panel.mesos.gain,1300)
-        self.panel.stop()
-        saved=self.panel.history.rows()[0]
-        self.assertEqual(saved['mesos'],1300)
-        self.assertEqual(saved['wallet_end'],50100)
+        self.panel.toggle_pause();self.pickup(5000);self.pickup(5000,100);self.pickup(5000,100)
+        self.panel.stop();saved=self.panel.history.rows()[0]
+        self.assertEqual(saved['mesos'],1300);self.assertEqual(saved['meso_basis'],'pickups')
+        self.assertIsNone(saved['wallet_end'])
 
-    def test_wallet_can_be_saved_without_readable_exp(self):
+    def test_pickups_can_be_saved_without_readable_exp(self):
         self.panel.set_connected(True);self.panel.start()
-        for amount in (70000,70000,71200,71200):
-            self.now+=1
-            self.panel.feed({'atMs':int(self.now*1000),'walletRead':True,'wallet':{'mesos':amount}})
+        self.pickup();self.pickup(1200);self.pickup(1200)
         self.assertEqual(self.panel.mesos.gain,1200)
-        self.assertIn('Meso tracking',self.panel.overlay_row()['name'])
-        self.panel.stop()
-        self.assertEqual(self.panel.history.rows()[0]['mesos'],1200)
+        self.assertEqual(len(self.panel.overlay_rows()),2)
+        self.panel.stop();self.assertEqual(self.panel.history.rows()[0]['mesos'],1200)
+
+    def test_overlay_numbers_are_throttled_but_pause_updates_immediately(self):
+        self.train();first=self.panel.overlay_rows();self.feed(self.panel.tracker.current.exp+10,1)
+        self.assertEqual(self.panel.overlay_rows(),first)
+        self.feed(self.panel.tracker.current.exp+10,1)
+        self.assertNotEqual(self.panel.overlay_rows(),first)
+        self.panel.toggle_pause();self.assertEqual(self.panel.overlay_rows()[0]['status'],'Paused')
 
     def test_map_changes_save_a_segment_and_continue_the_total_timer(self):
         self.train()

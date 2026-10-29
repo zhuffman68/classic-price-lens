@@ -170,7 +170,11 @@ class ReferenceRefreshTests(unittest.TestCase):
             self.calls.append(url)
             if url==API+'meta.json':return deepcopy(self.meta)
             return {'cargoquery':[{'title':report()}]}
-        def fetch_bytes(url):self.calls.append(url);return self.payloads[url.rsplit('/',1)[1]]
+        def fetch_bytes(url):
+            self.calls.append(url)
+            if url.endswith('/npc-shops'):
+                return b'<div><a href="/msclassic/npcs/103">Jane</a>Launch prices<table><tr><td><img src="/msclassic/api/assets/icons/1001"></td><td><a href="/msclassic/item-db/991">Leaf Earrings</a></td><td>2,000 mesos</td></tr></table></div>'
+            return self.payloads[url.rsplit('/',1)[1]]
         self.service=ReferenceService(Path(self.folder.name)/'reference.sqlite',fetch_bytes=fetch_bytes,fetch_json=fetch_json)
         self.addCleanup(self.service.close)
 
