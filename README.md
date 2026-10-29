@@ -13,7 +13,7 @@ Lupin reads shared screen pixels and draws independent overlays. It never hooks 
 
 ## Market prices
 
-See market references beside player-shop listings, with item names and colors that make lower, similar and higher asking prices easy to compare. Hover inventory or equipped items for their market reference, including while a shop is open. Standard item descriptions from trades use the same reader.
+See market references beside player-shop listings, with item names and colors that make lower, similar and higher asking prices easy to compare. Hover inventory or equipped items for their market reference, including while a player shop or NPC vendor is open. Standard item descriptions from trades use the same reader.
 
 - Supports equipment, scrolls, materials, consumables and cash/NX resale prices when market reports exist.
 - Shows item images beside shop entries in the Prices page.
@@ -31,7 +31,7 @@ Look up an item without opening a shop or sharing a screen. Prices and Database 
 
 Prices share a local cache with the overlay. Saved references appear while updates run; missing market reports are shown separately from an unreadable item name. The full market refreshes on launch and at the interval selected in Settings. The overlay, search and watched items all use this shared snapshot; individual price requests are not used. Items without a reference stay unpriced.
 
-Recently seen items stay in a compact list after their screen labels disappear. Each row has a thumbnail, a large market reference and its last-seen/listing information. The list keeps one entry per item, up to 100, and clears when Lupin closes.
+Recently seen items stay in a compact list after their screen labels disappear. Each row has a thumbnail, a large market reference and its last-seen/listing information. Seeing a history item again updates that same row. The list keeps one entry per item, up to 100, and clears when Lupin closes.
 
 <!-- DEMO: docs/media/item-search.gif — type, select an item, inspect its reference, clear the search. -->
 
@@ -50,10 +50,10 @@ Start a session and watch gain, per-minute and per-hour figures in matching colu
 - **EXP:** percentage progress by default, with raw EXP or both available in Settings.
 - **Pace:** a session timer, recent average rates and an estimated time to the next level.
 - **Mesos:** meso pickups, with per-minute and per-hour rates from the visible pickup log.
-- **In-game trackers:** compact EXP and meso cards stacked above the bottom-left status bar, with independent visibility switches, session gain, rates, time and level-up ETA.
+- **In-game trackers:** compact EXP and meso cards in the empty corner beside the status bar, with independent visibility switches, gain, rates, time and level-up ETA.
 - **Session controls:** Start, Pause and Stop; tracking always begins stopped when Lupin opens.
 
-EXP rates and ETA use 30 seconds of valid tracking to establish a pace. The overlays update every two seconds. Pausing screen reading holds tracking; the Prices shortcut can pause prices independently.
+EXP rates and ETA use 30 seconds of valid tracking to establish a pace, then average up to five minutes of tracked time. Meso rates average the active session. Panel and overlay numbers share a two-second update interval; pause and connection changes appear immediately. Pausing holds the displayed ETA and rates. A paused session stays with its original character when another client becomes visible. Pausing screen reading holds tracking; the Prices shortcut can pause prices independently.
 
 Meso gain counts readable pickup messages, including while EXP is unchanged. Fast bursts or covered text can be missed. Purchases, trades, potion costs and unsold loot are excluded; this is a pickup total, not farming profit.
 

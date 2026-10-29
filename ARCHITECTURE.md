@@ -1,6 +1,6 @@
 # Lupin architecture
 
-Lupin v0.17.1 provides market references, EXP/meso tracking, local Korean translation and a searchable Classic World database for MapleStory Classic World.
+Lupin v0.17.2 provides market references, EXP/meso tracking, local Korean translation and a searchable Classic World database for MapleStory Classic World.
 
 ## Observation boundary
 
@@ -42,6 +42,8 @@ The visible bottom status bar and static frame evidence locate Classic World. FP
 
 Only a missing, uncovered shop price triggers a retry. A cropped shop passes through the unchanged strict upstream reader at two resamplings. Recovery requires agreement on exact name, row position, quantity and the complete meso amount. Existing prices are never overwritten. An eight-patch pixel cache also remembers failures. The pinned Minerva revision and OCR model are unchanged; the worker uses two OCR threads.
 
+An empty detected blue table is not sufficient to suppress generic inventory tooltips: NPC buy/sell lists share that palette. Such rectangles remain available for fingerprints but do not establish pointer-in-player-shop context without rows. The next hover read uses the full frame, allowing an NPC sell-list item and its comparison panel through the ordinary item-name/catalog rules. Closing the reader marks it paused before draining its process, so a queued scan cannot access deleted Qt children.
+
 ## One full-market cache
 
 `PriceService` loads the Classic World regular/cash catalog and manages a single `SnapshotStore`/`SnapshotUpdater`. There is no individual-price provider, per-item HTTP queue or provider-ID index.
@@ -80,7 +82,11 @@ Thumbnail downloads share a two-request queue, bounded memory/disk caches and ne
 
 Tracking starts stopped. Explicit Start enables EXP sampling once a second and a bounded bottom-right pickup-log crop at up to five samples a second, in the existing OCR process. The old wallet reader is removed. The pickup reader recognizes complete system messages, caches up to 128 line masks and never saves frames or chat. A bounded arrival ledger confirms lines in independent captures, aligns scrolling suffixes/prefixes, distinguishes repeated amounts, seeds existing messages on Start/Resume and after coverage gaps, and holds when known windows cover the log. It records gross visible pickups, not profit or wallet changes. Missed/ambiguous bursts can undercount. Legacy saved runs retain their wallet basis; new history/CSV records use pickups and record coverage gaps.
 
-EXP pace needs 30 seconds; pickup rates need 10 seconds. Percent is the default EXP unit; raw/both remain available. Compact fixed-grid EXP and meso cards always stack at bottom left, above the native HUD. Placement uses the independently verified guard top/height at capture scale and never paints over or exempts those guards from validation. Separate visibility settings synchronize between the tracking page and Settings; the new meso preference initially inherits the old combined overlay preference. Numeric snapshots update every two seconds, with immediate pause/context/settings changes. Reading Pause holds the session clock and rebaselines future samples; the Prices shortcut leaves tracking active. History/CSV stay local.
+EXP pace needs 30 seconds; pickup rates need 10 seconds. Percent is the default EXP unit; raw/both remain available. EXP and meso cards stack in the empty corner left of the native HUD when the independently verified guard position leaves enough width; otherwise they sit above it. The two 32-pixel cards and two-pixel gap total 66 logical pixels. Placement scales capture guards into logical coordinates on both axes and never paints over or exempts them from validation. Compact cards retain gain, per-minute/per-hour rates, Level X - ETA, the averaging basis and a clock when space permits. Both mode adds raw gain in the remaining header space; the full tracking page retains all raw rates. Totals align beside a shared unit column; large values can expand it before reducing available clock space, without overlapping symbols or other text. The meso gain's small coin aligns with the EXP percent symbol and stays hidden without a numeric value. Coverage-gap counts stay in the GUI, not the game overlay.
+
+One numeric snapshot supplies both panel and overlay values every two seconds, with immediate pause/context/settings changes. EXP rates average up to five tracked minutes; meso rates use active session time. Pause copies the last displayed rate/ETA window rather than calculating a new estimate at the button press. The full map header uses the remaining identity-row width before right elision. Separate visibility settings synchronize between the tracking page and Settings. Reading Pause holds the session clock and rebaselines future samples; the Prices shortcut leaves tracking active. History/CSV stay local.
+
+User Pause freezes the current reading, run, map, rate snapshot, watch totals and pickup tracker. Incoming frames can confirm visible identity but cannot finish/switch the run, reset pickups or change its label. Loss of the game area invalidates a paused identity binding. Two fresh matching character readings restore it; another character hides the tracking cards and disables Resume while prices remain independent. Resuming rebaselines EXP and seeds old pickup messages, excluding gains made while paused. No OS game-window identity or process access is used.
 
 The detected-map header omits a redundant street prefix and shortens overflowing names at the right edge, with the full value in its hover text. Session data and the Map Label field retain the full detected name; manual labels are not rewritten.
 
@@ -90,7 +96,7 @@ The writer uses conservative trade/party shorthand and numeric validation before
 
 ## Presentation, persistence and packaging
 
-Inter is bundled for consistent interface/price typography. The GUI uses a small coin for currency words, except MESO on the tracking panel and EXP/Meso Tracking on its tab; game-overlay text remains plain. Tracking unit coins appear only alongside available numbers. The larger, left-aligned rolling tracking timer shares a borderless row with the tracking controls above both metric panels. The timer adds hours while retaining seconds; its reserved width prevents the adjacent buttons from shifting. Digit-place animation keeps surrounding text/columns steady. Page slides and section transitions are interruptible and respect Reduce motion.
+Inter is bundled for consistent interface/price typography. The GUI uses a small coin for currency words, except MESO on the tracking panel and EXP/Meso Tracking on its tab. Market-price overlays remain plain; the tracking gain uses the same coin asset. Tracking unit coins appear only alongside available numbers. The larger, left-aligned rolling tracking timer shares a borderless row with the tracking controls above both metric panels. The timer adds hours while retaining seconds; its reserved width prevents the adjacent buttons from shifting. Digit-place animation keeps surrounding text/columns steady. Page slides and section transitions are interruptible and respect Reduce motion.
 
 Maximization and control-panel pinning are disabled. Fresh default geometry is 27.0833% × 77.7778% of logical screen dimensions (520 × 840 at 1920 × 1080), clamped to available space with a 460-pixel minimum width. Resizes persist as screen-relative fractions; OS DPI is applied once. Valid older custom sizes migrate without losing the preference; desktop-sized/maximized geometry cannot replace a compact preference. Long item/history lists can scroll independently. Tabs use plain labels, warm selected text and a filled active background.
 
@@ -125,8 +131,11 @@ Market cards read the existing shared snapshot and watch controls, with updates 
 
 `recent_items.py` keeps at most 100 exact-item sightings in memory, replacing
 repeated reads and never retaining frames. Live observations and history share
-one identity; inactive entries use native painted rows rather than per-row widget
-trees. Only visible history thumbnails enter image demand. Market references are
+one identity; history uses native painted rows rather than per-row widget trees.
+Once shown, an entry stays in history through re-sightings and brief OCR misses.
+Price animations advance only changed identities and finish their old glyph
+layers; another row's update cannot rewind a settled price. Only visible history
+thumbnails enter image demand. Market references are
 local snapshot reads, with large rolling prices and muted expired values. History
 is cleared on application exit and has no persistent file.
 

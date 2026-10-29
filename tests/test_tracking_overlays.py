@@ -14,7 +14,7 @@ ROOT=Path(__file__).resolve().parents[1]
 
 def rows():
     return [dict(key='experience',kind='tracking',name='EXP · Character · Lv. 30',text='+1.20%',color='#e4bd7b',clock='01:20',
-                 metrics=[('Gained','+1.20%'),('Per minute','+0.90%'),('Per hour','+54.0%')],footer='Next level · 1h 20m',progress='24.10%',status='Recent 5-minute pace'),
+                 metrics=[('Gained','+1.20%'),('Per minute','+0.90%'),('Per hour','+54.0%')],footer='Level 31 - ETA 1h 20m',basis='avg 5m00s',progress='24.10%',status='Rates average the last 5m tracked'),
             dict(key='meso-gain',kind='tracking',name='Meso gained',text='1,200',clock='01:20',color='#b7d4a9',
                  metrics=[('Picked up','1,200'),('Per minute','900'),('Per hour','54,000')],footer='',status='Watching pickup messages')]
 
@@ -26,26 +26,52 @@ class TrackingOverlayTests(unittest.TestCase):
     def test_compact_cards_stack_with_independent_single_card_placement(self):
         window=AnnotationWindow(start_listener=False)
         try:
-            for supplied in (rows(),rows()[:1],rows()[1:]):
-                placed=tracking_rows(supplied,[120,90,1366,768],[QRect(405,820,36,37)])
-                window.read_command(json.dumps(dict(geometry=[0,0,1920,1080],rows=placed,reduce_motion=True)).encode())
-                boxes=[window.label_rect(row,QPoint()) for row in window.rows]
-                self.assertTrue(all(box.height()<100 and box.left()==124 for box in boxes))
-                if len(boxes)==2:self.assertLess(boxes[0].bottom(),boxes[1].top())
-                self.assertTrue(all(not box.intersects(QRect(405,820,36,37)) for box in boxes))
+            for scale in (1,2):
+                for supplied in (rows(),rows()[:1],rows()[1:]):
+                    placed=tracking_rows(supplied,[120,90,1366,768],[QRect(405*scale,820*scale,36*scale,37*scale)],scale_x=1/scale,scale_y=1/scale)
+                    window.read_command(json.dumps(dict(geometry=[0,0,1920,1080],rows=placed,reduce_motion=True)).encode())
+                    boxes=[window.label_rect(row,QPoint()) for row in window.rows]
+                    self.assertTrue(all(box.height()==32 and box.left()==124 for box in boxes))
+                    self.assertTrue(all(box.right()<405 and box.width()<=273 for box in boxes))
+                    self.assertLessEqual(max(box.bottom() for box in boxes)-min(box.top() for box in boxes)+1,66)
+                    self.assertEqual(max(box.bottom() for box in boxes),853)
+                    if len(boxes)==2:self.assertLess(boxes[0].bottom(),boxes[1].top())
+                    self.assertTrue(all(not box.intersects(QRect(405,820,36,37)) for box in boxes))
         finally:window.close();window.deleteLater()
 
     def test_leaving_both_mode_clears_the_extra_line_in_the_reused_compact_card(self):
         window=AnnotationWindow(start_listener=False)
         try:
-            for secondary,height in (('+1,200 EXP · 900 EXP/min',104),('',90)):
+            for secondary in ('+1,200 EXP · 900 EXP/min',''):
                 supplied=rows()[:1]
                 if secondary:supplied[0]['secondary']=secondary
                 placed=tracking_rows(supplied,[120,90,1366,768],[QRect(405,820,36,37)])
                 window.read_command(json.dumps(dict(geometry=[0,0,1920,1080],rows=placed,reduce_motion=True)))
                 self.assertEqual(window.rows[0].get('secondary'),secondary)
-                self.assertEqual(window.rows[0]['_rolls']['secondary'].text,secondary)
-                self.assertEqual(window.rows[0]['_height'],height)
+                self.assertEqual('1,200' in window.rows[0]['_rolls']['context'].text,bool(secondary))
+                self.assertEqual(window.rows[0]['_height'],32)
+                self.assertNotIn('secondary',window.rows[0]['_rolls'])
+        finally:window.close();window.deleteLater()
+
+    def test_large_totals_share_a_unit_column_without_overlap(self):
+        window=AnnotationWindow(start_listener=False)
+        try:
+            for count in ('285','9,876,543,210','999,999,999,999,999'):
+                supplied=rows();supplied[1]['metrics'][0]=('Picked up',count)
+                placed=tracking_rows(supplied,[120,90,1366,768],[QRect(405,820,36,37)])
+                window.read_command(json.dumps(dict(geometry=[0,0,1920,1080],rows=placed,reduce_motion=True)))
+                columns=[window.tracking_columns(row,window.label_rect(row,QPoint())) for row in window.rows]
+                self.assertEqual(columns[0]['gain'].left(),columns[1]['gain'].left())
+                self.assertEqual(columns[0]['unit'].center().x(),columns[1]['unit'].center().x())
+                for row,parts in zip(window.rows,columns):
+                    self.assertLess(parts['gain'].right(),parts['unit'].left())
+                    self.assertLess(parts['unit'].right(),parts['context'].left())
+                    self.assertTrue(window.label_rect(row,QPoint()).contains(parts['unit']))
+                self.assertEqual(window.tracking_values(window.rows[1])['detail'],'')
+                self.assertIn('avg',window.tracking_values(window.rows[0])['basis'])
+                self.assertEqual(window.tracking_values(window.rows[0])['gain'],'+1.20')
+            supplied=rows()[1];supplied['metrics'][0]=('Picked up','—')
+            self.assertEqual(window.tracking_values(supplied)['unit'],'')
         finally:window.close();window.deleteLater()
 
     def test_real_painted_cards_no_longer_destroy_window_detection(self):

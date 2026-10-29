@@ -1,5 +1,5 @@
 """Actual reader IPC fed generated screenshots; never starts OS sharing."""
-import os
+import os,json
 from pathlib import Path
 import time
 import unittest
@@ -9,13 +9,30 @@ from PySide6.QtCore import QCoreApplication, QEvent, QRect
 from PySide6.QtGui import QColor, QImage, QPainter
 from PySide6.QtWidgets import QApplication
 
-from price_lens.capture import PixelReader
+from price_lens.capture import PixelReader,pointer_in_shop
 from test_game_area import game_frame
 
 ROOT=Path(__file__).resolve().parents[1]
 
 
 class AreaCaptureTests(unittest.TestCase):
+    def test_empty_blue_npc_table_does_not_suppress_inventory_tooltip_requests(self):
+        reader=PixelReader(ROOT);reader.timer.stop();reader.tooltip_enabled=True
+        frame=QImage(800,800,QImage.Format.Format_RGBA8888);frame.fill(QColor('#cccccc'))
+        reader.image=reader.submitted_image=frame;reader.pointer=(450,250)
+        reader.shop_context=QRect(400,200,200,300)
+        table=dict(x=400,y=200,width=200,height=300)
+        try:
+            self.assertTrue(reader.process.waitForStarted(3000))
+            message=json.dumps(dict(atMs=0,shop=dict(area=table,rows=[]),tooltip=None))+'\n'
+            with patch.object(reader.process,'readAllStandardOutput',return_value=message.encode()):reader.on_output()
+            self.assertFalse(pointer_in_shop(reader.pointer,reader.shop_context))
+            with patch.object(reader.process,'write') as write:
+                reader.scan()
+                request=json.loads(bytes(write.call_args[0][0]))
+            self.assertTrue(request['tooltip']);self.assertFalse(reader.using_roi)
+        finally:
+            reader.close();reader.deleteLater();QCoreApplication.sendPostedEvents(None,QEvent.Type.DeferredDelete);self.app.processEvents()
     def test_inventory_hover_reads_alongside_an_open_shop_without_roi_clipping(self):
         reader=PixelReader(ROOT);reader.live_source=True;reader.tooltip_enabled=True
         readings=[];reader.reading.connect(readings.append)

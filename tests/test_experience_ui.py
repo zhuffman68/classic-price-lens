@@ -64,7 +64,7 @@ class ExperienceUiTests(unittest.TestCase):
         self.train()
         self.assertEqual(self.panel.rate.text(),"+6.00%")
         self.assertEqual(self.panel.hour_rate.text(),"+360.0%")
-        self.assertEqual(self.panel.elapsed.text(),"00:31")
+        self.assertEqual(self.panel.elapsed.text(),"00:30")
         self.assertIn("%",self.panel.overlay_rows()[0]["metrics"][1][1])
         self.assertNotIn("EXP",self.panel.overlay_rows()[0]["metrics"][1][1])
         self.assertIn("Lv.",self.panel.overlay_rows()[0]["name"])
@@ -97,6 +97,7 @@ class ExperienceUiTests(unittest.TestCase):
         self.assertEqual(self.panel.meso_gain.text(),'—')
         self.panel.set_connected(True);self.panel.start()
         self.pickup();self.pickup(29);self.pickup(29)
+        self.now+=2;self.panel.refresh()
         self.assertEqual(self.panel.meso_gain.text(),'29 mesos')
         self.assertTrue(all(not w.isHidden() for w in self.panel.meso_captions))
 
@@ -157,6 +158,32 @@ class ExperienceUiTests(unittest.TestCase):
         self.feed(2500,1);self.feed(2510,1)
         self.assertEqual(self.panel.tracker.run.exp,20)
 
+    def test_paused_session_survives_another_character_and_map_without_resetting(self):
+        self.train();self.pickup();self.pickup(1200);self.pickup(1200)
+        panel=self.panel;run=panel.tracker.run;panel.tracker.map_name=run.map_name='Original map'
+        panel.toggle_pause();totals=panel.totals();money=panel.mesos.gain;seconds=panel.mesos.seconds
+        panel.set_connected(False);panel.set_connected(True)
+        for _ in range(3):
+            self.now+=1
+            panel.feed({'atMs':int(self.now*1000),'experience':{**payload(5000,name='OtherCharacter'),
+                        'mapRead':True,'map':{'map':'Other map'}},'pickupsRead':True,'pickups':{'valid':True,'lines':[]}})
+        self.assertIs(panel.tracker.run,run);self.assertEqual(panel.tracker.current.character,'TestWarrior')
+        self.assertEqual(panel.tracker.map_name,'Original map');self.assertEqual(panel.totals(),totals)
+        self.assertEqual(panel.mesos.gain,money);self.assertEqual(panel.mesos.seconds,seconds)
+        self.assertTrue(panel.user_paused);self.assertTrue(panel.tracker.paused);self.assertTrue(panel.mesos.paused)
+        self.assertFalse(panel.pause_button.isEnabled());self.assertEqual(panel.overlay_rows(),[])
+        self.assertIn('TestWarrior',panel.state.text());self.assertEqual(panel.history.rows(),[])
+        panel.toggle_pause();self.assertTrue(panel.user_paused)
+        exp=panel.tracker.current.exp
+        self.feed(exp+500,1);self.assertEqual(panel.overlay_rows(),[])
+        self.feed(exp+500,1)
+        self.assertTrue(panel.pause_button.isEnabled());self.assertEqual(len(panel.overlay_rows()),2)
+        self.assertEqual(panel.totals(),totals);self.assertIs(panel.tracker.run,run)
+        panel.toggle_pause();self.feed(exp+500,1);self.feed(exp+510,1)
+        self.assertEqual(panel.totals()['exp'],totals['exp']+10)
+        self.pickup(5000);self.pickup(5000,100);self.pickup(5000,100)
+        self.assertEqual(panel.mesos.gain,money+100)
+
     def test_stopped_reader_ignores_gain_and_new_session_starts_clean(self):
         self.panel.set_connected(True);self.panel.start();self.feed(2000);self.feed(2010,1)
         self.panel.stop();self.feed(3000,1)
@@ -173,6 +200,7 @@ class ExperienceUiTests(unittest.TestCase):
 
     def test_shared_pickup_tracking_holds_pause_and_saves_its_basis(self):
         self.train();self.pickup();self.pickup(1200);self.pickup(1200)
+        self.now+=2;self.panel.refresh()
         self.assertEqual(self.panel.meso_gain.text(),'1,200 mesos')
         self.assertEqual(self.panel.overlay_rows()[1]['text'],'1,200')
         self.assertNotIn('meso',self.panel.overlay_rows()[0]['footer'].lower())
@@ -191,19 +219,40 @@ class ExperienceUiTests(unittest.TestCase):
         self.panel.stop();self.assertEqual(self.panel.history.rows()[0]['mesos'],1200)
 
     def test_overlay_numbers_are_throttled_but_pause_updates_immediately(self):
-        self.train();first=self.panel.overlay_rows();self.feed(self.panel.tracker.current.exp+10,1)
+        self.train();self.now+=1;self.panel.refresh()
+        self.panel.mesos.observed=True;self.panel.mesos.gain=100;self.panel.refresh()
+        first=self.panel.overlay_rows();gain=self.panel.gain.text();clock=self.panel.elapsed.text()
+        self.panel.mesos.gain=200
+        self.feed(self.panel.tracker.current.exp+10,1)
         self.assertEqual(self.panel.overlay_rows(),first)
+        self.assertEqual(self.panel.gain.text(),gain);self.assertEqual(self.panel.elapsed.text(),clock)
+        self.assertEqual(self.panel.meso_gain.text(),'100 mesos')
         self.feed(self.panel.tracker.current.exp+10,1)
         self.assertNotEqual(self.panel.overlay_rows(),first)
+        self.assertEqual(self.panel.gain.text(),self.panel.overlay_rows()[0]['text'])
+        self.assertEqual(self.panel.meso_gain.text(),'200 mesos');self.assertEqual(self.panel.overlay_rows()[1]['text'],'200')
         self.panel.toggle_pause();self.assertEqual(self.panel.overlay_rows()[0]['status'],'Paused')
 
+    def test_pause_freezes_the_last_displayed_eta_and_rates_through_long_delays(self):
+        self.train();eta=self.panel.eta.text();rates=(self.panel.rate.text(),self.panel.hour_rate.text())
+        footer=self.panel.overlay_rows()[0]['footer'];self.panel.toggle_pause()
+        for seconds in (1,6,60,600):
+            self.now+=seconds;self.feed(4000)
+            self.assertEqual(self.panel.eta.text(),eta)
+            self.assertEqual((self.panel.rate.text(),self.panel.hour_rate.text()),rates)
+            self.assertEqual(self.panel.overlay_rows()[0]['footer'],footer)
+        self.assertEqual(self.panel.eta_caption.text(),'Level 28 - ETA')
+        self.assertIn('Level 28 - ETA',footer)
+
     def test_detected_map_header_keeps_the_start_of_the_name_and_full_tooltip(self):
+        self.panel.set_connected(True);self.panel.start();self.feed(2000)
         full='Victoria Road: Tree Dungeon, Forest Up North V'
         self.panel.tracker.map_name=full;self.panel.resize(428,650);self.panel.show();self.panel.refresh();self.app.processEvents()
         self.assertEqual(self.panel.map_label.text(),'Tree Dungeon, Forest Up North V')
         self.assertEqual(self.panel.map_label.toolTip(),full)
         self.assertTrue(self.panel.map_label.property('elideRight'))
         self.assertEqual(self.panel.tracker.map_name,full)
+        self.assertGreaterEqual(self.panel.map_label.width(),self.panel.map_label.fontMetrics().horizontalAdvance(self.panel.map_label.text()))
         self.panel.map_input.setText('My map: route 1');self.panel.refresh()
         self.assertEqual(self.panel.map_label.text(),'My map: route 1')
 

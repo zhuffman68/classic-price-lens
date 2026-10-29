@@ -89,6 +89,22 @@ class LupinUiTests(unittest.TestCase):
         self.assertLess(w.exp_panel.mesos.seconds-before,.1)
         self.assertIn('paused',w.exp_panel.meso_status.text())
 
+    def test_paused_cards_wait_for_the_original_character_after_window_changes(self):
+        w=self.window;w.on_exp_hotkey();now=time.monotonic()
+        w.on_experience({'atMs':int(now*1000),'experience':payload(2000)})
+        w.exp_panel.toggle_pause();run=w.exp_panel.tracker.run
+        w.on_area_changed();self.assertFalse(w.overlay.rows)
+        for second in (1,2):
+            w.on_experience({'atMs':int((now+second)*1000),'experience':payload(5000,name='OtherCharacter')})
+        self.assertFalse(w.overlay.rows);self.assertTrue(w.prices_enabled)
+        self.assertIs(w.exp_panel.tracker.run,run)
+        w.on_area_changed()
+        for second in (3,4):
+            w.on_experience({'atMs':int((now+second)*1000),'experience':payload(2200)})
+        self.assertEqual([r['key'] for r in w.overlay.rows],['experience','meso-gain'])
+        self.assertTrue(w.exp_panel.user_paused);self.assertTrue(w.exp_panel.mesos.paused)
+        self.assertEqual(w.exp_panel.tracker.run.exp,0)
+
     def test_search_uses_prices_page_and_has_space_priority_without_capture(self):
         w=self.window;w.on_reading(self.fixture.reading(True));w.mode='idle'
         w.search_panel.query.setText('Example');w.search_panel.timer.stop();w.search_panel.find_items()

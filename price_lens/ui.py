@@ -943,7 +943,7 @@ class LensWindow(QMainWindow):
     def on_area_changed(self):
         if self.reader.game_area is not None:self.last_identified_at=time.monotonic()
         if hasattr(self, "exp_panel"):
-            self.exp_panel.tracker.interrupt()
+            self.exp_panel.interrupt_context()
             self.exp_panel.set_connected(False)
         if self.reader.auto_active and self.reader.game_area is None:
             self.rows = []
@@ -1813,7 +1813,7 @@ class LensWindow(QMainWindow):
                 sx,sy=geometry.width()/image.width(),geometry.height()/image.height()
                 bounds=[round(area.x()*sx),round(area.y()*sy),round(area.width()*sx),round(area.height()*sy)]
                 guards=[rect for rect,_ in getattr(self.reader,'game_guards',[])]
-                annotations=tracking_rows(rows,bounds,guards,scale_y=sy)+annotations
+                annotations=tracking_rows(rows,bounds,guards,scale_x=sx,scale_y=sy)+annotations
         if self.chat_enabled and self.mode=="live" and game_visible and screen_matches and not screen_old:
             area=self.reader.game_area if self.reader.auto_active else self.reader.crop
             if area:

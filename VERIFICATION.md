@@ -1,5 +1,19 @@
 # Verification — 2026-10-29
 
+## Lupin v0.17.2
+
+- The 478-test source suite passes with three platform/offscreen skips. All 49 focused follow-up checks pass after the final alignment/cadence refinements. New coverage includes 66-pixel corner geometry, logical/capture scaling, large totals/aligned units, shared two-second EXP/meso GUI/overlay numbers, the complete map header beside a visible character/level, a long paused ETA, cross-character pause/return, persistent history rows and changed-price-only animation.
+- The current shared display shows the former pair occupying about 174 pixels above the HUD. The revised pair uses two 32-pixel cards plus a two-pixel gap, entirely left of the status panel on the observed 1366-pixel game. Real painted cards preserve native game-area detection across four window/UI-scale fixtures; no locator check was weakened. Numeric totals align beside a shared unit column, tested through 15-digit meso totals without geometry overlap. The coin reuses the existing SVG at 12 pixels, with no new model/image download.
+- A paused A → B → A test retains the same run, map, totals, timer, EXP/pickup pause flags and history. Another identity hides only tracking annotations and disables Resume; two fresh original-name readings restore the paused cards. A separate test holds the last displayed rate/ETA through more than ten minutes of simulated pause. Underlying readers still sample independently of the two-second display snapshot.
+- A private NPC sell-list capture first produces an empty right-hand table and suppresses generic hover in the former context. Replaying through the updated Python reader clears that context and recognizes Green Bamboo Hat on the next full-frame hover read. The unchanged native reader also reads the item independently. A generated IPC check covers the empty-table/request transition. No item-name exception, game access or per-item price request was added.
+- UI handoffs retain sharing helper 1891072 with its PID/start time unchanged. The latest preview is 1946714. Settings and history were backed up before the reload; the paused session was saved and tracking begins stopped afterward. A fresh 1920 x 1080 frame arrived through the existing share. The user deferred live layout/NPC/pause follow-up checks; these remain separate from the replay and fixture evidence. Uploads remain on hold.
+
+Post-build checks:
+
+- Windows/Wine, pacman, Debian 12 and Ubuntu 22.04 each pass all 478 installed application tests, with eight/four/five/five platform skips. Windows also passes per-user install, offline OCR/overlay, second launch, running-app upgrade/removal and cache retention. Linux package transactions, file checks and cache preservation pass; Debian/Ubuntu include isolated X11 and native market-helper checks. These checks never start game capture or send game input.
+- All four final artifacts have verified SHA-256 checksums in dist/SHA256SUMS-0.17.2.txt. Both staging trees match all 107 final application/resource files. The readers match their unchanged compiled platform targets, and both model manifests are retained. Private screenshots, caches and user data are excluded. The Windows installer is 408,835,645 bytes.
+- Packaged verification describes staging-time evidence. This completed record is supplied separately as dist/VERIFICATION-0.17.2.md. Permanent host installation is deferred to the package command; physical Windows gameplay remains untested for this patch. No source push, GitHub release or itch.io upload occurred.
+
 ## Lupin v0.17.1
 
 - The final source suite passes 471 tests with three platform/offscreen skips. New checks exercise actual annotation pixels through native game-area detection at four window/UI-scale combinations, independent visibility settings, map-header rendering, native description validation and stale annotation-occlusion reset. Switching away from Both also clears the extra raw-EXP line in the reused compact card.

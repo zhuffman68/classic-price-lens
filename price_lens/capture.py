@@ -459,7 +459,10 @@ class PixelReader(QObject):
                         self.image_sequence += 1
                         self.pending_since = 0
                     self.shop_rect = QRect(area["x"], area["y"], area["width"], area["height"]) if area else None
-                    if self.shop_rect:
+                    # NPC buy/sell tables can share the player's shop palette
+                    # without any readable player listings. That rectangle
+                    # alone must not suppress the independent tooltip reader.
+                    if self.shop_rect and rows:
                         if self.shop_context is None or abs(self.shop_context.x() - self.shop_rect.x()) > 4 or not self.shop_context.intersects(self.shop_rect):
                             self.shop_context = self.shop_rect
                         else:
@@ -509,6 +512,7 @@ class PixelReader(QObject):
             self.status.emit(f"Screen reader stopped ({code}); restart the app")
 
     def close(self, keep_stream=False):
+        self.paused=True
         self.timer.stop()
         self.screenshot_timer.stop()
         if self.screenshot.state() != QProcess.ProcessState.NotRunning:

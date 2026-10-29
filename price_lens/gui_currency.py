@@ -1,4 +1,4 @@
-"""Inline currency art for GUI text; game-overlay descriptions remain plain text."""
+"""Inline GUI currency art, also used by the compact meso tracking overlay."""
 import html
 import re
 from functools import lru_cache

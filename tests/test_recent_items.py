@@ -55,3 +55,24 @@ class RecentItemsTests(unittest.TestCase):
         self.market.cached=lambda item:quote;self.panel.refresh(self.market,900,self.now);row=self.panel.rows.item(0)
         quote=Quote(1,2500,self.now,self.now,20,'MesoWatch','','24h');self.panel.refresh(self.market,900,self.now)
         self.assertIs(self.panel.rows.item(0),row);self.assertEqual(row.data(Qt.ItemDataRole.UserRole+1),2500)
+
+    def test_history_row_stays_visible_through_repeated_sightings_and_ocr_misses(self):
+        self.see(1);self.panel.observe([],self.catalog,self.now);self.panel.refresh(self.market,900,self.now)
+        row=self.panel.rows.item(0)
+        for observations in ([{'name':'Item 1'}],[],[{'name':'Item 1'}],[]):
+            self.now+=1;self.panel.observe(observations,self.catalog,self.now);self.panel.refresh(self.market,900,self.now)
+            self.assertIs(self.panel.rows.item(0),row);self.assertFalse(self.panel.isHidden())
+
+    def test_new_price_animation_does_not_rewind_an_unchanged_history_price(self):
+        self.app.setProperty('reduceMotion',False);self.app.processEvents()
+        quotes={1:Quote(1,1000,self.now,self.now,10,'MesoWatch','','24h')}
+        self.market.cached=lambda item:quotes.get(item.game_id)
+        self.see(1);self.panel.observe([],self.catalog,self.now);self.panel.refresh(self.market,900,self.now)
+        self.panel.animation.setCurrentTime(160)
+        quotes[1]=Quote(1,2500,self.now,self.now,10,'MesoWatch','','24h')
+        self.panel.refresh(self.market,900,self.now);self.panel.animation.setCurrentTime(160)
+        old=self.panel.rolls[1];self.assertEqual(old.progress,1)
+        quotes[2]=Quote(2,3000,self.now,self.now,10,'MesoWatch','','24h')
+        self.see(2);self.panel.observe([],self.catalog,self.now);self.panel.refresh(self.market,900,self.now)
+        self.panel.animation.setCurrentTime(40)
+        self.assertEqual(old.progress,1);self.assertNotIn(1,self.panel.animating)

@@ -1,14 +1,22 @@
 Local patch status
 
-v0.17.1 fixes tracking-overlay HUD coverage, separates visibility switches, keeps
-long map names readable, and rejects false shop-pane occlusion feedback.
+v0.17.2 makes the tracking cards fit the empty HUD corner, aligns their totals
+and symbols, shares two-second GUI/overlay numbers and freezes paused-session
+identity, map, pickups and displayed ETA. It also fixes NPC inventory-hover
+suppression and history-row/number-animation flicker.
+See docs/PATCH_0.17.2.md for changes, limits and install commands.
 All four artifacts are built and pass their isolated installed-package checks.
-See docs/PATCH_0.17.1.md for changes, limits and install commands.
+The user deferred live follow-up checks. The updated preview preserves the
+approved sharing helper; permanent installation remains deferred.
 Uploads remain on hold: do not push source, publish a GitHub release, or upload
 itch.io channels until the user authorizes publication again.
 
-EXP and meso gain have compact fixed-grid overlays stacked at bottom left above
-the native HUD, with independent checkboxes and two-second numeric updates.
+EXP and meso gain have compact fixed-grid overlays stacked beside the native
+HUD where space permits, with independent checkboxes and shared two-second
+numeric updates. The pair is 66 logical pixels tall; a narrow corner falls back
+above the HUD. The meso coin aligns with the EXP percent symbol. Coverage-gap
+counts remain in the GUI. Pause keeps the last shown pace/ETA and rejects another
+client's identity/map until the original character is reconfirmed.
 EXP retains percentage/raw/both modes, session gain, recent pace,
 current progress, timer and level-up ETA. Meso gain counts visible pickup-message
 arrivals, including while EXP is unchanged; it does not read the wallet or estimate

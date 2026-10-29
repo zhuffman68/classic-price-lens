@@ -47,12 +47,20 @@ class RecentItems(QWidget):
         self.rows.setStyleSheet('QListWidget{border:0;background:transparent;}');layout.addWidget(self.rows)
         self.rows.itemClicked.connect(lambda item:self.chosen.emit(item.data(Qt.ItemDataRole.UserRole)['item']))
         self.rows.verticalScrollBar().valueChanged.connect(self.changed.emit)
+        self.animating=set()
         self.animation=QVariantAnimation(self);self.animation.setDuration(160);self.animation.valueChanged.connect(self.advance)
+        self.animation.finished.connect(self.finish_animation)
         self.hide()
 
     def advance(self,value):
-        for roll in self.rolls.values():roll.progress=float(value)
+        for identity in self.animating:
+            if identity in self.rolls:self.rolls[identity].progress=float(value)
         self.rows.viewport().update()
+
+    def finish_animation(self):
+        for identity in self.animating:
+            if identity in self.rolls:self.rolls[identity].finish()
+        self.animating.clear()
 
     def observe(self,observations,catalog,now):
         if not catalog:return
@@ -73,15 +81,16 @@ class RecentItems(QWidget):
             identity,_=self.entries.popitem();self.rolls.pop(identity,None)
 
     def refresh(self,market,ttl,now):
-        visible=[row for identity,row in self.entries.items() if identity not in self.active]
+        # Once a sighting enters history, seeing it again updates that same row.
+        # OCR misses must not repeatedly remove and recreate history entries.
+        visible=[row for identity,row in self.entries.items() if identity not in self.active or identity in self.rows_by_id]
         quotes={row['item'].game_id:market.cached(row['item']) for row in visible}
         fingerprint=(int(now//5),ttl,tuple((row['item'].game_id,int(row['seen']//10),repr(row['price']),quotes[row['item'].game_id]) for row in visible))
         if fingerprint==self.fingerprint:return
         self.fingerprint=fingerprint;shown=not self.isHidden();position=self.rows.verticalScrollBar().value()
         anchor=self.rows.itemAt(QPoint(8,2));anchor_id=anchor.data(Qt.ItemDataRole.UserRole)['item'].game_id if anchor else None
         anchor_y=self.rows.visualItemRect(anchor).top() if anchor else 0
-        previous=self.rows_by_id;current={};changed_price=False
-        self.rows.setUpdatesEnabled(False)
+        previous=self.rows_by_id;current={};changed_prices=set()
         identities={row['item'].game_id for row in visible}
         for identity,item in previous.items():
             if identity not in identities:self.rows.takeItem(self.rows.row(item))
@@ -93,15 +102,21 @@ class RecentItems(QWidget):
             quote=quotes[identity];price=quote.price if quote else None
             item.setData(Qt.ItemDataRole.UserRole+1,price);item.setToolTip(row['item'].name)
             item.setData(Qt.ItemDataRole.UserRole+2,bool(quote and quote.fresh(now,ttl)))
-            roll=self.rolls.setdefault(identity,NumberRoll());changed_price=roll.set_text(f'{price:,.0f}' if price is not None else '—',enabled(self)) or changed_price
+            roll=self.rolls.setdefault(identity,NumberRoll())
+            if roll.set_text(f'{price:,.0f}' if price is not None else '—',enabled(self)):changed_prices.add(identity)
             current[identity]=item
-        self.rows_by_id=current;self.rows.setUpdatesEnabled(True);self.rows.verticalScrollBar().setValue(position)
+        self.rows_by_id=current;self.rows.verticalScrollBar().setValue(position)
         if position and anchor_id in current:
             self.rows.scrollToItem(current[anchor_id],QListWidget.ScrollHint.PositionAtTop)
             self.rows.verticalScrollBar().setValue(self.rows.verticalScrollBar().value()-anchor_y)
         self.rows.setFixedHeight(min(5,len(visible))*59+2);self.caption.setText(f'Recent items · {len(visible)}');self.setVisible(bool(visible))
         if visible and not shown:reveal(self)
-        if changed_price:self.animation.stop();self.animation.setStartValue(0.0);self.animation.setEndValue(1.0);self.animation.start()
+        if changed_prices:
+            self.animation.stop()
+            for identity in self.animating-changed_prices:
+                if identity in self.rolls:self.rolls[identity].finish()
+            self.animating=changed_prices
+            self.animation.setStartValue(0.0);self.animation.setEndValue(1.0);self.animation.start()
 
     def visible_items(self):
         if not self.isVisible():return []
@@ -115,10 +130,11 @@ class RecentItems(QWidget):
 
     def clear(self):
         fade_away(self)
-        self.animation.stop();self.entries.clear();self.active.clear();self.rows.clear();self.rows_by_id.clear();self.rolls.clear();self.fingerprint=None
+        self.animation.stop();self.animating.clear();self.entries.clear();self.active.clear();self.rows.clear();self.rows_by_id.clear();self.rolls.clear();self.fingerprint=None
         self.hide();self.changed.emit()
 
     def hideEvent(self,event):
         self.animation.stop()
+        self.animating.clear()
         for roll in self.rolls.values():roll.finish()
         super().hideEvent(event)

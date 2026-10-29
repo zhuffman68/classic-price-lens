@@ -2,24 +2,27 @@
 from PySide6.QtCore import QRect
 
 
-def tracking_rows(rows,bounds,guards=(),*,scale_y=1.0):
-    """Stack compact cards above the HUD, preserving the locator's evidence.
+def tracking_rows(rows,bounds,guards=(),*,scale_x=None,scale_y=1.0):
+    """Use the empty HUD corner, or stack above the HUD if it is too narrow.
 
     Guard rectangles are capture pixels; bounds and annotations are logical
     display coordinates. Never paint over a guard to then exempt it from checks.
     """
     game=QRect(*bounds);bottom=game.bottom()+1
+    scale_x=scale_y if scale_x is None else scale_x
+    lane=min(round(rect.left()*scale_x) for rect in guards)-game.left()-12 if guards else 0
+    width=min(316,lane) if lane>=240 else min(316,game.width()-8)
     reserve=round((44 if guards else 90)*scale_y)
     if guards:
         top=min(round(rect.top()*scale_y) for rect in guards)
         rim=max(8,max(rect.height() for rect in guards)/4)
         reserve=max(reserve,bottom-top+round(rim*scale_y))
-    offset=reserve;placed=[]
+    offset=0 if lane>=240 else reserve;placed=[]
     for row in reversed(rows):
-        height=(104 if row.get('secondary') else 90) if row.get('key')=='experience' else 78
+        height=32
         card=dict(row,x=game.left()+4,y=game.bottom()-4,anchor='bottom_left',bounds=bounds,
-                  left_offset=0,bottom_offset=offset,tracking_width=min(316,game.width()-8),tracking_height=height)
-        placed.append(card);offset+=height+6
+                  left_offset=0,bottom_offset=offset,tracking_width=width,tracking_height=height)
+        placed.append(card);offset+=height+2
     return list(reversed(placed))
 
 
