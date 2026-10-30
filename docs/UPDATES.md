@@ -44,17 +44,16 @@ models remain included and unchanged.
 
 ## Native installation
 
-- **Windows installed:** the existing per-user Inno installer runs with
+- **Windows:** the existing per-user Inno installer runs with
   `/VERYSILENT /NORESTART /SP-`. The external PowerShell helper runs from the user
   cache, checks the hash again, and outlives the app's runtime.
-- **Windows portable:** validate archive paths/size/required files, unpack next
-  to the destination, then swap directories after closure. Keep the previous
-  folder as a rollback copy, including additional files. A failed swap restores
-  it. No game process or generic process killer is involved.
 - **Manjaro/Arch:** a fixed root-owned helper uses graphical polkit authentication
   and `pacman -U` on the verified native package.
 - **Debian/Ubuntu:** the same helper authenticates and passes the verified DEB to
   `apt-get install`. Package ownership/dependencies remain system-managed.
+
+Portable Windows releases are retired. Close an older portable copy and install
+the current Windows installer manually before using in-app updates.
 
 The Linux helper accepts no arbitrary command. It checks the installed root,
 platform and newer version, independently re-verifies the pinned signature, and
@@ -84,8 +83,9 @@ python scripts/release_updates.py keygen --key /path/outside/repository/update-k
 python scripts/release_updates.py prepare --key /path/outside/repository/update-key.pem
 ```
 
-The second command requires all four current artifacts in `dist/`, then creates
-the two signed metadata assets. Optional `--base-manifest /previous/lupin-update.json
+The second command requires the three current packages in `dist/`: the Windows
+installer, Arch/Manjaro package and Debian/Ubuntu package. It then creates the two
+signed metadata assets. Optional `--base-manifest /previous/lupin-update.json
 --base-dir /previous/artifacts` generates useful deltas; all bases must match that
 manifest. Add `--capture-compatible-from X.Y.Z` only after verifying compatible
 capture/runtime/protocol files. Upload metadata, useful patches and full artifacts
@@ -100,11 +100,14 @@ authentication, PowerShell installation or game capture. Real installer
 transactions and live public-feed acceptance require the eventual release
 packages; source implementation alone does not establish those claims.
 
-An actual 0.17.5 → 0.17.6 archive experiment reconstructed all four files with
+## Historical patch experiment
+
+A 0.17.5 → 0.17.6 archive experiment reconstructed all four files with
 matching SHA-256 hashes, using about 81–96 MiB peak process memory. The portable
 Windows ZIP shrank from 425.4 MB to a 22.7 MB patch. The solid Windows installer,
 Arch package and DEB patches remained 98–100 percent of their full sizes, so the
 80-percent rule rejects those patches. Their normal update path currently uses
 full native downloads. Splitting stable runtime/models into separately versioned
 components would be a separate packaging change, not an established benefit of
-these native-package deltas. No release artifacts were rebuilt by this experiment.
+these native-package deltas. The ZIP measurement concerns the retired portable
+format. No release artifacts were rebuilt by this experiment.

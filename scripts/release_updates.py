@@ -47,7 +47,7 @@ def describe(path):
 
 def prepare(args):
     version(args.version)
-    names={'windows-installer-x64':f'Lupin-{args.version}-Windows-x64-Setup.exe','windows-portable-x64':'Lupin-Windows-x64.zip',
+    names={'windows-installer-x64':f'Lupin-{args.version}-Windows-x64-Setup.exe',
            'linux-arch-x64':f'lupin-{args.version}-1-x86_64.pkg.tar.zst','linux-debian-x64':f'lupin_{args.version}-1_amd64.deb'}
     keys=json.loads(args.trust.read_text());raw_key=public_key(args.key)
     identity=hashlib.sha256(raw_key).hexdigest()[:16]

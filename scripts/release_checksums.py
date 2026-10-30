@@ -1,4 +1,4 @@
-"""Write one SHA-256 list for all installer formats and the portable alternative."""
+"""Write one SHA-256 list for the three native installer/package formats."""
 import hashlib
 from pathlib import Path
 import sys
@@ -9,7 +9,7 @@ from price_lens import __version__
 
 
 def main():
-    names = [f"Lupin-{__version__}-Windows-x64-Setup.exe", "Lupin-Windows-x64.zip",
+    names = [f"Lupin-{__version__}-Windows-x64-Setup.exe",
              f"lupin-{__version__}-1-x86_64.pkg.tar.zst", f"lupin_{__version__}-1_amd64.deb"]
     lines = []
     for name in names:

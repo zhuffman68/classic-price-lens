@@ -1,9 +1,8 @@
-"""Validate a release and publish five stable, password-gated itch.io channels."""
+"""Validate three native builds and publish four password-gated itch channels."""
 import argparse
 from dataclasses import dataclass
 import hashlib
 from html.parser import HTMLParser
-import json
 import os
 from pathlib import Path
 import re
@@ -13,7 +12,6 @@ import subprocess
 import sys
 import urllib.parse
 import urllib.request
-import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -36,7 +34,6 @@ def digest(path):
 def artifact_names(version):
     return {
         "windows-installer": f"Lupin-{version}-Windows-x64-Setup.exe",
-        "windows-portable": "Lupin-Windows-x64.zip",
         "linux-arch": f"lupin-{version}-1-x86_64.pkg.tar.zst",
         "linux-debian": f"lupin_{version}-1_amd64.deb",
     }
@@ -52,30 +49,10 @@ def validate_release(dist, version):
             raise ValueError("Invalid or duplicate release checksum")
         checksums[name] = value
     if set(checksums) != set(names.values()):
-        raise ValueError("SHA256SUMS.txt must list exactly this version's four builds")
+        raise ValueError("SHA256SUMS.txt must list exactly this version's three native builds")
     for name, expected in checksums.items():
         if digest(dist / name) != expected:
             raise ValueError("Release checksum mismatch: " + name)
-    portable = dist / "Lupin-Windows-x64"
-    with zipfile.ZipFile(dist / names["windows-portable"]) as archive:
-        manifest = archive.read("Lupin-Windows-x64/build-manifest.json")
-    if (portable / "build-manifest.json").read_bytes() != manifest:
-        raise ValueError("Portable folder differs from the verified release ZIP")
-    build = json.loads(manifest)
-    if build["version"] != version:
-        raise ValueError("Portable build version does not match the release")
-    expected_files = set(build["files"]) | {"build-manifest.json"}
-    actual_files = set()
-    for path in portable.rglob("*"):
-        if path.is_symlink():
-            raise ValueError("Unexpected symlink in the portable build")
-        if path.is_file():
-            relative = path.relative_to(portable).as_posix()
-            actual_files.add(relative)
-            if relative in build["files"] and digest(path) != build["files"][relative]:
-                raise ValueError("Portable file checksum mismatch: " + relative)
-    if actual_files != expected_files:
-        raise ValueError("Unexpected or missing files in the portable build; rebuild it before publishing")
     return names, checksums
 
 
@@ -96,7 +73,7 @@ def installation_text(channel, name, version):
 def prepare_uploads(dist, version):
     names, checksums = validate_release(dist, version)
     stage = dist / "itch-staging" / version
-    uploads = [Upload("windows-portable", dist / "Lupin-Windows-x64")]
+    uploads = []
     for channel in ("windows-installer", "linux-arch", "linux-debian", "checksums"):
         folder = stage / channel
         if folder.is_symlink():
@@ -115,9 +92,7 @@ def prepare_uploads(dist, version):
         else:
             text = (f"Lupin {version} checksums\n\n"
                     "SHA256SUMS.txt verifies the original release build files.\n"
-                    "Extract the itch.io download ZIP before checking a native installer/package.\n"
-                    "For the portable Windows build, itch.io reconstructs its ZIP; use the included build-manifest.json for per-file hashes.\n"
-                    "The original Windows ZIP hash applies only to the standalone release ZIP, not itch.io's reconstructed download.\n")
+                    "Extract the itch.io download ZIP before checking a native installer/package.\n")
         (folder / "INSTALL.txt").write_text(text, encoding="utf-8")
         shutil.copy2(dist / "SHA256SUMS.txt", folder / "SHA256SUMS.txt")
         uploads.append(Upload(channel, folder))
@@ -180,7 +155,7 @@ def main():
     for upload in uploads:
         print(shlex.join(push_command(butler, upload, args.project, __version__)), flush=True)
     if args.dry_run:
-        print("Validated local release and prepared five channels. No network requests or uploads were made.")
+        print("Validated local release and prepared four channels. No network requests or uploads were made.")
         return
     if not Path(butler).is_file():
         raise ValueError("Install Butler first: https://itch.io/docs/butler/installing.html")

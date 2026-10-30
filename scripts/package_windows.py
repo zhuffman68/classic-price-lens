@@ -1,4 +1,4 @@
-"""Assemble a portable x64 Windows folder from verified official runtime downloads."""
+"""Stage Windows installer files from verified official runtime downloads."""
 import hashlib
 import json
 from pathlib import Path
@@ -70,7 +70,7 @@ def main():
         shutil.rmtree(path)
     trim(OUT,'windows')
     assert_public_tree(OUT)
-    print("Portable folder:", OUT)
+    print("Windows installer files:", OUT)
     print("Files:", sum(1 for path in OUT.rglob("*") if path.is_file()))
 
 

@@ -66,6 +66,10 @@ class FakeTransport:
 
 
 class UpdateTests(unittest.TestCase):
+    def test_retired_windows_portable_target_has_a_clear_installer_message(self):
+        with self.assertRaisesRegex(ValueError,'Use the Windows installer'):
+            artifact({'artifacts':{}},'windows-portable-x64')
+
     def setUp(self):self.directory=tempfile.TemporaryDirectory();self.addCleanup(self.directory.cleanup);self.root=Path(self.directory.name)
 
     def client(self,selected,data):

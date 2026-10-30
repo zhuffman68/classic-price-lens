@@ -2,6 +2,8 @@
 
 Published artifacts are in [GitHub Releases](https://github.com/zhuffman68/lupin/releases). End users need none of these build tools.
 
+Regular releases contain three packages: the Windows x64 installer, the Arch/Manjaro package and the Debian/Ubuntu package.
+
 Runtime downloads are pinned by SHA-256 in `runtime-linux.json`, `runtime-windows.json` and `market-runtime.json`. The staging scripts copy only application source, tiny upstream OCR fixtures, tests, runtime files and dependency notices. They never copy screenshots, databases, settings or private evidence. Python/Qt run from the application directory; installed files do not depend on the build path or system Python version.
 
 ## Linux
@@ -57,11 +59,11 @@ python scripts/build_windows_installer.py --iscc 'C:\Program Files (x86)\Inno Se
 
 For cross-building on Linux, pass the compiler's filesystem path and an explicit, isolated Wine prefix using `--wine-prefix`. The script never chooses the default Wine prefix. `windows.iss` creates a per-user x64 installer with Start-menu/optional desktop shortcuts, a stable upgrade identifier, and an Apps uninstall entry. Upgrade and uninstall request shutdown only through Lupin's own local IPC endpoint; no game process is inspected or controlled.
 
-The small native market helper and Microsoft WebView2 loader ship in `bin`. The SDK is a build input only. The pinned, signed Microsoft Evergreen bootstrapper ships with both installer and ZIP. Normal setup checks for a production runtime version 124+ before closing/upgrading Lupin and installs the shared runtime if missing; this may require internet access. The portable launcher performs the same preparation. System Edge/Chrome applications are not required. The runtime remains system-managed and is not removed with Lupin.
+The small native market helper and Microsoft WebView2 loader ship in `bin`. The SDK is a build input only. The pinned, signed Microsoft Evergreen bootstrapper ships with the installer. Normal setup checks for a production runtime version 124+ before closing/upgrading Lupin and installs the shared runtime if missing; this may require internet access. System Edge/Chrome applications are not required. The runtime remains system-managed and is not removed with Lupin.
 
 Isolated Wine installer checks use explicit `/SKIPWEBVIEW2=1` because Wine does not supply this Windows runtime; that only verifies installation transactions. Native Windows must separately pass the helper local-page self-test and a real full-market refresh. `lupin-market-fetch.exe --runtime-check` checks availability without starting a renderer. `--profile PATH --self-test` reads local HTML and Korean Unicode through the same pipe as production. Neither check captures a screen or sends game input.
 
-The installed entry point is `runtime/pythonw.exe -B -m price_lens`. It waits for the user's **Start reading** action. `selftest-windows.bat` runs an offline check. `scripts/make_windows_zip.py` can also create a portable ZIP; archives remain unencrypted.
+The installed entry point is `runtime/pythonw.exe -B -m price_lens`. It waits for the user's **Start reading** action. `selftest-windows.bat` runs an offline check. The Windows release artifact is `Lupin-VERSION-Windows-x64-Setup.exe`.
 
 The Windows program folder is `%LOCALAPPDATA%\Programs\Lupin`. Upgrades move the former program directory while preserving additional files, per-user settings and caches. A canceled setup rolls the move back before commit. The shipped reader is named `lupin-screen-reader.exe` (`lupin-screen-reader` on Linux); its unchanged Rust build output retains its component name. Internal settings, IPC and desktop/portal identities stay stable for compatibility.
 
@@ -69,7 +71,7 @@ On Linux, `scripts/test_windows_installer.py --wine-prefix /path/to/isolated-pre
 
 ## Updating itch.io
 
-Install the official [Butler CLI](https://itch.io/docs/butler/installing.html) and authorize it once with `butler login`. From a checkout containing the current four builds, portable staging folder and `dist/SHA256SUMS.txt`:
+Install the official [Butler CLI](https://itch.io/docs/butler/installing.html) and authorize it once with `butler login`. From a checkout containing the three current packages and `dist/SHA256SUMS.txt`:
 
 ```sh
 python scripts/publish_itch.py --dry-run
@@ -78,9 +80,9 @@ python scripts/publish_itch.py
 
 The default target is `zhuffman68/lupin`; `--project username/slug` selects another project. Dry-run validates checksums and prepares the local upload folders without network access. A real upload also checks the anonymous page's password form before and after publishing. It never changes project visibility or the shared password. Butler keeps authorization outside the repository; no credential belongs in source control.
 
-The five stable channels are `windows-portable`, `windows-installer`, `linux-arch`, `linux-debian` and `checksums`. Subsequent uploads update the same channels, use the app's version number, and skip identical content. Source-only publisher checks run with `python -m unittest discover -s scripts/tests -q`.
+The four stable channels are `windows-installer`, `linux-arch`, `linux-debian` and `checksums`. Subsequent uploads update the same channels, use the app's version number, and skip identical content. Source-only publisher checks run with `python -m unittest discover -s scripts/tests -q`.
 
-Butler serves browser downloads as ZIPs. The portable channel contains the application; the other platform channels contain the native installer/package with an `INSTALL.txt` explaining extraction and installation. Original native package hashes apply after extraction. The portable download is reconstructed by itch.io, so use its included `build-manifest.json` for per-file hashes rather than comparing the generated ZIP to the standalone Windows ZIP hash.
+Butler serves browser downloads as ZIP wrappers containing the native installer/package and an `INSTALL.txt` explaining extraction and installation. Original native package hashes apply after extraction.
 
 Existing files uploaded manually through the browser are separate from Butler channels. The publisher leaves them in place; remove superseded manual entries from Edit project once the new channels are verified. Page descriptions, screenshots and password settings remain managed through the itch.io dashboard.
 

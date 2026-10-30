@@ -1,11 +1,9 @@
 """Validate upload contents and the password gate without calling itch.io."""
 import importlib.util
-import json
 from pathlib import Path
 import sys
 import tempfile
 import unittest
-import zipfile
 
 SCRIPT = Path(__file__).resolve().parents[1] / "publish_itch.py"
 SPEC = importlib.util.spec_from_file_location("publish_itch", SCRIPT)
@@ -20,17 +18,8 @@ class PublishTests(unittest.TestCase):
         self.dist = Path(self.temp.name)
         self.version = "0.4.2"
         names = publish.artifact_names(self.version)
-        portable = self.dist / "Lupin-Windows-x64"
-        portable.mkdir()
-        (portable / "run-windows.bat").write_text("example launcher")
-        manifest = {"version": self.version, "files": {"run-windows.bat": publish.digest(portable / "run-windows.bat")}}
-        (portable / "build-manifest.json").write_text(json.dumps(manifest))
-        with zipfile.ZipFile(self.dist / names["windows-portable"], "w") as archive:
-            for path in portable.iterdir():
-                archive.write(path, "Lupin-Windows-x64/" + path.name)
         for channel, name in names.items():
-            if channel != "windows-portable":
-                (self.dist / name).write_bytes(channel.encode())
+            (self.dist / name).write_bytes(channel.encode())
         self.checksums()
 
     def tearDown(self):
@@ -40,13 +29,12 @@ class PublishTests(unittest.TestCase):
         names = publish.artifact_names(self.version)
         (self.dist / "SHA256SUMS.txt").write_text("".join(publish.digest(self.dist / name) + "  " + name + "\n" for name in names.values()))
 
-    def test_plan_has_five_stable_channels_and_only_release_payloads(self):
+    def test_plan_has_four_stable_channels_and_only_native_release_payloads(self):
         uploads = publish.prepare_uploads(self.dist, self.version)
         self.assertEqual([upload.channel for upload in uploads],
-                         ["windows-portable", "windows-installer", "linux-arch", "linux-debian", "checksums"])
-        self.assertEqual(uploads[0].source, self.dist / "Lupin-Windows-x64")
+                         ["windows-installer", "linux-arch", "linux-debian", "checksums"])
         names = publish.artifact_names(self.version)
-        for upload in uploads[1:]:
+        for upload in uploads:
             expected = {"INSTALL.txt", "SHA256SUMS.txt"}
             if upload.channel in names:
                 expected.add(names[upload.channel])
@@ -61,16 +49,13 @@ class PublishTests(unittest.TestCase):
             publish.prepare_uploads(self.dist, self.version)
         self.assertFalse((self.dist / "itch-staging").exists())
 
-    def test_untracked_portable_file_or_modified_payload_is_rejected(self):
+    def test_obsolete_portable_artifacts_are_never_included_in_the_upload_plan(self):
         portable = self.dist / "Lupin-Windows-x64"
-        extra = portable / "private.sqlite"
-        extra.write_bytes(b"private")
-        with self.assertRaisesRegex(ValueError, "Unexpected or missing"):
-            publish.validate_release(self.dist, self.version)
-        extra.unlink()
-        (portable / "run-windows.bat").write_text("modified")
-        with self.assertRaisesRegex(ValueError, "Portable file checksum mismatch"):
-            publish.validate_release(self.dist, self.version)
+        portable.mkdir();(portable/'private.sqlite').write_bytes(b'private')
+        (self.dist/'Lupin-Windows-x64.zip').write_bytes(b'obsolete developer archive')
+        uploads=publish.prepare_uploads(self.dist,self.version)
+        self.assertNotIn('windows-portable',[upload.channel for upload in uploads])
+        self.assertFalse(any(path.name=='private.sqlite' for upload in uploads for path in upload.source.rglob('*')))
 
     def test_mixed_release_versions_are_rejected(self):
         with self.assertRaisesRegex(ValueError, "exactly this version"):

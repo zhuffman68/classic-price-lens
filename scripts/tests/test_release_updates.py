@@ -21,12 +21,13 @@ class ReleaseUpdateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary,contextlib.redirect_stdout(io.StringIO()):
             root=Path(temporary);key=root/'private/key.pem';trust=root/'public.json';destination=root/'dist';destination.mkdir()
             release_updates.keygen(key,trust)
-            for name in ('Lupin-0.18.0-Windows-x64-Setup.exe','Lupin-Windows-x64.zip','lupin-0.18.0-1-x86_64.pkg.tar.zst','lupin_0.18.0-1_amd64.deb'):
+            for name in ('Lupin-0.18.0-Windows-x64-Setup.exe','lupin-0.18.0-1-x86_64.pkg.tar.zst','lupin_0.18.0-1_amd64.deb'):
                 (destination/name).write_bytes(b'Fixture payload only. Not an executable or package.')
             args=argparse.Namespace(version='0.18.0',key=key,trust=trust,dist=destination,base_manifest=None,base_dir=None,capture_compatible_from=[])
             release_updates.prepare(args)
             document=signed_manifest((destination/'lupin-update.json').read_bytes(),(destination/'lupin-update.sig.json').read_bytes(),json.loads(trust.read_text()))
-            self.assertEqual(len(document['artifacts']),4)
+            self.assertEqual(len(document['artifacts']),3)
+            self.assertNotIn('windows-portable-x64',document['artifacts'])
             for target in document['artifacts']:artifact(document,target)
             self.assertFalse(any(path.suffix=='.pem' for path in destination.iterdir()))
 

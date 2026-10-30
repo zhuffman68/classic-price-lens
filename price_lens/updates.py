@@ -101,6 +101,8 @@ def descriptor(value):
 
 
 def artifact(document,target):
+    if target=='windows-portable-x64' and target not in document.get('artifacts',{}):
+        raise ValueError('Portable Windows builds are no longer published. Use the Windows installer from GitHub Releases.')
     value=descriptor(document.get('artifacts',{}).get(target))
     expected={'windows-installer-x64':f"Lupin-{document['version']}-Windows-x64-Setup.exe",'windows-portable-x64':'Lupin-Windows-x64.zip',
               'linux-arch-x64':f"lupin-{document['version']}-1-x86_64.pkg.tar.zst",'linux-debian-x64':f"lupin_{document['version']}-1_amd64.deb"}

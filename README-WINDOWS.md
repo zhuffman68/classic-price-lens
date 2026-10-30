@@ -2,8 +2,8 @@
 
 **Tools for MapleStory Classic World.** Market prices, item search with images, EXP/meso tracking and local Korean translation in both directions.
 
-1. Download the Windows installer from [itch.io](https://zhuffman68.itch.io/lupin) and extract it if wrapped in a ZIP.
-2. Run **Lupin-0.16.0-Windows-x64-Setup.exe**, then open Lupin from Start. Administrator access is not required.
+1. Download the Windows installer from the [latest GitHub release](https://github.com/zhuffman68/lupin/releases/latest) or [itch.io](https://zhuffman68.itch.io/lupin). Extract it if itch.io wraps it in a ZIP.
+2. Run the **Windows-x64-Setup.exe** installer, then open Lupin from Start. Administrator access is not required.
 3. Choose the game's display and click **Start reading**. A real display is preselected. Keep the game's bottom status bar visible.
 
 Requires Windows 10/11 x64, about **3 GB free space** for installation, and internet for market updates and uncached item images. Python, Qt, OCR and both translation models are included. A browser installation is not required. Setup prepares the shared WebView2 runtime when needed; the first installation may need an internet connection. The full market refreshes on launch and at the interval selected in Settings. No individual price lookups are made.
@@ -18,7 +18,7 @@ Choose an item’s **☆** star to watch it. **Watched items** on Prices shows t
 
 The panel resizes and remembers its size; maximizing is disabled. Minimize sends it to the tray by default. Click its icon to restore, or right-click for controls. Close or Quit ends reading and sharing.
 
-For the portable version, extract the ZIP fully and open **run-windows.bat**. Its launcher also prepares WebView2 when needed. Close an older portable copy before switching to the installer. Updates preserve settings, prices and history. Uninstall through **Settings → Apps**. The installation folder includes **selftest-windows.bat** for an offline check.
+If you have an older portable copy, close it and install the current Windows installer manually. Portable releases are retired. Updates preserve settings, prices and history. Uninstall through **Settings → Apps**. The installation folder includes **selftest-windows.bat** for an offline check.
 
 Windows uses its native certificate trust for market connections. A temporary connection failure gets one automatic catalog retry; persistent failures show their cause. Certificate checking remains enabled.
 

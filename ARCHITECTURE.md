@@ -1,6 +1,6 @@
 # Lupin architecture
 
-Lupin v0.17.8 provides market references, EXP/meso tracking, local Korean translation and a searchable Classic World database for MapleStory Classic World.
+Lupin v0.17.9 provides market references, EXP/meso tracking, local Korean translation and a searchable Classic World database for MapleStory Classic World.
 
 ## Observation boundary
 

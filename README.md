@@ -7,7 +7,9 @@
 
 **Tools for MapleStory Classic World.**
 
-Four tabs for market prices, training, Korean translation, and game reference. Lupin reads your screen without hooking into MapleStory or sending game input.
+Check market prices, track your training, translate Korean, and explore Classic World.
+
+**Lupin reads your screen without hooking into MapleStory or sending game input.**
 
 **[Download the latest release](https://github.com/zhuffman68/lupin/releases/latest)** · [Installation](#installation)
 
@@ -55,7 +57,7 @@ Choose your download on the **[latest release page](https://github.com/zhuffman6
 | Arch / Manjaro x64 | Install the `.pkg.tar.zst` package. |
 | Debian 12+ / Ubuntu 22.04+ x64 | Install the `.deb` package. |
 
-Linux install commands are included in the release notes. For Windows portable, extract the ZIP and open `run-windows.bat`.
+Linux install commands are included in the release notes.
 
 Allow about **3 GB of free space**. Screen reading and translation are included; internet is needed for market and database updates.
 

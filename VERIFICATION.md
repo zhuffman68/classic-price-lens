@@ -1,5 +1,23 @@
 # Verification — 2026-10-30
 
+## Lupin v0.17.9 — pre-build source checks
+
+- All 638 source tests pass in 68.186 seconds, with three platform/offscreen
+  skips. Nine release/publisher script tests pass. The Korean reader, cache,
+  body/header tracking and recorded-phrase evidence described below are retained.
+- Normal release checksums, signed manifests and publishing plans contain only
+  Windows Setup, Arch/Manjaro and Debian/Ubuntu native packages. Obsolete portable
+  files are excluded from upload staging. A retired portable updater target gets
+  a clear instruction to use Windows Setup. Legacy swap/archive checks remain
+  available for historical compatibility; no portable binary is distributed.
+- The README opening is revised, its screen-only sentence is bold and portable
+  download instructions are removed. The approved demo GIFs remain source-only.
+- The unpublished v0.17.8 draft is superseded; its source tag and local builds
+  are retained. Public portable download assets have been removed as requested.
+  Final rebuilt package checks, hashes and public signed-feed validation are
+  recorded beside v0.17.9. The installed host package stays at v0.17.7 until the
+  user chooses Download & install in the app.
+
 ## Lupin v0.17.8 — pre-build source checks
 
 - All 637 source tests pass in 67.096 seconds with three platform/offscreen skips.
