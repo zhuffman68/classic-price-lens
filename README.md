@@ -128,13 +128,13 @@ Use **Hotkeys…** below Settings to change assignments. **Pause reading** pause
 
 ## Download and install
 
-Download from **[itch.io](https://zhuffman68.itch.io/lupin)**. Repository collaborators can also use [GitHub Releases](https://github.com/zhuffman68/lupin/releases).
+Download the latest build from **[GitHub Releases](https://github.com/zhuffman68/lupin/releases/latest)**. Lupin is also available on [itch.io](https://zhuffman68.itch.io/lupin).
 
 | System | Download | Install |
 | --- | --- | --- |
-| Windows 10/11 x64 | `Windows-x64-Setup.exe` | Run it, then open Lupin from Start. |
-| Arch / Manjaro | `.pkg.tar.zst` | `sudo pacman -U ./lupin-0.16.0-1-x86_64.pkg.tar.zst` |
-| Debian 12+ / Ubuntu 22.04+ | `.deb` | `sudo apt install ./lupin_0.16.0-1_amd64.deb` |
+| Windows 10/11 x64 | `Lupin-0.17.7-Windows-x64-Setup.exe` | Run it, then open Lupin from Start. |
+| Arch / Manjaro | `.pkg.tar.zst` | `sudo pacman -U ./lupin-0.17.7-1-x86_64.pkg.tar.zst` |
+| Debian 12+ / Ubuntu 22.04+ | `.deb` | `sudo apt install ./lupin_0.17.7-1_amd64.deb` |
 
 Extract downloaded ZIPs before running an installer or package command. For the Windows portable build, extract the full folder and open `run-windows.bat`. Updates preserve settings, prices and history; Linux packages replace the former `classic-price-lens` package.
 
