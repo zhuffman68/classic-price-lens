@@ -12,17 +12,37 @@ English appears beside the source with the Korean original below. Cards size aro
 
 A short, bounded event ledger coalesces matching speaker/message text arriving in both a bubble and chat. It prefers the visible bubble anchor, retains both source locations for visibility checks and keeps a single history entry. A verified partial crop of the same bubble can upgrade to its complete reading atomically. Different speakers and separately established repeat messages remain independent; there is no global fuzzy name/text merge.
 
+Rescanning a still-visible message keeps its existing event. Meaningful text and
+the speaker header are matched separately from repeated `@` emphasis or extra
+bubble padding. Nearby movement can be recovered within a bounded 112-pixel
+search; larger or ambiguous jumps still require another scan. Consecutive equal
+results from the same speaker share a compact recent-results card with a repeat
+count; the underlying verified arrivals remain separate.
+
 The source is the existing approved shared frame, cropped to the detected game area or an explicitly chosen reading area. No second capture session, game process access, input hook, window inspection, network translation, telemetry or automatic reply is used. Translation never uploads or saves screenshots or chat to disk. Bounded in-memory caches remember repeated text/crops until the worker exits. Price requests and their scheduler are independent.
 
 ## Meaning and numbers
 
 Complete game phrases use a conservative glossary or explicit party-recruiting/join templates. Ordinary and mixed sentences reach the local model before any partial-glossary fallback; known terms and explicit numeric roles must survive. Partial translations retain unknown Korean and are labelled accordingly. The bundled model can still mistranslate ordinary grammar. The original remains visible because OCR and translation can both be wrong. A glossary does not establish mechanics or terminology frequency in Classic World.
 
+Party-invitation requests include forms such as `팟점여`, `팟좀요` and `초대점여`.
+When an uncertain OCR syllable has a plausible alternative supplied by the model,
+Lupin can use it only if the complete message becomes an unambiguous supported
+phrase without changing a name, numeral or non-Korean character. The result is
+marked **Possible OCR correction**; hovering its Korean line in the app shows
+the first reading. This does not add spelling search or guessed prices.
+
 Explicit amounts use English units: `25만` = `250k`, `250만` = `2.5m`, `1억` = `100m`. Bare `250` stays `250`; the app never supplies an unstated multiplier or currency. ATT values, levels and scroll percentages are not automatically interpreted as prices. A translation that drops, invents or changes a numeric value is rejected in favour of the original. This check cannot recover digits that OCR itself misread.
 
 ## Performance and resource boundary
 
 The feature is off until enabled. One CPU-only worker preloads the existing PP-OCRv5 recognition and int8 OPUS-MT models. Inference uses at most two passive compute threads; Linux lowers only this worker's scheduling priority. There is no continuous OCR after the requested scan ends. Frames remain in memory, pending jobs do not accumulate, and price/EXP reading continues independently. Disabling unloads the worker.
+
+New scans first check a small set of recently confirmed text bodies against the
+new frame, then continue scanning the entire game area. Unchanged English and
+empty candidates are cached by exact pixels. No stale reading is reused merely
+because it occupied the same location. These caches are bounded and disappear
+when the worker exits.
 
 The six supplied screenshots are private test inputs. First-result timings vary with existing machine load, model/cache warmth, the number of English candidates and whether the message is a bubble or a banner. The half-second target is a goal rather than a guarantee; capture age, compositor presentation and appearance animation add time. Current release measurements and remaining platform limits are in VERIFICATION.md. No other application or workload is stopped or reprioritized for benchmarking.
 

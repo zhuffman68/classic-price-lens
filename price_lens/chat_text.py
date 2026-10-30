@@ -80,6 +80,14 @@ def recruiting_phrase(text):
     """Complete, explicit party/count or job/join structures, never a substring."""
     value=re.sub(r'\s+','',normalize(text))
     parties='|'.join(sorted(PARTIES,key=len,reverse=True));counts='|'.join(PEOPLE)
+    invite=r'(?:팟|파티)(?:점여|점요|좀여|좀요|주세요|부탁해요)|초대(?:점여|점요|좀여|좀요|좀|해주세요|부탁해요)'
+    match=re.fullmatch(rf'({parties})?({invite})([!?!.]*)',value)
+    if match:
+        party,request,punctuation=match.groups()
+        if not party and request.startswith('초대'):return 'Please invite me'+punctuation
+        name=PARTIES.get(party,'')
+        if name and not name.endswith('party'):name+=' party'
+        return f"Please invite me to {'the '+name if party else 'a party'}{punctuation}"
     match=re.fullmatch(rf'({parties})({counts}|[0-9]{{1,3}})(?:명|분)(?:구함|구해요|구합니다|모집합니다|모집)([!.]*)',value)
     if match:
         party,count,punctuation=match.groups();number=PEOPLE.get(count,count)
@@ -90,6 +98,29 @@ def recruiting_phrase(text):
         article='an' if JOBS[job][0].casefold() in 'aeiou' else 'a'
         return f"Are you taking {article} {JOBS[job]} for the {PARTIES[party]}{punctuation or '?'}"
     return None
+
+
+def supported_ocr_alternative(original,candidates):
+    """One uncertain model-emitted syllable may complete an explicit phrase.
+
+    This is not spelling search: the OCR model must supply the alternative,
+    numbers/non-Korean characters stay exact, and the complete phrase must parse.
+    Ambiguous equally supported phrases remain uncorrected.
+    """
+    first=normalize(original)
+    if recruiting_phrase(first) is not None:return None
+    supported=[]
+    for text,confidence in list(candidates)[:8]:
+        other=normalize(text)
+        if len(other)!=len(first) or not numbers_preserved(first,other):continue
+        changes=[(a,b) for a,b in zip(first,other) if a!=b]
+        if len(changes)!=1 or not all('가'<=a<='힣' and '가'<=b<='힣' for a,b in changes):continue
+        if not isinstance(confidence,(int,float)) or not .35<=confidence<=1:continue
+        if recruiting_phrase(other) is not None:supported.append((other,confidence))
+    if not supported:return None
+    supported.sort(key=lambda row:-row[1])
+    if len({text for text,_ in supported})>1:return None
+    return supported[0][0]
 
 
 def model_source(text):

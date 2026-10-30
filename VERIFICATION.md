@@ -1,5 +1,38 @@
 # Verification — 2026-10-30
 
+## Lupin v0.17.8 — pre-build source checks
+
+- All 637 source tests pass in 67.096 seconds with three platform/offscreen skips.
+  The focused Korean reader/writer/event/layout suite passes 63 tests in 3.355
+  seconds. New checks cover constrained CTC alternatives, complete invitation
+  phrases, component geometry, exact-pixel cache invalidation/bounds, rescan
+  priority and full-window fairness, speaker-verified movement, ambiguous and
+  uniform rejection, padding-independent arrival identity, repeat groups and
+  stable widget reuse.
+- The recorded bubble's line crop reproduces the uncertain first syllable. Its
+  model probabilities are approximately 0.483 for the first reading and 0.285
+  for the correct alternative. The supported complete phrase resolves to
+  “Please invite me to the bonus party,” marked as a possible OCR correction.
+  The compressed recording is supporting OCR evidence, not an identical raw
+  capture or a live acceptance test. Private frames stay outside packages/Git.
+- A generated 24-bubble scene measures about 568 ms to its first result and
+  0.3 ms to a verified known-source rescan result after warming models. The full
+  rescan batch takes about 197 ms. These exclude capture, IPC and compositor
+  presentation, and the synthetic font still produces a conservative partial
+  reading for its different ambiguous syllable. No general half-second or
+  translation-quality guarantee is claimed. Full-window detection continues
+  after priority results; the local translation models remain unchanged.
+- The README embeds the two approved GIFs and centers the four tabs. Hash-exact
+  copies were delivered to the authorized Pixel 6a. Demo files under docs/media
+  are excluded by the existing package documentation allowlist.
+- This section records source evidence before packaging. Completed package
+  transactions, artifact hashes and signed public-feed checks are supplied
+  beside the builds. No host installation, live UI reload, capture-helper
+  restart, game input/process access or desktop shortcut change is performed.
+  The user installs this release through the app's updater. Native updater
+  authentication/installation and physical Windows gameplay remain separate
+  acceptance checks.
+
 ## Lupin v0.17.7 — pre-build source checks
 
 - All 627 source tests pass in 66.513 seconds with three platform/offscreen skips. All 155 selected Windows update/UI/history/annotation/tray tests pass in the bundled runtime under isolated Wine in 46.231 seconds. Nine source release-script checks pass. No native Windows installer transaction or physical capture acceptance is claimed.

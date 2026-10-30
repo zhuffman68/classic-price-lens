@@ -67,65 +67,10 @@ def source_role(box,text,is_bubble,contexts=(),game_size=None):
     return 'text',False
 
 
-def scan(image, recognizer, translator, emit, budget=.75, cancelled=lambda:False, exclude=(), offset=0,contexts=()):
-    from .chat_ocr import bubbles, lines, text_regions,contrast_line
-    from PySide6.QtCore import QRect
-    from .chat_text import HANGUL, normalize
-    start=time.perf_counter()
-    if cancelled():return dict(count=0,bubbles=0,regions=0,next_offset=offset,readable=0,korean=0,elapsed_ms=0)
-    bubble_boxes=bubbles(image)
-    def excluded(box):return any(QRect(*box).intersects(QRect(*other)) for other in exclude)
-    bubble_candidates=[(box,True) for box in bubble_boxes if not excluded(box)]
-    generic=[] if cancelled() else [(box,False) for box in text_regions(image,exclude=(*exclude,*bubble_boxes)) if not excluded(box)]
-    # Alternate queues. Even a slow first bubble leaves a generic candidate at
-    # the next cursor, rather than starving chat/store text for the whole scan.
-    candidates=[]
-    for position in range(max(len(bubble_candidates),len(generic))):
-        if position<len(bubble_candidates):candidates.append(bubble_candidates[position])
-        if position<len(generic):candidates.append(generic[position])
-    index=max(0,offset)
-    if index>=len(candidates):index=0
-    found=0;readable=0;korean_candidates=0;processed=0
-    while True:
-        if cancelled() or found>=4 or (processed and time.perf_counter()-start>budget):break
-        if index>=len(candidates):break
-        box,is_bubble=candidates[index];index+=1
-        processed+=1;x,y,w,h=box
-        crop=image.copy(x+1,y+1,w-2,h-2) if is_bubble else image.copy(x,y,w,h)
-        read=[]
-        candidates_lines=lines(crop) if is_bubble else [(crop,h)]
-        for line,height in candidates_lines:
-            if cancelled():break
-            text,confidence=recognizer.read(line)
-            if not is_bubble and confidence<.92 and not cancelled() and time.perf_counter()-start<budget:
-                alternate=recognizer.read(contrast_line(line))
-                if alternate[1]>confidence:text,confidence=alternate
-            if confidence<(.80 if is_bubble else .90):continue
-            readable+=1;read.append(text)
-        if not read:continue
-        role,role_verified=source_role(box,' '.join(read),is_bubble,contexts,(image.width(),image.height()))
-        sender=""
-        pattern=r"^([^:]{1,24})\s*:\s*(.*)$" if role=='bubble' else r"^\[?([A-Za-z0-9_\uac00-\ud7a3]{2,16})\]?\s*:\s*(.+)$" if role=='chat' else r'(?!)'
-        first=re.match(pattern,read[0])
-        if first:sender=first[1].strip();read[0]=first[2]
-        text=normalize(" ".join(read))
-        if not HANGUL.search(text):continue
-        # A lone Korean character amongst Latin advertising is a common OCR error.
-        korean=len(HANGUL.findall(text))
-        if korean<2 and not re.fullmatch(r"[\u3130-\u318f\uac00-\ud7a3]{1,8}",text):continue
-        if (not is_bubble and korean<4 and korean/max(1,len(re.findall(r"[A-Za-z\u3130-\u318f\uac00-\ud7a3]",text)))<.20
-                and not re.search(r'팝니다|삽니다|구함|구해|판매|구매|주세요',text)):continue
-        korean_candidates+=1
-        if cancelled():break
-        english,note=translator.translate(text)
-        if cancelled():break
-        emit({"box":box,"speaker":sender,"original":text,"text":english,"note":note,
-              'source_role':role,'role_verified':role_verified,
-              "elapsed_ms":round((time.perf_counter()-start)*1000,1)})
-        found+=1
-    next_offset=0 if index>=len(candidates) else index
-    return {"count":found,"bubbles":len(bubble_boxes),"regions":len(candidates),"next_offset":next_offset,"readable":readable,"korean":korean_candidates,
-            "elapsed_ms":round((time.perf_counter()-start)*1000,1)}
+def scan(image, recognizer, translator, emit, budget=.75, cancelled=lambda:False, exclude=(), offset=0,contexts=(),memory=None):
+    from .chat_scan import scan_frame
+    return scan_frame(image,recognizer,translator,emit,source_role,budget=budget,cancelled=cancelled,
+                      exclude=exclude,offset=offset,contexts=contexts,memory=memory)
 
 
 def send(message):
@@ -173,7 +118,8 @@ def main():
         finally:
             with condition:state['closed']=True;condition.notify()
     threading.Thread(target=receive,name='local-frame-input',daemon=True).start()
-    generation=None;offset=0
+    from .chat_scan import ScanMemory
+    memory=ScanMemory();generation=None;offset=0
     while True:
         with condition:
             condition.wait_for(lambda:state['latest'] is not None or state['closed'])
@@ -185,7 +131,7 @@ def main():
         if request.get('generation')!=generation:generation=request.get('generation');offset=0
         result=scan(image,recognizer,translator,lambda row:send({'id':identity,'row':row}),
                     cancelled=lambda:identity<state['minimum'],exclude=request.get('exclude',[])[:64],offset=offset,
-                    contexts=request.get('contexts',[])[:8])
+                    contexts=request.get('contexts',[])[:8],memory=memory)
         offset=result.pop('next_offset')
         send({'id':identity,'done':result})
     return 0

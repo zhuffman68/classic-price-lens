@@ -1,6 +1,6 @@
 # Lupin architecture
 
-Lupin v0.17.7 provides market references, EXP/meso tracking, local Korean translation and a searchable Classic World database for MapleStory Classic World.
+Lupin v0.17.8 provides market references, EXP/meso tracking, local Korean translation and a searchable Classic World database for MapleStory Classic World.
 
 ## Observation boundary
 
@@ -109,6 +109,30 @@ source locations. Verified same-bubble fragments update one event/history row
 atomically, preserving numeric, question, negation and job distinctions. Different
 speakers, separately established repeats and anonymous prose are not globally
 merged. Scanning and finishing use one phase state in both the GUI and overlay.
+
+`chat_scan.py` owns bounded in-memory scan state. Up to twelve recent text bodies
+and their speaker headers can provide a verified first result before full-window
+detection. At most two priority results leave room for new text; the ordinary
+bubble/colored-text queues continue. A 128-entry exact-pixel cache includes English
+and empty reads. Frame geometry changes clear source bindings. Connected-component
+run edges are extracted once per mask instead of allocating a new padded row for
+every scan line.
+
+OCR retains at most four single-syllable alternatives from uncertain model
+emissions. An alternative may complete an anchored, known party-request phrase
+only when it preserves all numbers and non-Korean characters. Names are never
+corrected this way; ambiguous phrases remain unresolved. A visible warning marks
+an accepted alternative and the first OCR reading stays in memory. The neural
+model and its weights are unchanged.
+
+`chat_tracking.py` matches meaningful text independently of trailing emphasis and
+bubble padding. The header is checked separately. Static matches are cheap;
+failed matches use a capped local search within 112 pixels, then native-size
+confirmation. Uniform or ambiguous templates reject. No game objects are tracked.
+The arrival ledger remains distinct from the GUI: repeated scans of a continuous
+source update one event, while separately proved arrivals remain distinct. The
+recent-results UI groups consecutive equal same-speaker translations with a
+repeat count and reuses its existing widgets instead of rebuilding all cards.
 
 Complete glossary/party templates remain fast. Partial glossary output no longer
 prevents mixed sentences reaching the local model; known terms and explicit

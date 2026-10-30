@@ -1,168 +1,66 @@
-<p align="center"><img src="price_lens/resources/icon-64.png" width="48" height="48" alt="Lupin icon"> <img src="price_lens/resources/lupin.gif" width="73" height="64" alt="Animated Lupin"> <img src="price_lens/resources/wordmark.svg" width="122" height="45" alt="Lupin"></p>
+<p align="center">
+  <img src="https://raw.githubusercontent.com/zhuffman68/lupin/main/price_lens/resources/lupin.gif" width="73" height="64" alt="Animated Lupin">
+  <img src="https://raw.githubusercontent.com/zhuffman68/lupin/main/price_lens/resources/wordmark.svg" width="122" height="45" alt="Lupin">
+</p>
 
 # Lupin
 
 **Tools for MapleStory Classic World.**
 
-Market prices, EXP and meso tracking, local Korean translation, and a searchable Classic World database beside the game.
-Lupin reads shared screen pixels and draws independent overlays. It never hooks into MapleStory or sends game input.
+Four tabs for market prices, training, Korean translation, and game reference. Lupin reads your screen without hooking into MapleStory or sending game input.
 
-[Download and install](#download-and-install) · [Getting started](#getting-started) · [Help](#help)
+**[Download the latest release](https://github.com/zhuffman68/lupin/releases/latest)** · [Installation](#installation)
 
-<!-- HERO MEDIA: docs/media/lupin-overview.png — real game and app side by side. -->
+## Prices
 
-## Market prices
+Compare player-shop listings with color-coded market references beside each item. Hover inventory or equipped items to check their prices, or search by name directly in Lupin.
 
-See market references beside player-shop listings, with item names and colors that make lower, similar and higher asking prices easy to compare. Hover inventory or equipped items for their market reference, including while a player shop or NPC vendor is open. Standard item descriptions from trades use the same reader.
+Star items to watch for them while browsing shops. Recently seen items stay in the Prices tab, with thumbnails and their last seen asking prices. Saved market prices remain available between refreshes.
 
-- Supports equipment, scrolls, materials, consumables and cash/NX resale prices when market reports exist.
-- Shows item images beside shop entries in the Prices page.
-- Keeps shop references visible when an item description overlaps them.
-- Prices recognized item-description popups opened from item links, including away from the cursor.
-- Shows the age of the latest observed sale beside each market reference, with refresh warnings when needed. Thin or stale data receive no deal rating.
-- Compares equipment as unscrolled. Individual stat rolls are not priced.
+<p align="center">
+  <img src="https://raw.githubusercontent.com/zhuffman68/lupin/main/docs/media/prices.gif" width="640" alt="Lupin showing market prices beside items in two player shops">
+</p>
 
-<!-- DEMO: docs/media/shop-prices.gif — open a populated shop and hover a listing. -->
-<!-- SCREENSHOT: docs/media/inventory-equipment.png — a recognized item and its market card. -->
+## EXP/Meso Tracking
 
-## Item search
+Start a training session to see EXP gain, meso pickups, rates per minute and hour, and your estimated time to the next level. Compact overlays keep the numbers beside the game's status bar.
 
-Look up an item without opening a shop or sharing a screen. Prices and Database search the same released-item collection. Select an item for its market reference, base stats and Sources in one card. Search gets priority over on-screen results, with those compact listings still available when needed. Both search fields have a clearly visible clear button.
+Pause and resume a session, save it with a map label and notes, or compare past runs. EXP can display as a percentage, raw EXP, or both. Meso totals count readable pickup messages.
 
-Prices share a local cache with the overlay. Saved references appear while updates run; missing market reports are shown separately from an unreadable item name. The full market refreshes on launch and at the interval selected in Settings. The overlay, search and watched items all use this shared snapshot; individual price requests are not used. Items without a reference stay unpriced.
+<p align="center">
+  <img src="https://raw.githubusercontent.com/zhuffman68/lupin/main/docs/media/tracking.gif" width="640" alt="Lupin tracking overlays updating while a character trains">
+</p>
 
-Recently seen items stay in a compact list after their screen labels disappear. Each row has a thumbnail, a large market reference and its last-seen/listing information. Seeing a history item again updates that same row. The list keeps one entry per item, up to 100, and clears when Lupin closes.
+## Translation
 
-<!-- DEMO: docs/media/item-search.gif — type, select an item, inspect its reference, clear the search. -->
+**Read Korean:** scan visible messages for English translations near the original text. Recent results remain in the tab, and you can adjust how long popups stay visible.
 
-## Watched items
+**Write Korean:** type an English message, review the Korean preview, then press **Enter** or **Translate & Copy**. Lupin copies the result to your clipboard; you choose where to paste and when to send.
 
-Choose the **☆** star on a search, shop or inventory card to watch that exact item. When Lupin recognizes it in a shop or an item tooltip, it highlights the label and keeps a star so it is easy to spot, even while its price is loading. Deal colors still show how its asking price compares.
-
-Expand **Watched items** on Prices for thumbnails and saved market references. Three entries fit before the list scrolls. Click an item for its full price card, or click it again to deselect. Collapsing the list clears that card and returns to on-screen items. Stars remove saved entries. The list survives restarts. Reduced motion uses a steady marker.
-
-<!-- DEMO: docs/media/watched-items.gif — watch a searched item, then find it in a real shop. -->
-
-## EXP and meso tracking
-
-Start a session and watch gain, per-minute and per-hour figures in matching columns.
-
-- **EXP:** percentage progress by default, with raw EXP or both available in Settings.
-- **Pace:** a session timer, recent average rates and an estimated time to the next level.
-- **Mesos:** meso pickups, with per-minute and per-hour rates from the visible pickup log.
-- **In-game trackers:** compact EXP and meso cards in the empty corner beside the status bar, with independent visibility switches, gain, rates, time and level-up ETA.
-- **Session controls:** Start, Pause and Stop; tracking always begins stopped when Lupin opens.
-
-EXP rates and ETA need 30 seconds of clear EXP readings to establish a pace; covered or rejected readings can extend the wait. Both EXP and meso rates then average the last five active minutes, using the available time while starting. Gain totals cover the whole session. Elapsed clocks tick every second; gains, rates and ETA update every two seconds. Pause freezes the current pace and ETA, and Resume continues the retained window. Moving maps preserves gains and pace while saving history segments. **Stop and save** ends the session; a new Start begins a fresh warmup. A paused session stays with its original character when another client becomes visible. Pausing screen reading holds tracking; the Prices shortcut can pause prices independently.
-
-The meso overlay includes the last confirmed pickup. Cards narrow to fit the empty HUD corner before moving above the status bar. Reading held means the displayed EXP values are retained while Lupin waits for a clear reading.
-
-Meso gain counts readable pickup messages, including while EXP is unchanged. Fast bursts or covered text can be missed. Purchases, trades, potion costs and unsold loot are excluded; this is a pickup total, not farming profit.
-
-### Training history
-
-Add a map label and notes directly on the tracking page. Save sessions, compare runs by character and map, and export history to CSV. Map changes save segments automatically; history stays local.
-
-<!-- DEMO: docs/media/tracking.mp4 — real training, visible pickup log and the in-game trackers. -->
-<!-- SCREENSHOT: docs/media/training-history.png — labeled runs and CSV export. -->
-
-## Korean translation
-
-### Read Korean
-
-Press the scan shortcut to translate visible Korean text into English. Lupin checks the full detected game window, including speech bubbles, chat, shop text and megaphones, independently of the mouse position.
-
-Results appear as soon as they are ready, with the Korean original kept alongside the translation. Compact popups stay near their source, follow matching text through modest movement and linger briefly after it disappears. Recognized duplicates from the same speaker in a bubble and chat share one popup; separate speakers stay separate. Scan duration and popup delay are adjustable; recent results stay in the Translation tab.
-
-<!-- DEMO: docs/media/read-korean.gif — activate a scan and show English with the original Korean. -->
-
-### Write Korean
-
-Open the writer, type an English message and review the Korean preview. Press **Enter** or **Translate & Copy** to submit it. The popup closes smoothly while translation finishes, then copies the Korean text and confirms it in the game overlay. The writer inside the Translation tab stays open. Choose where to paste with **Ctrl+V** and when to send.
-
-Common trade and party shorthand is recognized. Known item names stay in English, and explicit numbers, prices and percentages are checked: `250` stays `250`, `250k` stays `250k`, and `2.5m` stays `2.5m`.
-
-Both translation directions run locally with the included models. Writing works without screen sharing. Lupin never pastes or sends a message for you.
-
-<!-- DEMO: docs/media/write-korean.gif — draft, preview, Translate & Copy and copied notification. -->
+Both directions run on your device, with everything included.
 
 ## Database
 
-Browse **Items**, **Monsters**, **Skills**, **Maps** and **Quests** without sharing a screen. Items open with illustrated categories and subcategories; skills are organized by job. Search remains available throughout, with Back and breadcrumbs to retrace your steps.
+Browse Classic World **Items, Monsters, Skills, Maps, and Quests**. Search for an entry or explore illustrated categories and jobs.
 
-- **Items:** images, stats, requirements, potion/scroll effects, Sources and saved market references with watch controls. Sort equipment by name, level or class, with relevant sorting for other categories.
-- **Monsters:** stats, locations, two-column clickable drops and animated sprites where available. Sort by level or name; Back restores the monster after inspecting a drop.
-- **Skills:** job navigation, prerequisites and a rank slider for costs and effects. Crafting skills are omitted.
-- **Maps:** minimaps, map symbols, linked monsters, published spawn-point counts and connections. Spawn markers appear only when image-coordinate alignment verifies.
-- **Quests:** quest-giver portraits, level and location, illustrated requirements and rewards, and linked prerequisite/next quests where recorded. Item Sources link back to named reward quests.
+Look up item stats and market prices, monster drops and locations, skill ranks, minimaps, and quest rewards. Follow linked items and sources to explore further. Downloaded information stays available offline.
 
-Selected item cards share a compact price column and sliding Overview/Sources panel. Equipment separates stats from requirements; scrolls show success rate and effects. Sources put named NPC shops and reported reward boxes first, followed by monster and quest sources, with images and links to database entries. NPC shop costs are kept separate from player-market references. Quest reward totals keep their units beside their values.
+## Installation
 
-Browsing includes content supported by release or observed-market evidence, including previously available items. GM/test and unconfirmed code-only entries are excluded. Cash pages show relevant information without generic drop-report sections.
+Choose your download on the **[latest release page](https://github.com/zhuffman68/lupin/releases/latest)**:
 
-Check for database updates in **Settings**. Only changed reference files are downloaded; saved data works offline.
-
-The database updates in the background and remains available offline after its first download. Images are cached as you browse. Drop percentages describe dated community samples; other community reports show no invented rate. Source links and dataset dates are included. [Data sources and accuracy](docs/DATABASE_SOURCES.md).
-
-<!-- DEMO: docs/media/database.gif — search a monster, preview its sprite and maps, follow a drop to its item card, then browse skill ranks. -->
-
-## Desktop controls
-
-Choose a display and Lupin finds the Classic World area automatically. Windows reads that display directly; Wayland also asks for OS sharing approval. A manual area selection is available in Settings. The compact window follows the display's size and remembers manual resizing. It supports minimizing and does not maximize. Its minimum width is 460 pixels.
-
-- Configurable shortcuts for prices, tracking, reading Korean and opening the writer.
-- The current tool's shortcut shown at the bottom of each tab.
-- Minimize to the tray by default, with a notification and right-click controls.
-- Reduced motion and independent overlay toggles.
-
-| Default shortcut | Action |
+| System | Download |
 | --- | --- |
-| **Super/Win + F8** | Open the Korean writer. |
-| **Super/Win + F9** | Pause or resume prices. Tracking continues. |
-| **Super/Win + F10** | Start tracking, then pause or resume it. |
-| **Super/Win + F11** | Scan Korean text. |
+| Windows 10/11 x64 | Run the `Windows-x64-Setup.exe` installer. |
+| Arch / Manjaro x64 | Install the `.pkg.tar.zst` package. |
+| Debian 12+ / Ubuntu 22.04+ x64 | Install the `.deb` package. |
 
-Use **Hotkeys…** below Settings to change assignments. **Pause reading** pauses the shared reader; **Close / Quit** ends sharing.
+Linux install commands are included in the release notes. For Windows portable, extract the ZIP and open `run-windows.bat`.
 
-<!-- DEMO: docs/media/desktop-controls.mp4 — display selection, tabs, hotkeys and tray controls. -->
+Allow about **3 GB of free space**. Screen reading and translation are included; internet is needed for market and database updates.
 
-## Download and install
+Choose the game's display and click **Start reading**, approving screen sharing if asked. Keep the bottom status bar visible so Lupin can find the game. Search and Database also work without screen sharing.
 
-Download the latest build from **[GitHub Releases](https://github.com/zhuffman68/lupin/releases/latest)**. Lupin is also available on [itch.io](https://zhuffman68.itch.io/lupin).
+Use **Settings** and **Hotkeys…** to customize overlays, shortcuts, and updates. Lupin can stay in the system tray while you play.
 
-| System | Download | Install |
-| --- | --- | --- |
-| Windows 10/11 x64 | `Lupin-0.17.7-Windows-x64-Setup.exe` | Run it, then open Lupin from Start. |
-| Arch / Manjaro | `.pkg.tar.zst` | `sudo pacman -U ./lupin-0.17.7-1-x86_64.pkg.tar.zst` |
-| Debian 12+ / Ubuntu 22.04+ | `.deb` | `sudo apt install ./lupin_0.17.7-1_amd64.deb` |
-
-Extract downloaded ZIPs before running an installer or package command. For the Windows portable build, extract the full folder and open `run-windows.bat`. Updates preserve settings, prices and history; Linux packages replace the former `classic-price-lens` package.
-
-Requirements: a supported 64-bit desktop, about **3 GB free space** for installation, and internet for market/database updates or uncached images. Python, Qt, OCR and both translation models are bundled. No Chrome, Edge or Chromium installation is needed. Market updates use a short-lived system web view, which closes after updating. Windows setup prepares the shared WebView2 runtime when needed; Linux packages install WebKitGTK through the package manager. Saved prices remain available offline. Linux sharing needs PipeWire and a working desktop sharing portal, normally supplied by KDE or GNOME.
-
-## Getting started
-
-1. Choose the display containing Classic World, click **Start reading**, and approve OS sharing if prompted.
-2. Keep the game's bottom status bar visible for automatic game-area detection.
-3. Open a shop, hover an item or use **Prices** to search by name.
-4. Open **EXP/Meso Tracking** and press **Start tracking**. Keep the pickup log visible to count meso gains.
-5. Use **Translation → Read Korean** for incoming text, or **Write Korean** for a reply to copy.
-6. Open **Database** to browse items, monsters, locations, drops and skills. Screen sharing is optional for this tab.
-
-Screenshots, translations and session history stay on the device. Market requests contain item information, never screenshots. Cached references guide comparisons and do not guarantee a sale.
-
-## Updates
-
-Packaged builds check GitHub on launch and at the interval chosen in Settings. An update notification offers **Download & install**; Lupin saves tracking and restarts after installation. Linux uses the normal system authentication prompt. Smaller verified patches are used when available, with a full download as fallback. See [update details](docs/UPDATES.md).
-
-## Help
-
-- **Game not found:** uncover the bottom status bar, or use **Settings → Limit the reading area…**.
-- **Sharing stopped or labels misaligned:** reconnect the display and share that display or the full workspace.
-- **No market reports:** the item was recognized, but the source has no usable price.
-- **Meso pickups are missing:** keep the bottom-right pickup log visible; covered or fast-moving messages can be missed.
-- **Translation found nothing:** keep the text visible and scan again. The pointer does not limit the scan.
-
-Connection details and capture preview are in Settings. Windows desktop capture is verified in a Windows VM; game capture and mixed-DPI alignment still need a physical Windows playtest.
-
-[Windows help](README-WINDOWS.md) · [Translation](docs/KOREAN_CHAT.md) · [Architecture](ARCHITECTURE.md) · [Technical details](docs/TECHNICAL.md) · [Validation](VERIFICATION.md) · [Credits](THIRD_PARTY.md)
+[Windows help](README-WINDOWS.md) · [Translation guide](docs/KOREAN_CHAT.md) · [Database sources](docs/DATABASE_SOURCES.md) · [Technical documentation](docs/TECHNICAL.md) · [Credits](THIRD_PARTY.md)

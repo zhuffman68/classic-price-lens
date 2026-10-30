@@ -5,6 +5,47 @@ from .motion import reveal,AnimatedTabs,MotionLabel
 from .composer_ui import ComposerWidget
 
 
+def grouped_history(cards):
+    """Group consecutive equal results without changing the arrival ledger."""
+    from .chat_text import message_key
+    result=[]
+    for index,card in enumerate(cards):
+        key=(card.get('speaker'),message_key(card['original']),card['text'])
+        if result and card.get('speaker') and result[-1]['_content_key']==key:
+            result[-1]['repeat_count']+=1
+            if any(word in card.get('note','') for word in ('Partial','uncertain','OCR correction')):
+                result[-1]['note']=card['note']
+            continue
+        result.append({**card,'_content_key':key,'_widget_key':card.get('id',index),'repeat_count':1})
+    return result
+
+
+class TranslationResultCard(QFrame):
+    def __init__(self,card,parent=None):
+        super().__init__(parent);self.setObjectName('card');self.value=None
+        body=QVBoxLayout(self);body.setContentsMargins(14,12,14,12)
+        self.labels=[]
+        for style in ('color:#b4c4d8;font-size:11px','font-size:14px;color:#edf1f7',
+                      'font-size:12px;color:#aab5c5','color:#e4bd7b;font-size:10px'):
+            label=MotionLabel('');label.setTextFormat(Qt.TextFormat.PlainText)
+            label.setWordWrap(True);label.setStyleSheet(style);body.addWidget(label);self.labels.append(label)
+        self.update_card(card)
+
+    def update_card(self,card):
+        count=card.get('repeat_count',1);speaker=card.get('speaker') or 'Korean message'
+        note=card.get('note','')
+        warning=('Partial translation · check the original' if 'Partial' in note else
+                 'Numbers uncertain · original retained' if 'uncertain' in note else
+                 'Possible OCR correction · check the original' if 'OCR correction' in note else '')
+        values=(f'{speaker} · ×{count}' if count>1 else speaker,card['text'],card['original'],warning)
+        if values==self.value:return
+        self.value=values
+        for label,text in zip(self.labels,values):
+            if label.text()!=text:label.setText(text)
+            label.setVisible(bool(text))
+        self.labels[2].setToolTip('First OCR reading: '+card['ocr_original'] if card.get('ocr_original') else '')
+
+
 class TranslationPanel(QWidget):
     enabled_changed=Signal(bool)
     translate_requested=Signal()
@@ -53,7 +94,7 @@ class TranslationPanel(QWidget):
         self.results=QWidget();self.results_layout=QVBoxLayout(self.results);self.results_layout.setContentsMargins(0,0,0,0)
         scroll.setWidget(self.results);layout.addWidget(scroll,1)
         clear=QPushButton("Clear results and popups");clear.clicked.connect(self.clear_requested.emit)
-        layout.addWidget(clear);self.card_key=None;self.set_cards([])
+        layout.addWidget(clear);self.card_key=None;self.result_cards={};self.empty_label=None;self.set_cards([])
         if composer is not None:
             self.writer=ComposerWidget(composer,compose_shortcut,configure_compose,self)
             writer_scroll=QScrollArea();writer_scroll.setWidgetResizable(True);writer_scroll.setFrameShape(QFrame.Shape.NoFrame);writer_scroll.setWidget(self.writer)
@@ -65,24 +106,27 @@ class TranslationPanel(QWidget):
         self.status_label.setText(message)
 
     def set_cards(self,cards):
-        key=tuple((c.get('speaker'),c.get('original'),c.get('text'),c.get('note')) for c in cards)
+        cards=grouped_history(cards)
+        key=tuple((c['_widget_key'],c.get('speaker'),c.get('original'),c.get('text'),c.get('note'),c['repeat_count']) for c in cards)
         if key==self.card_key:return
         self.card_key=key
-        while self.results_layout.count():
-            widget=self.results_layout.takeAt(0).widget()
-            if widget:widget.hide();widget.deleteLater()
-        for card in cards:
-            frame=QFrame();frame.setObjectName("card");body=QVBoxLayout(frame);body.setContentsMargins(14,12,14,12)
-            for text,style in ((card.get('speaker') or 'Korean message','color:#b4c4d8;font-size:11px'),
-                               (card['text'],'font-size:14px;color:#edf1f7'),
-                               (card['original'],'font-size:12px;color:#aab5c5')):
-                label=QLabel(text);label.setTextFormat(Qt.TextFormat.PlainText);label.setWordWrap(True);label.setStyleSheet(style);body.addWidget(label)
-            note=card.get('note','')
-            if 'Partial' in note or 'uncertain' in note:
-                label=QLabel('Partial translation · check the original' if 'Partial' in note else 'Numbers uncertain · original retained')
-                label.setWordWrap(True);label.setStyleSheet('color:#e4bd7b;font-size:10px');body.addWidget(label)
-            self.results_layout.addWidget(frame);frame.show();reveal(frame)
+        wanted={card['_widget_key'] for card in cards}
+        for identity in list(self.result_cards):
+            if identity not in wanted:
+                widget=self.result_cards.pop(identity);self.results_layout.removeWidget(widget);widget.hide();widget.deleteLater()
+        if self.empty_label is not None:
+            self.results_layout.removeWidget(self.empty_label);self.empty_label.deleteLater();self.empty_label=None
+        for index,card in enumerate(cards):
+            identity=card['_widget_key'];frame=self.result_cards.get(identity)
+            if frame is None:
+                frame=TranslationResultCard(card,self.results);self.result_cards[identity]=frame
+                self.results_layout.insertWidget(index,frame);frame.show();reveal(frame)
+            else:
+                frame.update_card(card)
+                if self.results_layout.indexOf(frame)!=index:
+                    self.results_layout.removeWidget(frame);self.results_layout.insertWidget(index,frame)
         if not cards:
             label=QLabel("Translated messages will appear here. Recent results stay here after their in-game cards disappear.")
-            label.setWordWrap(True);label.setStyleSheet('color:#939eac;font-size:11px');self.results_layout.addWidget(label)
-        self.results_layout.addStretch()
+            label.setWordWrap(True);label.setStyleSheet('color:#939eac;font-size:11px');self.results_layout.insertWidget(0,label);self.empty_label=label
+        if not getattr(self,'results_stretch',False):
+            self.results_layout.addStretch();self.results_stretch=True

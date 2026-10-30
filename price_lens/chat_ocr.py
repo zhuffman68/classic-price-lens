@@ -2,9 +2,10 @@
 from collections import OrderedDict
 import hashlib
 from pathlib import Path
+import re
 
 import numpy as np
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QPoint, Qt
 from PySide6.QtGui import QImage
 
 
@@ -19,8 +20,13 @@ def components(mask):
         while parents[i]!=i:
             parents[i]=parents[parents[i]];i=parents[i]
         return i
-    for y,row in enumerate(mask):
-        edges=np.flatnonzero(np.diff(np.r_[False,row,False]));runs=[];j=0
+    # Find run edges for all rows once. Repeated padding/diff/nonzero calls for
+    # every row dominated the three full-window text masks in crowded scenes.
+    padded=np.pad(mask,((0,0),(1,1)),constant_values=False)
+    ys,xs=np.nonzero(padded[:,1:]!=padded[:,:-1])
+    counts=np.bincount(ys,minlength=mask.shape[0]);position=0
+    for y,count in enumerate(counts):
+        edges=xs[position:position+count].tolist();position+=count;runs=[];j=0
         for x,right in zip(edges[::2],edges[1::2]):
             if right-x<2:continue
             while j<len(previous) and previous[j][1]<=x:j+=1
@@ -124,7 +130,10 @@ def lines(image):
                 ink=np.flatnonzero(dark[start:y].any(0))
                 if len(ink)>=3 and ink[-1]-ink[0]>=7:
                     left,right=max(0,int(ink[0])-1),min(image.width(),int(ink[-1])+2)
-                    bands.append((image.copy(left,max(0,start-1),right-left,min(image.height(),y+1)-max(0,start-1)),y-start))
+                    top=max(0,start-1)
+                    part=image.copy(left,top,right-left,min(image.height(),y+1)-top)
+                    part.setOffset(QPoint(left,top))
+                    bands.append((part,y-start))
             start=None
     return bands[:24]
 
@@ -142,21 +151,51 @@ class Recognizer:
         self.height=shape[2]
         if self.height!=48 or self.session.get_outputs()[0].shape[-1]!=len(self.chars):
             raise ValueError("Unexpected Korean OCR model or dictionary")
-        self.cache=OrderedDict()
+        self.cache=OrderedDict();self.details={}
+
+    @staticmethod
+    def key(image):
+        return image.width(),image.height(),hashlib.blake2s(pixels(image).tobytes(),digest_size=16).digest()
+
+    def detail(self,image):
+        key=self.key(image)
+        if key not in self.cache:self.read(image)
+        return self.details.get(key,{})
 
     def read(self, image):
-        key=(image.width(),image.height(),hashlib.blake2s(pixels(image).tobytes(),digest_size=16).digest())
+        key=self.key(image)
         if key in self.cache:
             self.cache.move_to_end(key);return self.cache[key]
         width=min(1920,max(16,round(image.width()*self.height/image.height())))
-        image=image.scaled(width,self.height,Qt.AspectRatioMode.IgnoreAspectRatio,Qt.TransformationMode.SmoothTransformation)
-        data=(pixels(image)[:,:,::-1].astype("float32")/127.5-1).transpose(2,0,1)[None]
+        native_width=image.width()
+        scaled=image.scaled(width,self.height,Qt.AspectRatioMode.IgnoreAspectRatio,Qt.TransformationMode.SmoothTransformation)
+        data=(pixels(scaled)[:,:,::-1].astype("float32")/127.5-1).transpose(2,0,1)[None]
         probability=self.session.run(None,{self.session.get_inputs()[0].name:data})[0][0]
-        best=probability.argmax(1);text=[];confidence=[];last=0
+        best=probability.argmax(1);text=[];confidence=[];last=0;emissions=[]
         for index,char in enumerate(best):
-            if char and char!=last:text.append(self.chars[char]);confidence.append(float(probability[index,char]))
+            if char and char!=last:
+                text.append(self.chars[char]);confidence.append(float(probability[index,char]));emissions.append(index)
             last=char
         result=("".join(text),sum(confidence)/len(confidence) if confidence else 0)
+        alternatives=[]
+        for position,index in enumerate(emissions):
+            primary=text[position]
+            if len(primary)!=1 or not ('가'<=primary<='힣') or confidence[position]>=.85:continue
+            candidates=np.argpartition(probability[index],-3)[-3:]
+            for alternative in candidates:
+                value=self.chars[alternative];score=float(probability[index,alternative])
+                if (alternative==best[index] or len(value)!=1 or not ('가'<=value<='힣')
+                        or score<.12 or score<confidence[position]*.35):continue
+                alternatives.append((''.join((*text[:position],value,*text[position+1:])),score/confidence[position]))
+        alternatives=tuple(sorted(alternatives,key=lambda item:-item[1])[:4])
+        decoration=re.search(r'[@#%]{2,}\s*$',result[0])
+        right=native_width
+        if decoration and decoration.start()>0 and decoration.start()<len(emissions):
+            left=emissions[decoration.start()-1];next_=emissions[decoration.start()]
+            right=min(native_width,max(1,round((left+next_)/2/len(best)*native_width)+2))
+        self.details[key]={'alternatives':alternatives,'content_right':right,
+                           'meaningful':bool(re.search(r'[A-Za-z0-9가-힣ㄱ-ㅣ]',result[0]))}
         self.cache[key]=result
-        while len(self.cache)>256:self.cache.popitem(last=False)
+        while len(self.cache)>256:
+            old,_=self.cache.popitem(last=False);self.details.pop(old,None)
         return result

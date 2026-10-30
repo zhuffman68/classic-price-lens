@@ -6,20 +6,7 @@ import time
 from PySide6.QtCore import QObject,QProcess,QProcessEnvironment,QRect,Signal,Qt,QTimer
 from PySide6.QtGui import QImage
 
-
-def stamp(image, box):
-    rect=QRect(*box)
-    if not image.rect().contains(rect):return b''
-    sample=image.copy(rect).scaled(24,24,Qt.AspectRatioMode.IgnoreAspectRatio,
-                 Qt.TransformationMode.FastTransformation).convertToFormat(QImage.Format.Format_Grayscale8)
-    return bytes(sample.constBits())
-
-
-def difference(a,b):
-    if not a or len(a)!=len(b):return 1.0
-    ink=[(x,y) for x,y in zip(a,b) if min(x,y)<210]
-    values=ink if ink else list(zip(a,b))
-    return sum(abs(x-y)>30 for x,y in values)/len(values)
+from .chat_tracking import stamp, difference, visible, locate_offset, move_source
 
 
 class ChatTranslation(QObject):
@@ -166,6 +153,16 @@ class ChatTranslation(QObject):
         row['role_verified']=supplied.get('role_verified') is True
         row['stamp']=stamp(self.frame,box)
         row['pixels']=self.frame.copy(QRect(*box)) if box[2]*box[3]<=100000 else None
+        for key in ('track_box','speaker_box'):
+            supplied_box=supplied.get(key)
+            if (isinstance(supplied_box,(list,tuple)) and len(supplied_box)==4
+                    and all(type(value) is int for value in supplied_box)
+                    and not QRect(*supplied_box).isEmpty() and QRect(*box).contains(QRect(*supplied_box))):
+                row[key]=[supplied_box[0]+self.region.x(),supplied_box[1]+self.region.y(),*supplied_box[2:]]
+                row['track_stamp' if key=='track_box' else 'speaker_stamp']=stamp(self.frame,supplied_box)
+                if key=='track_box' and supplied_box[2]*supplied_box[3]<=100000:
+                    row['track_pixels']=self.frame.copy(QRect(*supplied_box))
+        if isinstance(supplied.get('ocr_original'),str):row['ocr_original']=supplied['ocr_original'][:500]
         row['box']=[box[0]+self.region.x(),box[1]+self.region.y(),box[2],box[3]]
         now=time.monotonic();same=[]
         for event in self.events:
@@ -190,13 +187,16 @@ class ChatTranslation(QObject):
             complete=not is_fragment or len(message_key(row['original']))+len(row['speaker'])>=len(message_key(card['original']))+len(card['speaker'])
             if complete:
                 for key in ('speaker','original','text','note'):card[key]=row[key]
+                card['ocr_original']=row.get('ocr_original','')
         else:
             rect=QRect(*row['box'])
             self.cards=[card for card in self.cards if self.overlap(rect,QRect(*card['box']))<.8]
             self.serial+=1;card={key:row[key] for key in ('speaker','original','text','note')}
             card.update(id=self.serial,created_at=now,sources=[])
             self.events.append(card)
-        source={key:row[key] for key in ('source_role','role_verified','box','stamp','pixels')}
+        if row.get('ocr_original'):card['ocr_original']=row['ocr_original']
+        source={key:row[key] for key in ('source_role','role_verified','box','stamp','pixels',
+                'track_box','track_stamp','track_pixels','speaker_box','speaker_stamp') if key in row}
         source.update(seen_at=now,batch=self.identity,gone_at=None)
         role=row['source_role'];card['sources']=[old for old in card['sources'] if old['source_role']!=role]+[source]
         card['sources']=card['sources'][-2:];card['last_seen']=now
@@ -204,6 +204,7 @@ class ChatTranslation(QObject):
         if not any(old is card for old in self.cards):self.cards.append(card)
         self.cards=self.cards[-8:]
         summary={'id':card['id'],**{key:card[key] for key in ('speaker','original','text','note')}}
+        if row.get('ocr_original'):summary['ocr_original']=row['ocr_original']
         index=next((i for i,old in enumerate(self.history) if old.get('id')==card['id']),None)
         if index is None:self.history.append(summary)
         else:self.history[index]=summary
@@ -212,7 +213,7 @@ class ChatTranslation(QObject):
         self.events=[event for event in self.events if event['id'] in active or now-event['last_seen']<=8][-64:]
         for event in self.events:
             if event['id'] not in active:
-                for source in event['sources']:source['pixels']=None
+                for source in event['sources']:source['pixels']=source['track_pixels']=None
         self.last_track=0;self.changed.emit()
 
     @staticmethod
@@ -222,8 +223,7 @@ class ChatTranslation(QObject):
 
     def visible_source(self,source):
         if source.get('gone_at') is not None:return False
-        rect=QRect(*source['box']).translated(-self.region.x(),-self.region.y())
-        return difference(stamp(self.frame,rect.getRect()),source['stamp'])<=.035
+        return visible(self.frame,source,-self.region.x(),-self.region.y())
 
     def same_surface(self,source,row,now,fragment=False):
         old,new=QRect(*source['box']),QRect(*row['box'])
@@ -232,8 +232,11 @@ class ChatTranslation(QObject):
         if source.get('batch')==self.identity and self.overlap(old,new)<.8:return False
         if now-source.get('seen_at',now)>8:return False
         if not fragment:
-            nearby=abs(old.x()-new.x())+abs(old.y()-new.y())<160
-            return nearby and bool(row['speaker'] or self.overlap(old,new)>.8) and difference(source['stamp'],row['stamp'])<=.035
+            nearby=(old.x()-new.x())**2+(old.y()-new.y())**2<160**2
+            same=difference(source.get('track_stamp') or source['stamp'],row.get('track_stamp') or row['stamp'])<=.035
+            if source.get('speaker_stamp') and row.get('speaker_stamp'):
+                same= same and difference(source['speaker_stamp'],row['speaker_stamp'])<=.06
+            return nearby and bool(row['speaker'] or self.overlap(old,new)>.8) and same
         if self.overlap(old,new)<.8 or source.get('pixels') is None:return False
         hit=old.intersected(new)
         before=stamp(source['pixels'],hit.translated(-old.x(),-old.y()).getRect())
@@ -287,23 +290,10 @@ class ChatTranslation(QObject):
         if self.busy:self.close();self.announce('Local scan timed out. Toggle translation off and on to retry.')
 
     def locate(self,image,card):
-        box=card['box'];old=card['stamp']
-        if difference(stamp(image,box),old)<=.035:return box
-        best=(1.0,None)
-        # Bounded local matching of already translated pixels, never player/game objects.
-        offsets=[(d,0) for d in (-32,-16,-8,8,16,32)]+[(0,d) for d in (-32,-16,-8,8,16,32)]+[(x,y) for x in (-16,16) for y in (-16,16)]
-        if card.get('source_role')=='chat':offsets=[(0,d) for d in (-32,-24,-16,-8,8,16,24,32)]
-        elif card.get('source_role')!='bubble':return None
-        for dx,dy in offsets:
-            candidate=[box[0]+dx,box[1]+dy,box[2],box[3]];score=difference(stamp(image,candidate),old)
-            if score<best[0]:best=(score,candidate)
-        if best[1] is None:return None
-        # Refine the best nearby position without a full-scene search.
-        centre=best[1]
-        for dx,dy in ((x,y) for x in (-4,-2,0,2,4) for y in (-4,-2,0,2,4)):
-            candidate=[centre[0]+dx,centre[1]+dy,box[2],box[3]];score=difference(stamp(image,candidate),old)
-            if score<best[0]:best=(score,candidate)
-        return best[1] if best[0]<=.035 else None
+        offset=locate_offset(image,card)
+        if offset is None:return None
+        move_source(card,*offset)
+        return card['box']
 
     def annotations(self,image,sx,sy,bounds,occupied=()):
         rows=[];now=time.monotonic()
@@ -328,7 +318,7 @@ class ChatTranslation(QObject):
                          'source_verified':card.get('gone_at') is None,'anchor_visible':card.get('gone_at') is None,
                          'event_id':card['id'],'source_track_id':card['id'],
                          'animate_move':True,'name':card['speaker'] or 'Korean message',
-                         'note':'Partial translation · check original' if 'Partial' in card['note'] else 'Numbers uncertain · original retained' if 'uncertain' in card['note'] else '',
+                         'note':'Partial translation · check original' if 'Partial' in card['note'] else 'Numbers uncertain · original retained' if 'uncertain' in card['note'] else 'Possible OCR correction · check original' if 'OCR correction' in card['note'] else '',
                          'text':card['text'],'original':card['original'],'color':'#e3e9f2'})
         message=self.phase_message(now)
         if message:
