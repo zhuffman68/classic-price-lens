@@ -89,6 +89,7 @@ def main():
             legacy_marker = cache_marker(legacy_base)
             extra=legacy_base/"migration-preserve-extra.txt"
             extra.write_text("Preserve additional files during the folder rename.\n")
+            (legacy_base/"windows-selftest.py").write_text("# Retired portable self-test wrapper.\n")
             legacy_process=start_ui(legacy_base)
             legacy_marker.write_text("Keep user data during upgrade/removal.\n")
         else:
@@ -105,6 +106,7 @@ def main():
         assert (app/"bin/lupin-market-fetch.exe").is_file(), "Native market helper missing"
         assert (app/"bin/WebView2Loader.dll").is_file(), "WebView2 loader missing"
         assert not (app/"price_lens/snapshot_browser.py").exists(), "Retired browser integration remains"
+        assert not (app/"windows-selftest.py").exists(), "Retired portable self-test wrapper remains"
         trim=json.loads((app/'runtime-trim.json').read_text())
         assert not any((app/entry['path']).exists() for entry in trim['removed']),'Upgrade left unused runtime files behind'
         assert (app/'lupin-scaled.ico').is_file() and not (app/'lupin.ico').exists(),'Icon resource path was not migrated'
@@ -127,6 +129,9 @@ def main():
 
 
         first = start_ui()
+        # Recreate the old app-owned wrapper to verify cleanup on an ordinary
+        # in-place upgrade too, even when --upgrade-from was not supplied.
+        (app/"windows-selftest.py").write_text("# Retired portable self-test wrapper.\n")
         run([gui_runtime, "-B", "-m", "price_lens", "--minimize"], app, timeout=10)
         assert first.poll() is None, "Minimizing closed the app"
         run([gui_runtime, "-B", "-m", "price_lens"], app, timeout=10)
@@ -134,6 +139,7 @@ def main():
         run([installer, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-"])
         assert first.wait(timeout=30) == 0, "Upgrade did not close the existing app cleanly"
         assert marker.is_file(), "Upgrade removed user cache"
+        assert not (app/"windows-selftest.py").exists(), "Upgrade retained the retired portable self-test wrapper"
         second = start_ui()
         run([gui_runtime, "-B", "-m", "price_lens", "--minimize"], app, timeout=10)
         run([app / "unins000.exe", "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"])

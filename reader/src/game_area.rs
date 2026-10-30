@@ -16,6 +16,7 @@ pub struct Rect {
 pub struct Located {
     pub area: Rect,
     pub guards: Vec<Rect>,
+    pub footer: Rect,
 }
 
 struct Blob {
@@ -235,6 +236,12 @@ impl Locator {
                 found.push(Located {
                     area,
                     guards: vec![guard, lv],
+                    footer: Rect {
+                        x: left,
+                        y: lv.y.saturating_sub((7.0*ui_scale).round() as u32),
+                        width: right-left,
+                        height: bottom-lv.y.saturating_sub((7.0*ui_scale).round() as u32),
+                    },
                 });
                 found_footer=Some((left,right));
             }
@@ -663,6 +670,22 @@ mod tests {
             fill_rect(&mut image,x,464,2,7,[235,235,235,255]);
         }
         (image,Rect{x:201,y:652,width:36,height:37})
+    }
+
+    #[test]
+    fn writer_layout_receives_full_measured_footer_without_weakening_guards() {
+        let (mut image,lv)=crossing_fixture();
+        let mut locator=Locator::new();
+        let located=locator.find(&image).expect("verified game");
+        assert_eq!(located.footer.x,200);
+        assert_eq!(located.footer.width,800);
+        assert!(located.footer.y<lv.y);
+        assert_eq!(located.footer.y+located.footer.height,located.area.y+located.area.height);
+        assert_eq!(located.guards[1],lv);
+        fill_rect(&mut image,900,646,100,5,[30,30,70,255]);
+        assert_eq!(locator.find(&image).expect("retained proof").footer,located.footer);
+        fill_rect(&mut image,lv.x,lv.y,lv.width,lv.height,[30,30,70,255]);
+        assert!(locator.find(&image).is_none());
     }
 
     #[test]

@@ -32,7 +32,8 @@ from .chat import ChatTranslation
 from .translation_ui import TranslationPanel
 from .compose import KoreanComposer
 from .composer_ui import ComposerDialog
-from .overlay_layout import tracking_rows
+from .composer_overlay import ComposerOverlayController
+from .overlay_layout import tracking_rows,writer_placement,corner_offset
 from .thumbnails import ThumbnailCache
 from .shortcut_defaults import load as load_shortcuts, label as shortcut_label
 from . import window_size
@@ -206,6 +207,11 @@ class LensWindow(QMainWindow):
         self.composer.changed.connect(self.on_writer_changed)
         self.composer.copied.connect(self.on_translation_copied)
         self.composer_dialog=None
+        self.writer_overlay=ComposerOverlayController(self.composer,self.overlay,self)
+        self.writer_redraw_timer=QTimer(self);self.writer_redraw_timer.setSingleShot(True)
+        self.writer_redraw_timer.timeout.connect(self.redraw_writer_context)
+        self.writer_overlay.visibility_changed.connect(lambda:self.writer_redraw_timer.start(0) if not self.closing else None)
+        self.writer_overlay.fallback_requested.connect(self.open_native_composer)
         self.write_sequence=shortcuts['write']
         self.write_hotkey_description=self.settings.value('write-hotkey-description',self.write_sequence)
         self.write_hotkeys=HotkeyManager(self);self.write_hotkeys.action='compose-korean'
@@ -232,6 +238,7 @@ class LensWindow(QMainWindow):
         self.service.set_refresh_interval(self.ttl)
         self.reader = PixelReader(root, self)
         self.reader.exclude_regions=self.pickup_capture_exclusions
+        self.reader.writer_regions=self.writer_capture_exclusions
         self.reader.auto_enabled = self.auto_game_area
         self.reader.tooltip_enabled = self.hover_enabled and self.labels_enabled and self.prices_enabled
         self.reader.experience_enabled = self.exp_enabled
@@ -752,12 +759,21 @@ class LensWindow(QMainWindow):
         self.write_hotkey_description=description;self.settings.setValue('write-hotkey-description',description)
         if hasattr(self,'translation_panel') and hasattr(self.translation_panel,'writer'):self.translation_panel.writer.set_shortcut(description)
         if self.composer_dialog:self.composer_dialog.editor.set_shortcut(description)
+        self.writer_overlay.shortcut=description
+        self.writer_overlay.sync()
         self.update_shortcut_footer()
 
     def open_composer(self):
         if self.hotkey_dialog_open:return
-        import os
         token=self.write_activation_token;self.write_activation_token=''
+        placement=self.composer_placement()
+        if self.writer_overlay.open(placement,self.write_hotkey_description,self.reduce_motion,token):
+            if self.composer_dialog is not None and self.composer_dialog.isVisible():self.composer_dialog.reject()
+            return
+        self.open_native_composer(token)
+
+    def open_native_composer(self,token=''):
+        import os
         if token and QApplication.platformName().startswith('wayland'):
             # Qt's own Wayland activation code consumes this token. It applies
             # only to our popup; no other window is inspected or activated.
@@ -775,6 +791,34 @@ class LensWindow(QMainWindow):
             def clear_token():
                 if os.environ.get('XDG_ACTIVATION_TOKEN')==token:os.environ.pop('XDG_ACTIVATION_TOKEN',None)
             QTimer.singleShot(0,clear_token)
+
+    def composer_placement(self):
+        if (self.mode!='live' or self.screen_index is None or self.screen_index>=len(self.screens)
+                or self.reader.image.isNull() or time.time()-self.last_screen>3):return None
+        image=self.reader.image;screen=self.screens[self.screen_index];geometry=screen.geometry()
+        if (abs(image.width()-geometry.width()*screen.devicePixelRatio())>2
+                or abs(image.height()-geometry.height()*screen.devicePixelRatio())>2):return None
+        area=self.reader.game_area if self.reader.auto_active else self.reader.crop
+        if area is None:return None
+        sx,sy=geometry.width()/image.width(),geometry.height()/image.height()
+        bounds=[round(area.x()*sx),round(area.y()*sy),round(area.width()*sx),round(area.height()*sy)]
+        placed=writer_placement(bounds,getattr(self.reader,'game_footer',None),
+            [rect for rect,_ in getattr(self.reader,'game_guards',[])],scale_x=sx,scale_y=sy)
+        if placed:
+            placed['box'][0]+=geometry.x();placed['box'][1]+=geometry.y()
+        return placed
+
+    def redraw_writer_context(self):
+        if not self.closing:self.draw_labels(time.time(),time.time()-self.last_screen>3)
+
+    def writer_capture_exclusions(self):
+        if self.screen_index is None or self.reader.image.isNull():return []
+        rect=self.writer_overlay.rectangle()
+        if rect is None:return []
+        geometry=self.screens[self.screen_index].geometry()
+        sx,sy=self.reader.image.width()/geometry.width(),self.reader.image.height()/geometry.height()
+        rect=rect.translated(-geometry.x(),-geometry.y())
+        return [QRect(round(rect.x()*sx),round(rect.y()*sy),round(rect.width()*sx),round(rect.height()*sy))]
 
     def on_write_activation_token(self,token):
         if isinstance(token,str) and 0<len(token)<4096 and '\x00' not in token:self.write_activation_token=token
@@ -841,6 +885,7 @@ class LensWindow(QMainWindow):
             self.chat.abort_scan("Share the selected full display so translation cards can be positioned correctly.");return
         sx,sy=image.width()/geometry.width(),image.height()/geometry.height()
         exclude=[[round(x*sx),round(y*sy),round(w*sx),round(h*sy)] for x,y,w,h in getattr(self.overlay,'layout_boxes',[])]
+        exclude.extend(list(rect.getRect()) for rect in self.writer_capture_exclusions())
         for owned in (self,self.composer_dialog):
             if owned is not None and owned.isVisible() and not owned.isMinimized():
                 rect=owned.frameGeometry().translated(-geometry.x(),-geometry.y())
@@ -858,6 +903,7 @@ class LensWindow(QMainWindow):
         geometry=self.screens[self.screen_index].geometry()
         sx,sy=image.width()/geometry.width(),image.height()/geometry.height()
         regions=[QRect(round(x*sx),round(y*sy),round(w*sx),round(h*sy)) for x,y,w,h in getattr(self.overlay,'layout_boxes',[])]
+        regions.extend(self.writer_capture_exclusions())
         for owned in (self,self.composer_dialog):
             if owned is not None and owned.isVisible() and not owned.isMinimized():
                 rect=owned.frameGeometry().translated(-geometry.x(),-geometry.y())
@@ -1944,6 +1990,7 @@ class LensWindow(QMainWindow):
         self.draw_labels(now, screen_old)
 
     def draw_labels(self, now, screen_old):
+        self.writer_overlay.context(self.composer_placement(),reduced=self.reduce_motion)
         if self.screen_index is None:
             self.watch_encounters.apply([], self.watchlist.ids)
             self.overlay.update([0, 0, 1, 1], [], hover_enabled=False)
@@ -1958,6 +2005,8 @@ class LensWindow(QMainWindow):
         screen_matches = (not image.isNull() and abs(image.width() - geometry.width() * dpr) <= 2
                           and abs(image.height() - geometry.height() * dpr) <= 2)
         game_visible = not self.reader.auto_active or self.reader.game_area is not None
+        writer_rect=self.writer_overlay.rectangle()
+        writer_rects=[writer_rect.translated(-geometry.x(),-geometry.y())] if writer_rect is not None else []
         if self.prices_enabled and self.labels_enabled and self.mode == "live" and not screen_old and screen_matches and self.catalog and game_visible:
             sx, sy = geometry.width() / image.width(), geometry.height() / image.height()
             crop = self.reader.crop
@@ -2084,13 +2133,13 @@ class LensWindow(QMainWindow):
                 sx,sy=geometry.width()/image.width(),geometry.height()/image.height()
                 bounds=[round(area.x()*sx),round(area.y()*sy),round(area.width()*sx),round(area.height()*sy)]
                 # Shop and EXP references paint above a manually requested chat card.
-                annotations=self.chat.annotations(image,sx,sy,bounds,occupied=annotations)+annotations
+                annotations=self.chat.annotations(image,sx,sy,bounds,occupied=annotations,rectangles=writer_rects)+annotations
         if self.mode=='live' and game_visible and screen_matches and not screen_old:
             area=self.reader.game_area if self.reader.auto_active else self.reader.crop
             if area:
                 sx,sy=geometry.width()/image.width(),geometry.height()/image.height()
                 bounds=[round(area.x()*sx),round(area.y()*sy),round(area.width()*sx),round(area.height()*sy)]
-                notice=self.write_notice.row(bounds)
+                notice=self.write_notice.row(bounds,bottom_offset=corner_offset(bounds,annotations,writer_rects))
                 if notice:annotations.append(notice)
         self.watch_encounters.apply(annotations, self.watchlist.ids, page=self.shop_rows.page_revision)
         self.overlay.update(list(geometry.getRect()), annotations, hover_enabled=self.prices_enabled and self.labels_enabled and self.mode == "live" and game_visible and screen_matches and not screen_old)
@@ -2154,6 +2203,7 @@ class LensWindow(QMainWindow):
             event.accept()
             return
         self.closing = True
+        self.writer_redraw_timer.stop()
         window_size.save(self, self.settings)
         self.timer.stop()
         self.updates.close()
@@ -2163,6 +2213,7 @@ class LensWindow(QMainWindow):
         self.chat_hotkeys.close()
         self.write_hotkeys.close()
         if self.composer_dialog:self.composer_dialog.close();self.composer_dialog.deleteLater()
+        self.writer_overlay.close()
         self.composer.close()
         self.chat.close()
         self.reader.close(keep_stream=self.keep_capture)

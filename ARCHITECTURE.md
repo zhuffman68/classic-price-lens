@@ -146,6 +146,26 @@ source proof freezes the last verified position during the configured linger.
 
 The writer uses conservative trade/party shorthand and numeric validation before explicit Translate & Copy. Enter in the popup begins a short fade/slide dismissal while the current validated draft finishes; this intentional dismissal preserves only that explicit copy authorization. Escape/edit revokes it. Successful copying shows an expiring bottom-right notification. Editing/canceling invalidates pending copies. Both verified int8 model bundles remain included. See [Korean notes](docs/KOREAN_CHAT.md).
 
+`composer_overlay.py` presents the hotkey writer in a separate managed, focusable
+surface inside the existing annotation helper. The main `KoreanComposer` remains
+the only draft/translation/clipboard authority; the helper is a presentation
+mirror with bounded UTF-8 messages, opening sessions and monotonic edit sequences.
+Old acknowledgments cannot overwrite newer typing, and geometry/close commands
+remain independent of draft freshness. New openings retire old-surface events;
+helper failure clears its reserved area and cancels an unsubmitted draft's copy.
+
+The native reader exposes the measured HUD footer span. Shared layout puts the
+writer beside that strip at bottom right, narrows to fit, then moves above it
+when needed. Its preview grows upward with a short slide/fade; long previews and
+warnings scroll within the bounded body while input/actions remain accessible.
+Notifications stack above the reserved writer rectangle, incoming cards avoid it,
+and all OCR paths exclude it (including crop/ROI coordinate conversion for price
+reading). The annotation canvas always remains click-through. Desktop activation
+is requested only for the writer, checked on that own surface, and a visible
+click-to-type/native-dialog fallback handles denial. Without fresh capture bounds
+or a running helper, the existing standalone writer remains available. Live
+Wayland/XWayland and native Windows focus acceptance require platform testing.
+
 ## Presentation, persistence and packaging
 
 Inter is bundled for consistent interface/price typography. The GUI uses a small coin for currency words, except MESO on the tracking panel and EXP/Meso Tracking on its tab. Market-price overlays remain plain; the tracking gain uses the same coin asset. Tracking unit coins appear only alongside available numbers. The larger, left-aligned rolling tracking timer shares a borderless row with the tracking controls above both metric panels. The timer adds hours while retaining seconds; its reserved width prevents the adjacent buttons from shifting. Digit-place animation keeps surrounding text/columns steady. Page slides and section transitions are interruptible and respect Reduce motion.

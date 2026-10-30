@@ -1,5 +1,32 @@
 # Verification — 2026-10-30
 
+## Pending compact Korean writer and repository cleanup — source only
+
+- **671 Python tests pass in 71.694 seconds**, with three platform/offscreen
+  skips. All **23 Rust reader unit tests** and **nine release-tool tests** pass.
+  Rust test outputs use a separate secondary-drive target; no release package
+  or installed reader was replaced.
+- The writer's real helper pipe and isolated Qt fixtures cover shared drafts,
+  explicit copy, late edits/cancels, native fallback, helper startup/failure,
+  moving during unacknowledged typing, minimum space and Reduce motion. All
+  GUI/helper checks ran under isolated Xvfb, without OS capture or game input.
+- The measured HUD footer remains guarded by the existing locator proofs.
+  Native tests cover footer retention, clipped editor masks and nonzero ROI
+  origins. Python capture checks cover manual-crop-to-ROI exclusion coordinates.
+  A 1366 × 768 synthetic preview places the 272 × 201 writer wholly beside the
+  HUD. This is layout evidence, not live compositor or native Windows acceptance.
+- GitHub's Markdown rendering endpoint returns width-only header images with
+  `max-width: 100%` and no injected background or radius. The original transparent
+  GIF/SVG and canonical application artwork remain byte-identical. Public source
+  has not been updated during this pass.
+- Retired portable helpers are removed; historical handoffs are archived with
+  repaired links. Setup source removes the retired wrapper during upgrades;
+  actual installer transaction tests await a later authorized build. Architecture,
+  current technical guidance and the developer entry point describe the new paths.
+- The installed app, approved sharing session and public releases remain
+  unchanged. Live Wayland/XWayland activation, native Windows focus/fullscreen
+  and mixed-display DPI acceptance are still required before release claims.
+
 ## Pending Database and Korean translation changes — source only
 
 - All **652 source tests pass in 79.550 seconds**, with three platform/offscreen
@@ -90,7 +117,7 @@
 - Update tests include RFC 8032 known signatures, altered/unknown signatures, repository/platform/version/asset binding, duplicate metadata, fake conditional GitHub checks, no downgrades, cached-offer revalidation, cancellation, launch/timer behavior, deduplicated notices, failed-install receipts, a real child-pipe commit/EOF handshake, portable archive paths, native package identities and Linux/Windows capture handoff policy. No test executes a real installer, authenticates as root or sends game input.
 - Chunked delta probes reconstruct all four existing 0.17.6 target archives from 0.17.5 with exact SHA-256 results. Portable ZIP: 425,375,939 bytes to 22,682,647 bytes, 1.747-second creation / 0.758-second apply, about 81 MiB peak RSS. Windows setup/Arch/DEB patches remain 98–100 percent of full size and are rejected by the usefulness threshold; their updater path uses full native downloads. All probes stay below 96 MiB peak RSS and their temporary payloads are removed. Actual Arch/DEB metadata queries are read-only and pass.
 - An initial Windows QA invocation did not pass the offscreen variable through Wine, so test copies/helper windows appeared on the desktop and its screen-dependent fixture checks failed. That run was discarded. The test bootstrap now sets the variable inside Windows Python before QApplication; subsequent Linux/Wine UI/helper checks use distinct Xvfb displays with Wayland unset and software rendering. The successful final runs are isolated. A startup-timer test also waits for its event instead of assuming a 1,500 ms coarse timer always fires within 1,550 ms under concurrent load.
-- Source documentation and release-signing preparation are included. The private key is stored outside the repository and only its public key ships. No new model/Python runtime dependency is added; Linux declares its normal polkit/OpenSSL prerequisites. This section records the source evidence before packaging. Final artifact hashes and package-transaction results are supplied separately beside the builds. No host installation, live app reload, source push, publication or visibility change is performed. Public signed-feed/native updater acceptance remains distinct from packaging checks. See docs/PATCH_0.17.7.md and docs/UPDATES.md.
+- Source documentation and release-signing preparation are included. The private key is stored outside the repository and only its public key ships. No new model/Python runtime dependency is added; Linux declares its normal polkit/OpenSSL prerequisites. This section records the source evidence before packaging. Final artifact hashes and package-transaction results are supplied separately beside the builds. No host installation, live app reload, source push, publication or visibility change is performed. Public signed-feed/native updater acceptance remains distinct from packaging checks. See docs/archive/patches/PATCH_0.17.7.md and docs/UPDATES.md.
 
 ## Lupin v0.17.6
 
@@ -109,7 +136,7 @@ Post-build checks:
 - Windows/Wine, pacman, Debian 12 and Ubuntu 22.04 each pass all 597 installed application tests. Full-suite timings/skips: Windows 95.399 s / 8 skips; pacman 63.907 s / 4; Debian 58.131 s / 5; Ubuntu 59.223 s / 5. Windows completes the 0.17.5 running-app upgrade, offline OCR/overlay self-test, second-launch/minimize, running-app reinstall/removal and file/cache preservation in a 212.972-second harness. Wine deliberately skips unavailable native WebView2 preparation; physical Windows gameplay, current native WebView2 market refresh and compositor acceptance are not established by this patch's checks.
 - Pacman, Debian and Ubuntu exercise the legacy 0.8.0 → 0.9.0 → 0.10.0 → 0.17.6 migration chain, current installation, file verification, removal and user-cache marker preservation. Transaction harness times are 84.864, 123.853 and 164.635 seconds respectively. Pacman verifies 6,401 files with none altered. Debian/Ubuntu also pass isolated X11 registration checks (nine tests, one Windows-only skip) and the native market helper's Korean Unicode self-test.
 - Both stages match all 110 final application/resource files and 63 test/data files. Their readers match the final compiled musl/Windows targets; both pinned local translation bundles are retained and verified. Windows verifies all 2,166 staged manifest hashes and the exact 2,167-member ZIP allowlist. Private captures, diagnostic data, downloaded reference/image caches, user records and recordings are excluded.
-- All four final SHA-256 checks pass in dist/SHA256SUMS-0.17.6.txt. Artifact sizes and hashes are recorded in docs/PATCH_0.17.6.md. The Windows installer is 408,892,403 bytes, about 21 KB above 0.17.5. No new dependency or model is added.
+- All four final SHA-256 checks pass in dist/SHA256SUMS-0.17.6.txt. Artifact sizes and hashes are recorded in docs/archive/patches/PATCH_0.17.6.md. The Windows installer is 408,892,403 bytes, about 21 KB above 0.17.5. No new dependency or model is added.
 - The installed/running host copy and its sharing helper are not reloaded, installed over or signalled. The user can test the new live behavior later. No game input/process access, source push, GitHub release or itch.io upload is performed. Packaged documentation records staging-time source evidence; this completed report is supplied separately as dist/VERIFICATION-0.17.6.md. Final source commit and stage/artifact hashes are recorded in dist/BUILDINFO-0.17.6.json after the local commit.
 
 ## Lupin v0.17.5
@@ -127,7 +154,7 @@ Post-build checks:
 
 - Windows/Wine, pacman, Debian 12 and Ubuntu 22.04 each pass the final 534-test installed suite. installer: 8 platform skips, 127.7 seconds; pacman: 4 platform skips, 120.477 seconds; debian: 5 platform skips, 101.119 seconds; ubuntu: 5 platform skips, 95.625 seconds. Linux package install/check/remove and cache retention pass. Debian/Ubuntu additionally pass isolated X11 hotkey and native market-helper checks. Windows passes per-user installation, v0.17.4 upgrade, offline OCR/overlay, second launch, running-app upgrade/removal and cache retention.
 
-- Final stages match all 108 application/resource files and 58 test/data files. Both packaged readers match the verified compiled targets; both pinned local model bundles are included. Private screenshots, diagnostics, caches and user records are excluded. All four artifact SHA-256 checks pass in dist/SHA256SUMS-0.17.5.txt. Artifact sizes and hashes are recorded in docs/PATCH_0.17.5.md.
+- Final stages match all 108 application/resource files and 58 test/data files. Both packaged readers match the verified compiled targets; both pinned local model bundles are included. Private screenshots, diagnostics, caches and user records are excluded. All four artifact SHA-256 checks pass in dist/SHA256SUMS-0.17.5.txt. Artifact sizes and hashes are recorded in docs/archive/patches/PATCH_0.17.5.md.
 
 - The original live intermittent shop-hover sequence was not captured as a full regression recording for this patch. Screenshot replays, native Wine execution and painted/offscreen geometry checks do not establish physical Windows gameplay or live compositor acceptance. No sharing chooser was opened or capture helper restarted, and no game input/process access was used. Host installation, pushes and uploads remain separate and were not performed.
 
@@ -147,7 +174,7 @@ Post-build checks:
 - A Windows test-only QTest wait loop twice reaches its three-second deadline without scheduling the Python reference worker. The same worker completes in about 68 ms with explicit Python yielding. Adding a one-millisecond scheduling yield while pumping Qt fixes the focused test and the full installed suite without changing production refresh code. Final artifacts include this test correction.
 - The bounded live Linux trial records 84 EXP results from one captured identity/run. Pace becomes ready at 31 elapsed seconds, after about 31 clear seconds. Eleven paused samples retain the clock, gains, rates and ETA; Resume keeps the ready window, and running clocks advance in one-second steps. Real pickup arrivals remain unverified because the shop covers their log. A separate replay uses real name pixels with injected Z/2 OCR spellings and retains one run plus 1,534 EXP / 1.6% gain; it is not a live reproduction of the original spelling flip.
 - The final narrow-window layout reserves a full measured status-row height above the LV guard when using the above-HUD fallback, also clearing the chat/input strip. All 27 final layout/tracking checks pass after that spacing change. The usual left-corner placement is unchanged.
-- All four final SHA-256 checks pass in dist/SHA256SUMS-0.17.4.txt. Both stages match all 108 application/resource files and 53 test files. Packaged readers match their unchanged compiled targets, and both pinned translation bundles remain included. The Windows installer is 408,845,113 bytes; complete sizes/hashes are in docs/PATCH_0.17.4.md. Private captures, diagnostics and user data are excluded.
+- All four final SHA-256 checks pass in dist/SHA256SUMS-0.17.4.txt. Both stages match all 108 application/resource files and 53 test files. Packaged readers match their unchanged compiled targets, and both pinned translation bundles remain included. The Windows installer is 408,845,113 bytes; complete sizes/hashes are in docs/archive/patches/PATCH_0.17.4.md. Private captures, diagnostics and user data are excluded.
 - A final normal source preview, 2117207, replaces the bounded QA launcher after backing up settings/history and saving its session. Tracking starts stopped. Only Lupin's own panel is minimized to avoid covering the game's caption; helper 1984295 retains start time 18497686 and the existing share. Packaged documentation records staging-time checks; this completed report is also supplied separately as dist/VERIFICATION-0.17.4.md. Permanent host installation remains deferred. No source push, GitHub release or itch.io upload occurred. Native Windows gameplay and real meso-pickup acceptance remain separate live checks.
 
 ## Lupin v0.17.3

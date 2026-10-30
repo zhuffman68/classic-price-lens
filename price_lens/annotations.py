@@ -49,6 +49,8 @@ class AnnotationWindow(QWidget):
         self.reduce_motion = False
         self.watch_events = {}
         self.translation_layout=TranslationLayout()
+        from .composer_overlay import WriterHost
+        self.writer=WriterHost(self.report_writer,self)
         self.watch_star = QPolygonF([QPointF(math.cos(-math.pi/2+i*math.pi/5)*(5 if i%2==0 else 2.3),
                                             math.sin(-math.pi/2+i*math.pi/5)*(5 if i%2==0 else 2.3)) for i in range(10)])
         self.price_font = interface_font(12,QFont.Weight.DemiBold)
@@ -83,9 +85,13 @@ class AnnotationWindow(QWidget):
         import time
         try:
             state = json.loads(line)
+            if not isinstance(state,dict):return
             if state.get("quit"):
                 QApplication.quit()
                 return
+            if 'writer' in state:
+                self.writer.apply(state['writer'])
+                if 'rows' not in state:return
             self.last_command = time.monotonic()
             self.reduce_motion = bool(state.get("reduce_motion"))
             if state.get("hover_enabled") and not self.pointer_timer.isActive():
@@ -198,6 +204,13 @@ class AnnotationWindow(QWidget):
             self.rows = []
             self.hide()
 
+    def report_writer(self,report):
+        if report.get('event')=='layout':
+            self.update()
+        if hasattr(self,'listener'):
+            sys.stdout.buffer.write((json.dumps({'writer':report},ensure_ascii=False)+'\n').encode('utf-8'))
+            sys.stdout.buffer.flush()
+
     @staticmethod
     def row_key(row):
         return row.get("key", (row.get("name"), row.get("x"), row.get("y")))
@@ -255,6 +268,8 @@ class AnnotationWindow(QWidget):
 
     def place_translations(self,translations,previous,previous_boxes):
         messages=[];occupied=[];pointer=QCursor.pos()
+        if self.writer.window is not None and self.writer.window.isVisible():
+            occupied.append(self.writer.window.geometry().translated(-self.x(),-self.y()).getRect())
         for row in self.rows:
             if row.get('kind')=='translation':continue
             rect=self.label_rect(row,pointer)
@@ -556,6 +571,9 @@ class AnnotationWindow(QWidget):
         painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
         painter.fillRect(event.rect(), Qt.GlobalColor.transparent)
         painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+        if self.writer.window is not None and self.writer.window.isVisible():
+            owned=self.writer.window.geometry().translated(-self.x(),-self.y()).adjusted(-1,-1,1,1)
+            painter.setClipRegion(QRegion(self.rect()).subtracted(QRegion(owned)))
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         pointer = QCursor.pos()
         for row in self.rows + self.retiring:

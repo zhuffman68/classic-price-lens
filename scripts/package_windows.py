@@ -38,7 +38,7 @@ def main():
     python_zip = next(runtime.glob("python3*.zip"))
     pth.write_text(f"{python_zip.name}\n.\n..\nLib/site-packages\nimport site\n", encoding="utf-8")
     stage_application(OUT)
-    for name in ("run-windows.bat", "selftest-windows.bat", "windows-selftest.py"):
+    for name in ("run-windows.bat", "selftest-windows.bat"):
         shutil.copy2(ROOT / name, OUT / name)
     shutil.copy2(ROOT / "packaging/icon.ico", OUT / "lupin-scaled.ico")
     (OUT / "bin").mkdir(exist_ok=True)

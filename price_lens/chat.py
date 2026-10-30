@@ -299,7 +299,7 @@ class ChatTranslation(QObject):
         move_source(card,*offset)
         return card['box']
 
-    def annotations(self,image,sx,sy,bounds,occupied=()):
+    def annotations(self,image,sx,sy,bounds,occupied=(),rectangles=()):
         rows=[];now=time.monotonic()
         if now-self.last_track>=.2 and image.cacheKey()!=self.last_image:
             self.last_track=now;self.last_image=image.cacheKey();keep=[]
@@ -329,7 +329,7 @@ class ChatTranslation(QObject):
             from .overlay_layout import corner_offset
             rows.append({'kind':'translation_status','key':'chat:status','name':'Korean translation','text':message,'color':'#b8d6f2',
                          'x':bounds[0]+bounds[2]-4,'y':bounds[1]+bounds[3]-4,
-                         'anchor':'bottom_right','bottom_offset':corner_offset(bounds,occupied),
+                         'anchor':'bottom_right','bottom_offset':corner_offset(bounds,occupied,rectangles),
                          'bounds':bounds})
         return rows
 

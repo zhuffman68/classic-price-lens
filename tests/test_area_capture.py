@@ -16,6 +16,25 @@ ROOT=Path(__file__).resolve().parents[1]
 
 
 class AreaCaptureTests(unittest.TestCase):
+    def test_writer_exclusions_convert_full_display_to_manual_crop_before_roi(self):
+        reader=PixelReader(ROOT);reader.timer.stop()
+        try:
+            self.assertTrue(reader.process.waitForStarted(3000))
+            reader.image=QImage(1000,800,QImage.Format.Format_RGBA8888);reader.image.fill(QColor('#cccccc'))
+            reader.crop=QRect(100,80,600,500)
+            reader.shop_rect=QRect(120,90,250,250);reader.roi_clean=True
+            reader.writer_regions=lambda:[QRect(350,260,250,200),QRect(500,500,300,200),QRect(50,40,100,100),QRect(750,10,100,100)]
+            with patch.object(reader.process,'write') as write:
+                reader.scan();request=json.loads(bytes(write.call_args[0][0]))
+            self.assertEqual(request['origin'],dict(x=104,y=74))
+            self.assertEqual(request['exclude'],[
+                dict(x=250,y=180,width=250,height=200),
+                dict(x=400,y=420,width=200,height=80),
+                dict(x=0,y=0,width=50,height=60)])
+            self.assertTrue(reader.using_roi)
+        finally:
+            reader.close();reader.deleteLater();QCoreApplication.sendPostedEvents(None,QEvent.Type.DeferredDelete);self.app.processEvents()
+
     def test_empty_blue_npc_table_does_not_suppress_inventory_tooltip_requests(self):
         reader=PixelReader(ROOT);reader.timer.stop();reader.tooltip_enabled=True
         frame=QImage(800,800,QImage.Format.Format_RGBA8888);frame.fill(QColor('#cccccc'))

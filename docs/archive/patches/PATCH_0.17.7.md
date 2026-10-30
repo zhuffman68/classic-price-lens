@@ -37,7 +37,7 @@
 Actual archive probes found a useful 22.7 MB patch for the 425.4 MB portable ZIP.
 Native installer/package patches remain nearly full-sized and are omitted by the
 80-percent usefulness rule. Native updates therefore use full downloads with the
-current packaging. See [update details](UPDATES.md).
+current packaging. See [update details](../../UPDATES.md).
 
 ## Verification and release status
 

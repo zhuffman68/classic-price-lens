@@ -42,6 +42,8 @@ struct Request {
     read_map: bool,
     #[serde(default)]
     pickups_only: bool,
+    #[serde(default)]
+    exclude: Vec<Rect>,
 }
 
 fn main() {
@@ -102,6 +104,7 @@ fn main() {
                     return Ok(
                         serde_json::json!({"atMs":request.at_ms,"shop":null,"hover":null,"tooltip":null,
                         "gameArea":location.as_ref().map(|l|l.area),"gameGuards":location.as_ref().map(|l|&l.guards),
+                        "gameFooter":location.as_ref().map(|l|l.footer),
                         "ocrMs":started.elapsed().as_secs_f64()*1000.0}),
                     );
                 }
@@ -145,6 +148,8 @@ fn main() {
                 return Ok(serde_json::json!({"atMs":request.at_ms,"pickups":pickups.read(&frame),
                     "pickupsRead":true,"ocrMs":started.elapsed().as_secs_f64()*1000.0}));
             }
+            let mut frame=frame;
+            mask_owned_surfaces(&mut frame,origin,&request.exclude);
             let capture = ShopCapture {
                 frame,
                 origin,
@@ -213,6 +218,7 @@ fn main() {
             value["ocrMs"] = serde_json::json!(started.elapsed().as_secs_f64() * 1000.0);
             value["gameArea"] = serde_json::to_value(location.as_ref().map(|l| l.area))?;
             value["gameGuards"] = serde_json::to_value(location.as_ref().map(|l| &l.guards))?;
+            value["gameFooter"] = serde_json::to_value(location.as_ref().map(|l| l.footer))?;
             Ok(value)
         })();
         let value = result.unwrap_or_else(|err| serde_json::json!({"error":err.to_string()}));
@@ -222,5 +228,48 @@ fn main() {
         {
             break;
         }
+    }
+}
+
+fn mask_owned_surfaces(frame: &mut Frame, origin: ScreenPoint, regions: &[Rect]) {
+    // Only independent Lupin editor surfaces are supplied. Locator proofs were
+    // read from the original capture; the editor must never cover those proofs.
+    for rect in regions.iter().take(8) {
+        let left=(i64::from(rect.x)-i64::from(origin.x)).clamp(0,i64::from(frame.width)) as u32;
+        let top=(i64::from(rect.y)-i64::from(origin.y)).clamp(0,i64::from(frame.height)) as u32;
+        let right=(i64::from(rect.x)+i64::from(rect.width)-i64::from(origin.x)).clamp(0,i64::from(frame.width)) as u32;
+        let bottom=(i64::from(rect.y)+i64::from(rect.height)-i64::from(origin.y)).clamp(0,i64::from(frame.height)) as u32;
+        for y in top..bottom {
+            for x in left..right {
+                let at=((y*frame.width+x)*4) as usize;
+                frame.rgba[at..at+4].copy_from_slice(&[0,0,0,255]);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod writer_mask_tests {
+    use super::*;
+
+    #[test]
+    fn masks_only_owned_pixels_with_a_nonzero_roi_origin() {
+        let mut frame=Frame{width:10,height:8,rgba:vec![200;10*8*4],at_ms:0};
+        mask_owned_surfaces(&mut frame,ScreenPoint{x:30,y:40},&[
+            Rect{x:33,y:42,width:3,height:2},Rect{x:0,y:0,width:2,height:2},
+        ]);
+        for y in 0..8 {
+            for x in 0..10 {
+                let at=(y*10+x)*4;
+                assert_eq!(&frame.rgba[at..at+4],if (3..6).contains(&x) && (2..4).contains(&y) {&[0,0,0,255]} else {&[200;4]});
+            }
+        }
+    }
+
+    #[test]
+    fn clips_large_rectangles_to_the_capture() {
+        let mut frame=Frame{width:3,height:2,rgba:vec![200;3*2*4],at_ms:0};
+        mask_owned_surfaces(&mut frame,ScreenPoint{x:50,y:60},&[Rect{x:0,y:0,width:u32::MAX,height:u32::MAX}]);
+        assert!(frame.rgba.chunks(4).all(|pixel|pixel==[0,0,0,255]));
     }
 }

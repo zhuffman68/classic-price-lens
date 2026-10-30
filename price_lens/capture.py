@@ -43,6 +43,7 @@ class PixelReader(QObject):
         self.experience_source = None
         self.pending_pickups = False
         self.exclude_regions = lambda: []
+        self.writer_regions = lambda: []
         self.timings = deque(maxlen=240)
         self.last_metrics = 0
         self.shop_rect = None
@@ -64,6 +65,7 @@ class PixelReader(QObject):
         self.live_source = False
         self.game_area = None
         self.game_guards = []
+        self.game_footer = None
         self.submitted_image = QImage()
         self.next_area_search = 0.0
         self.last_geometry_check = 0.0
@@ -197,6 +199,7 @@ class PixelReader(QObject):
     def reset_area(self):
         self.game_area = None
         self.game_guards = []
+        self.game_footer = None
         self.next_area_search = 0
         self.shop_rect = self.shop_fingerprint = self.shop_context = None
         self.tooltip_rect = self.tooltip_fingerprint = None
@@ -345,6 +348,10 @@ class PixelReader(QObject):
                    "auto_game": self.auto_active and not self.pending_local_roi,
                    "roi": {"x": region.x(), "y": region.y(), "width": region.width(), "height": region.height()} if self.auto_active and self.using_roi and not self.pending_local_roi else None,
                    "width": image.width(), "height": image.height()}
+        crop_origin=self.crop.topLeft() if self.crop else QPoint()
+        source_region=self.crop.intersected(self.image.rect()) if self.crop else self.image.rect()
+        request['exclude']=[dict(zip(('x','y','width','height'),rect.intersected(source_region).translated(-crop_origin).getRect()))
+                            for rect in self.writer_regions()[:8] if rect.intersects(source_region)]
         self.tooltip_retry_requested = False
         self.process.write((json.dumps(request) + "\n").encode())
 
@@ -451,6 +458,9 @@ class PixelReader(QObject):
                         selected = QRect(area["x"], area["y"], area["width"], area["height"]) if area else None
                         changed = selected != self.game_area
                         self.game_area, self.game_guards = selected, fingerprints
+                        footer=result.get('gameFooter')
+                        self.game_footer=(QRect(*(footer[k] for k in ('x','y','width','height'))).intersected(selected)
+                                          if selected is not None and isinstance(footer,dict) else None)
                         if selected is None:
                             self.next_area_search = time.monotonic() + 0.4
                         if changed:

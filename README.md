@@ -1,6 +1,6 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/zhuffman68/lupin/main/price_lens/resources/lupin.gif" width="73" height="64" alt="Animated Lupin">
-  <img src="https://raw.githubusercontent.com/zhuffman68/lupin/main/price_lens/resources/wordmark.svg" width="122" height="45" alt="Lupin">
+  <img src="https://raw.githubusercontent.com/zhuffman68/lupin/main/price_lens/resources/lupin.gif" width="73" alt="Animated Lupin">
+  <img src="https://raw.githubusercontent.com/zhuffman68/lupin/main/price_lens/resources/wordmark.svg" width="122" alt="Lupin">
 </p>
 
 # Lupin

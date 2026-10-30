@@ -5,6 +5,37 @@ TRACKING_HEIGHT = 56
 MIN_TRACKING_WIDTH = 200
 
 
+def writer_placement(bounds,footer=None,guards=(),*,scale_x=1.0,scale_y=1.0):
+    """Reserve an expanding writer beside the measured HUD, or above it.
+
+    Bounds are display-local logical pixels. Footer/guards are captured pixels;
+    the returned expansion box has the same coordinate system as bounds. The
+    bridge adds the monitor origin only when positioning its independent window.
+    """
+    game=QRect(*bounds)
+    if game.width()<220 or game.height()<240:return None
+    if footer is not None:
+        hud=QRect(round(footer.x()*scale_x),round(footer.y()*scale_y),
+                  round(footer.width()*scale_x),round(footer.height()*scale_y)).intersected(game)
+    elif guards:
+        # Compatibility with readers predating the measured-footer field. The
+        # independent LV proof supplies the scale and the known HUD origin.
+        lv=max(guards,key=lambda rect:rect.height())
+        ui_scale=lv.width()/36
+        left=round((lv.x()-ui_scale)*scale_x)
+        top=round((lv.y()-7*ui_scale)*scale_y)
+        hud=QRect(left,top,round(798*ui_scale*scale_x),game.bottom()+1-top).intersected(game)
+    else:
+        hud=QRect(game.x(),game.bottom()-89,game.width(),90)
+    if hud.isEmpty():return None
+    lane=game.right()-hud.right()-12
+    width=min(280,lane) if lane>=240 else min(280,game.width()-12)
+    bottom=game.bottom()-6 if lane>=240 else hud.top()-max(10,round(hud.height()*.4))
+    maximum=min(240,bottom-game.top()-8)
+    if maximum<200:return None
+    return dict(box=[game.right()+1-width-6,bottom-maximum,width,maximum],bounds=list(bounds))
+
+
 def tracking_rows(rows,bounds,guards=(),*,scale_x=None,scale_y=1.0):
     """Use the empty HUD corner, or stack above the HUD if it is too narrow.
 
@@ -30,7 +61,7 @@ def tracking_rows(rows,bounds,guards=(),*,scale_x=None,scale_y=1.0):
     return list(reversed(placed))
 
 
-def corner_offset(bounds, occupied):
+def corner_offset(bounds, occupied, rectangles=()):
     """Stack a status above other cards that occupy the game's right corner."""
     offset = 0
     game = QRect(*bounds)
@@ -39,4 +70,8 @@ def corner_offset(bounds, occupied):
                 row.get('anchor') == 'bottom_left' and game.width()<720):
             height = row.get('tracking_height',36+17*len(row.get('extra','').splitlines()))
             offset = max(offset, int(row.get('bottom_offset', 0)) + height + 6)
+    for rect in rectangles:
+        rect=QRect(*rect) if not isinstance(rect,QRect) else rect
+        if rect.intersects(game) and rect.right()>=game.right()-350:
+            offset=max(offset,game.bottom()+1-rect.top()+6)
     return min(offset, max(0, game.height()-48))

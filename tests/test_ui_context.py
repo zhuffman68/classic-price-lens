@@ -18,6 +18,9 @@ from price_lens.ui import LensWindow
 
 class FakeOverlay(QObject):
     pointer = Signal(int, int)
+    writer_event = Signal(dict)
+    writer_lost = Signal()
+    writer_available = True
 
     def __init__(self, root, parent=None):
         super().__init__(parent)
@@ -25,6 +28,8 @@ class FakeOverlay(QObject):
 
     def update(self, geometry, rows, hover_enabled=False):
         self.rows = rows
+
+    def update_writer(self,state):self.writer_state=state
 
     def close(self):
         pass

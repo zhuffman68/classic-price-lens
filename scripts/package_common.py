@@ -27,6 +27,7 @@ def stage_application(out):
     documentation = out / "docs"
     documentation.mkdir(exist_ok=True)
     shutil.copy2(ROOT / "docs/TECHNICAL.md", documentation / "TECHNICAL.md")
+    shutil.copy2(ROOT / "docs/DEVELOPING.md", documentation / "DEVELOPING.md")
     shutil.copy2(ROOT / "docs/ARTWORK.md", documentation / "ARTWORK.md")
     shutil.copy2(ROOT / "docs/PRICE_LOOKUP_LATENCY.md", documentation / "PRICE_LOOKUP_LATENCY.md")
     shutil.copy2(ROOT / "docs/KOREAN_CHAT.md", documentation / "KOREAN_CHAT.md")
