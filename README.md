@@ -79,11 +79,10 @@ Use **Settings** and **Hotkeys…** to customize overlays, shortcuts, and update
 <br>
 
 <h3 align="center">Buy monkey a beer</h3>
+<!-- Balance the artwork's transparent padding so its visible centers align. -->
 <p align="center">
-  <a href="https://www.paypal.me/zhuffman68">
-    <img src="https://raw.githubusercontent.com/zhuffman68/lupin/main/docs/media/donate.png" width="190" align="middle" alt="Donate with PayPal">
-  </a>
+  <img src="https://raw.githubusercontent.com/zhuffman68/lupin/main/docs/media/header-spacer.svg" width="9" alt=""><a href="https://www.paypal.me/zhuffman68"><img src="https://raw.githubusercontent.com/zhuffman68/lupin/main/docs/media/donate.png" width="190" align="middle" alt="Donate with PayPal"></a>
 </p>
 <p align="center">
-  <img src="https://raw.githubusercontent.com/zhuffman68/lupin/main/docs/media/lupin-beer.gif" width="96" alt="Lupin drinking a beer">
+  <img src="https://raw.githubusercontent.com/zhuffman68/lupin/main/docs/media/header-spacer.svg" width="32" alt=""><img src="https://raw.githubusercontent.com/zhuffman68/lupin/main/docs/media/lupin-beer.gif" width="96" alt="Lupin drinking a beer">
 </p>
