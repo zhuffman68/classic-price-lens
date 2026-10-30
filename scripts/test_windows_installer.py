@@ -49,9 +49,10 @@ def main():
             subprocess.run(["wine", *map(str, command)], cwd=cwd or ROOT, env=env,
                            stdout=log, stderr=subprocess.STDOUT, timeout=timeout, check=True)
 
-        cache_code = ("from PySide6.QtCore import QCoreApplication; "
+        cache_code = ("from PySide6.QtCore import QCoreApplication,QSettings; "
                       "from price_lens.platform_paths import cache_directory; app=QCoreApplication([]); "
                       "app.setApplicationName('Classic Price Lens'); app.setOrganizationName('LocalTools'); "
+                      "s=QSettings(); s.setValue('update-on-launch',False); s.setValue('update-interval-minutes',0); "
                       "print(cache_directory())")
 
         def cache_marker(base=None):
