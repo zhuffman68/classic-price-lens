@@ -26,6 +26,7 @@ class CommandPipe(QObject):
 
 class AnnotationWindow(QWidget):
     korean_family=None
+    OCCLUSION_RELEASE_MS=200
 
     def __init__(self, start_listener=True):
         flags = (Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint
@@ -157,7 +158,7 @@ class AnnotationWindow(QWidget):
                 box=self.label_rect(row,QCursor.pos())
                 occlusion=row.get('occlusion')
                 covered=bool(occlusion and box and box.intersects(QRect(*occlusion)))
-                target=.25 if row.get('kind')=='shop' and covered else 1.0
+                target=self.occlusion_alpha(row,covered)
                 row['_target_alpha']=target
                 if self.reduce_motion:row['_alpha']=target
                 if old_text is not None and old_text != row["text"] and old_content!=row.get('content_id',row['text']) and not self.reduce_motion and not any(c.isdigit() for c in row['text']):
@@ -169,11 +170,17 @@ class AnnotationWindow(QWidget):
                 if row.get("_fading_out") or old is None or old_alpha_target!=target:
                     self.fade(row, target)
             current_hover = any(row.get("follow_pointer") is not None for row in self.rows)
+            current_shops=[row for row in self.rows if row.get('kind')=='shop']
             for key, row in previous.items():
                 box = previous_boxes.get(key)
                 # Never trail an old item's reference behind a newly identified one.
                 replaced_hover = current_hover and row.get("follow_pointer") is not None
-                if not self.reduce_motion and state.get("hover_enabled") and box is not None and not replaced_hover:
+                replaced_shop=row.get('kind')=='shop' and any(
+                    (new.get('shop_page') is not None and row.get('shop_page') is not None
+                     and new['shop_page']!=row['shop_page']) or
+                    (new.get('shop_slot') is not None and new.get('shop_slot')==row.get('shop_slot')
+                     and self.row_key(new)!=key) for new in current_shops)
+                if not self.reduce_motion and state.get("hover_enabled") and box is not None and not replaced_hover and not replaced_shop:
                     row["_retired_rect"] = box
                     self.retiring.append(row)
                     if not row.get("_fading_out"):
@@ -205,6 +212,29 @@ class AnnotationWindow(QWidget):
     @staticmethod
     def row_key(row):
         return row.get("key", (row.get("name"), row.get("x"), row.get("y")))
+
+    def occlusion_alpha(self,row,covered):
+        """Dim immediately; absorb one brief clear sample before reversing."""
+        row['_occlusion_requested']=covered
+        timer=row.get('_occlusion_release')
+        if covered or self.reduce_motion or row.get('kind')!='shop':
+            if timer is not None:
+                timer.stop();timer.deleteLater();row['_occlusion_release']=None
+            return .25 if row.get('kind')=='shop' and covered else 1.0
+        if row.get('_target_alpha')!=.25:return 1.0
+        if timer is None:
+            timer=QTimer(self);timer.setSingleShot(True);timer.setInterval(self.OCCLUSION_RELEASE_MS)
+            row['_occlusion_release']=timer
+            def release():
+                timer.stop()
+                if row.get('_occlusion_release') is timer:
+                    row['_occlusion_release']=None
+                    if row in self.rows and not row.get('_occlusion_requested'):
+                        row['_target_alpha']=1.0
+                        self.fade(row,1.0)
+                timer.deleteLater()
+            timer.timeout.connect(release);timer.start()
+        return .25
 
     def update_numbers(self, row):
         rolls=row.setdefault('_rolls',{});animations=row.setdefault('_roll_animations',{})
@@ -365,6 +395,8 @@ class AnnotationWindow(QWidget):
 
     @staticmethod
     def dispose_row(row):
+        timer=row.pop('_occlusion_release',None)
+        if timer is not None:timer.stop();timer.deleteLater()
         for key in ("_move", "_fade", "_text_fade", "_watch_pulse"):
             animation = row.get(key)
             if animation is not None:
@@ -559,8 +591,12 @@ class AnnotationWindow(QWidget):
         _,unit_width=self.tracking_gain_style(box)
         x,y,w=box.x()+6,box.y(),box.width()-12
         left=x+(90 if box.width()>=240 else 76);unit_x=x+w-unit_width
+        title='EXP' if row.get('key')=='experience' else 'MESO'
+        heading_x=x+QFontMetrics(self.name_font).horizontalAdvance('+')+2
+        heading_width=QFontMetrics(self.tracking_label_font).horizontalAdvance(title)+7
         return dict(gain=QRect(left,y+14,max(1,unit_x-left-4),29),
                     unit=QRect(unit_x,y+14,unit_width,29),
+                    heading=QRect(heading_x,y+1,heading_width,13),
                     context=QRect(x+w-54,y+1,54,13))
 
     def paint_tracking(self,painter,row,box):
@@ -570,13 +606,14 @@ class AnnotationWindow(QWidget):
         columns=self.tracking_columns(row,box)
         painter.setFont(self.tracking_label_font);painter.setPen(QColor('#d8dee7'))
         title='EXP' if row.get('key')=='experience' else 'MESO'
-        label_width=painter.fontMetrics().horizontalAdvance(title)+7
-        painter.drawText(QRect(x,y+1,label_width,13),Qt.AlignmentFlag.AlignVCenter,title)
+        heading=columns['heading']
+        painter.drawText(heading,Qt.AlignmentFlag.AlignVCenter,title)
         painter.setFont(self.name_font)
         basis=values['basis'].replace('EXP unreadable','Unreadable')
-        basis_width=columns['context'].left()-x-label_width-6
+        basis_left=heading.right()+1
+        basis_width=max(0,columns['context'].left()-basis_left-6)
         basis=painter.fontMetrics().elidedText(basis,Qt.TextElideMode.ElideRight,basis_width)
-        painter.setPen(QColor('#a5b3c7'));painter.drawText(QRect(x+label_width,y+1,basis_width,13),Qt.AlignmentFlag.AlignVCenter,basis)
+        painter.setPen(QColor('#a5b3c7'));painter.drawText(QRect(basis_left,y+1,basis_width,13),Qt.AlignmentFlag.AlignVCenter,basis)
         gain_font,_=self.tracking_gain_style(box)
         painter.setFont(gain_font);painter.setPen(QColor(row.get('color','#e4bd7b')))
         self.paint_number(painter,row,'gain',columns['gain'],values['gain'],Qt.AlignmentFlag.AlignRight|Qt.AlignmentFlag.AlignVCenter)

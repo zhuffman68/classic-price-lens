@@ -171,9 +171,79 @@ class AnnotationMotionTests(unittest.TestCase):
         self.assertEqual(before,[self.window.label_rect(row,QPoint()) for row in self.window.rows])
         for row in rows:row['occlusion']=None
         self.window.read_command(json.dumps(state))
+        affected['_occlusion_release'].timeout.emit()
         affected['_fade'].setCurrentTime(110)
         self.assertAlmostEqual(affected['_alpha'],1)
         self.assertEqual(before,[self.window.label_rect(row,QPoint()) for row in self.window.rows])
+
+    def test_one_clear_sample_does_not_reverse_the_dimmed_shop_label(self):
+        self.window.read_command(json.dumps({**self.command,'rows':[],'hover_enabled':False}))
+        row={'x':120,'y':90,'name':'Hat','key':'shop:2:100:slot','kind':'shop',
+             'shop_page':2,'shop_slot':[60,20,180,40],'text':'FM 1,000',
+             'color':'#86ceac','deal_delta':'-25%','occlusion':[200,80,300,100]}
+        state={**self.command,'rows':[row]}
+        self.window.read_command(json.dumps(state))
+        active=self.window.rows[0];active['_fade'].setCurrentTime(110)
+        before=self.window.grab().toImage()
+        self.window.read_command(json.dumps({**state,'rows':[{**row,'occlusion':None}]}))
+        release=active['_occlusion_release']
+        self.assertIsNone(active['occlusion'])
+        self.assertAlmostEqual(active['_alpha'],.25)
+        self.assertEqual(before,self.window.grab().toImage())
+        self.window.read_command(json.dumps(state))
+        self.assertIs(self.window.rows[0],active)
+        self.assertIsNone(active.get('_occlusion_release'))
+        self.assertFalse(release.isActive())
+        self.assertEqual(active['color'],'#86ceac');self.assertEqual(active['deal_delta'],'-25%')
+        self.assertEqual(before,self.window.grab().toImage())
+
+    def test_repeated_clear_samples_share_one_bounded_release_timer(self):
+        from PySide6.QtTest import QTest
+        row={'x':120,'y':90,'name':'Hat','key':'shop:0','kind':'shop','text':'FM 1,000',
+             'occlusion':[200,80,300,100]}
+        state={**self.command,'rows':[row]}
+        self.window.read_command(json.dumps(state));active=self.window.rows[0]
+        active['_fade'].setCurrentTime(110)
+        clear={**state,'rows':[{**row,'occlusion':None}]}
+        self.window.read_command(json.dumps(clear));release=active['_occlusion_release']
+        self.assertLessEqual(release.interval(),220)
+        self.window.read_command(json.dumps(clear))
+        self.assertIs(active['_occlusion_release'],release)
+        for _ in range(12):self.window.read_command(json.dumps(clear))
+        self.assertIs(active['_occlusion_release'],release)
+        QTest.qWait(220)
+        self.assertEqual(active['_target_alpha'],1)
+        if active.get('_fade'):active['_fade'].setCurrentTime(110)
+        self.assertAlmostEqual(active['_alpha'],1)
+        self.assertIsNone(active.get('_occlusion_release'))
+
+    def test_a_single_bad_sample_at_normal_150ms_delivery_does_not_brighten(self):
+        from PySide6.QtTest import QTest
+        row={'x':120,'y':90,'name':'Hat','key':'shop:0','kind':'shop','text':'FM 1,000',
+             'occlusion':[200,80,300,100]}
+        state={**self.command,'rows':[row]}
+        self.window.read_command(json.dumps(state));active=self.window.rows[0]
+        active['_fade'].setCurrentTime(110)
+        clear={**state,'rows':[{**row,'occlusion':None}]}
+        self.window.read_command(json.dumps(clear));release=active['_occlusion_release']
+        QTest.qWait(150)
+        self.assertIs(active.get('_occlusion_release'),release)
+        self.assertAlmostEqual(active['_alpha'],.25)
+        self.window.read_command(json.dumps(state))
+        self.assertIsNone(active.get('_occlusion_release'))
+        self.assertAlmostEqual(active['_alpha'],.25)
+
+    def test_new_shop_page_or_new_item_in_the_slot_does_not_trail_old_references(self):
+        self.window.read_command(json.dumps({**self.command,'rows':[],'hover_enabled':False}))
+        row={'x':120,'y':90,'name':'Hat','key':'shop:2:100:slot','kind':'shop',
+             'shop_page':2,'shop_slot':[60,20,180,40],'text':'FM 1,000'}
+        for changed in ({**row,'shop_page':3,'key':'shop:3:100:slot'},
+                        {**row,'key':'shop:2:200:slot','name':'Shoes'}):
+            self.window.read_command(json.dumps({**self.command,'rows':[row]}))
+            old=self.window.rows[0];old['_fade'].setCurrentTime(110)
+            self.window.read_command(json.dumps({**self.command,'rows':[changed]}))
+            self.assertNotIn(old,self.window.retiring)
+            self.assertIsNone(old.get('_fade'))
 
     def test_reduce_motion_keeps_overlap_transparency_without_an_animation(self):
         self.window.read_command(json.dumps({**self.command,'reduce_motion':True,'rows':[

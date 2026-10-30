@@ -21,7 +21,7 @@ from .tray import TrayController
 from .experience_ui import ExperiencePanel
 from .platform_paths import data_directory
 from .search import PriceSearch
-from .motion import AnimatedTabs, ContentArea, MotionLabel
+from .motion import AnimatedTabs, ContentArea, CardArea, MotionLabel
 from .fonts import interface_family
 from .branding import Brand
 from .shop_rows import ShopRows
@@ -41,7 +41,7 @@ from .tls import catalog_error_text
 from .watchlist import Watchlist, WatchEncounters
 from .reference_service import ReferenceService
 from .reference_ui import DatabasePanel
-from .recent_items import RecentItems
+from .recent_items import RecentItems,ActiveCards
 from .overlay_notice import OverlayNotice
 from . import APP_NAME, LEGACY_APP_NAME
 
@@ -111,6 +111,8 @@ class LensWindow(QMainWindow):
         self.starting_at = 0.0
         self.session_available = False
         self.rows = []
+        self.card_sightings=ActiveCards(self)
+        self.card_sightings.changed.connect(self.render)
         self.tooltip_reference=TooltipReference()
         self.tooltip_names=TooltipNames()
         self.shop_rows = ShopRows(self.shop_identity)
@@ -315,16 +317,25 @@ class LensWindow(QMainWindow):
         layout.addWidget(self.setup_frame)
 
         self.summary = label("", "font-size: 12px; color: #dde1e7", True)
+        self.summary.setFixedHeight(20)
 
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         self.scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.cards = QWidget()
-        self.cards_layout = QVBoxLayout(self.cards)
+        self.cards_stack=QVBoxLayout(self.cards)
+        self.cards_stack.setContentsMargins(0,0,0,0);self.cards_stack.setSpacing(0)
+        self.card_area=CardArea(self.cards)
+        card_content=QVBoxLayout(self.card_area.content);card_content.setContentsMargins(0,0,0,0);card_content.setSpacing(8)
+        card_content.addWidget(self.summary)
+        self.card_list=QWidget(self.card_area.content);card_content.addWidget(self.card_list)
+        self.cards_layout = QVBoxLayout(self.card_list)
         self.cards_layout.setContentsMargins(0, 0, 0, 0)
         self.cards_layout.setSpacing(10)
+        self.cards_stack.addWidget(self.card_area)
         self.recent_items=RecentItems(self.cards)
-        self.cards_layout.addWidget(self.recent_items)
+        self.cards_stack.addWidget(self.recent_items)
+        self.cards_stack.addStretch()
         self.scroll.setWidget(self.cards)
         self.exp_panel = ExperiencePanel(data_directory()/"exp-sessions.sqlite",parent=self)
         self.exp_panel.enabled_changed.connect(self.set_exp_enabled)
@@ -368,7 +379,6 @@ class LensWindow(QMainWindow):
         self.onscreen_button=QPushButton("On-screen items")
         self.onscreen_button.setCheckable(True);self.onscreen_button.toggled.connect(self.update_price_layout)
         self.price_content_layout.addWidget(self.onscreen_button)
-        self.price_content_layout.addWidget(self.summary)
         self.price_content_layout.addWidget(self.scroll,1)
         prices_layout.addWidget(self.price_content,1)
         self.search_panel.detail_changing.connect(self.price_content.begin)
@@ -618,7 +628,7 @@ class LensWindow(QMainWindow):
         self.search_panel.detail_scroll.setVisible(detail)
         self.scroll.setVisible(show)
         self.scroll.setMaximumHeight(220 if detail else 16777215)
-        self.summary.setVisible(show and bool(self.summary.text()))
+        self.summary.setVisible(bool(self.summary.text()))
         self.price_content_layout.setStretch(self.price_content_layout.indexOf(self.search_panel.detail_scroll),1 if detail else 0)
         self.price_content_layout.setStretch(self.price_content_layout.indexOf(self.scroll),0 if detail else 1)
         self.price_content.complete()
@@ -1616,34 +1626,41 @@ class LensWindow(QMainWindow):
         now = time.time()
         screen_old = not self.last_screen or now - self.last_screen > 8
         observations = self.rows + ([self.tooltip_result] if self.tooltip_result else [])
+        card_rows=self.card_sightings.observe(self.rows,self.tooltip_result,
+            retain=self.mode=='live' and not screen_old and self.prices_enabled,
+            context=(self.screen_index,self.reader.crop.getRect() if self.reader.crop else None),
+            page=self.shop_rows.page_revision)
+        displayed=[row for row,_ in card_rows]
+        active={item.game_id for row in displayed if self.catalog and (item:=self.catalog.resolve(row.get('name'),row.get('tier')))}
         if self.catalog:
-            if self.mode in ('live','screenshot') and not screen_old and self.prices_enabled:self.recent_items.observe(observations,self.catalog,now)
-            else:self.recent_items.active={item.game_id for row in observations if (item:=self.catalog.resolve(row.get('name'),row.get('tier')))}
+            if self.mode in ('live','screenshot') and not screen_old and self.prices_enabled:self.recent_items.observe(observations,self.catalog,now,active=active)
+            else:self.recent_items.active=active
             self.recent_items.refresh(self.service,self.ttl,now)
         structure=tuple((hovered,item.game_id if self.catalog and (item:=self.catalog.resolve(row.get('name'),row.get('tier'))) else row.get('name'))
-                        for row,hovered in ([(self.tooltip_result,True)] if self.tooltip_result else [])+[(row,False) for row in self.rows])
+                        for row,hovered in card_rows)
         if not structure:
-            structure=('empty',self.mode,self.shop_open,self.capture_starting,self.catalog_error,self.catalog_loading,self.reader.game_area is not None)
+            structure=('empty',self.mode,self.shop_open,self.capture_starting,self.catalog_error,self.catalog_loading,self.reader.game_area is not None,bool(self.recent_items.rows_by_id))
         previous=getattr(self,'screen_card_structure',None)
-        if previous is not None and previous!=structure and self.scroll.isVisible():
-            self.price_content.begin()
+        structure_changed=previous!=structure
+        if structure_changed:self.card_area.begin()
         self.screen_card_structure=structure
         ready = 0
         if self.catalog:
-            for row in observations:
+            for row in displayed:
                 item = self.catalog.resolve(row.get("name"), row.get("tier"))
                 quote = self.quote_for(item)
                 if quote and quote.price is not None and quote.fresh(now, self.ttl):
                     ready += 1
-        count = len(observations)
+        count = len(displayed)
         if count:
             self.summary.setText(("Last read: " if self.mode == "paused" else "") + f"{count} item{'s' if count != 1 else ''} · {ready} market reference{'s' if ready != 1 else ''} ready")
         else:
             self.summary.clear()
+        self.summary.setVisible(bool(self.summary.text()))
         # Keep the UI small at rest. Rebuild only when content/state changes or
         # the five-second age bucket changes; screen frames never rebuild cards.
         visible=[]
-        for row,hovered in ([(self.tooltip_result,True)] if self.tooltip_result else [])+[(row,False) for row in self.rows]:
+        for row,hovered in card_rows:
             item=self.catalog.resolve(row.get('name'),row.get('tier')) if self.catalog else None
             quote=self.quote_for(item);price=row.get('price') or {}
             visible.append((hovered,item.game_id if item else row.get('name'),row.get('tier'),
@@ -1655,20 +1672,27 @@ class LensWindow(QMainWindow):
                             self.service.state_for(item.game_id) if item else ''))
         card_key = (tuple(visible),
                     self.mode, self.shop_open, screen_old, self.capture_starting, self.catalog_loading,
-                    self.catalog_error, id(self.catalog), self.ttl,self.prices_enabled)
+                    self.catalog_error, id(self.catalog), self.ttl,self.prices_enabled,bool(self.recent_items.rows_by_id),self.reader.game_area is not None)
         if card_key != getattr(self, "card_key", None):
             self.card_key = card_key
             position = self.scroll.verticalScrollBar().value()
             used = set()
             ordered = []
-            if not observations and not self.recent_items.rows_by_id:
+            if structure_changed:self.card_area.setProperty('suppressMotion',True)
+            if not displayed and not self.recent_items.rows_by_id:
                 key = ("empty",self.mode,self.shop_open,self.capture_starting,self.catalog_error,self.catalog_loading,
                        self.reader.game_area is not None)
                 used.add(key)
                 if key not in self.card_views:self.card_views[key]=self.empty_card()
                 ordered.append(self.card_views[key])
                 self.card_views[key].show()
-            card_rows = ([(self.tooltip_result, True)] if self.tooltip_result else []) + [(row, False) for row in self.rows]
+            desired=[];occurrences={}
+            for row,hovered in card_rows:
+                item=self.catalog.resolve(row.get('name'),row.get('tier')) if self.catalog else None
+                identity=(hovered,item.game_id if item else row.get('name'))
+                occurrence=occurrences.get(identity,0);occurrences[identity]=occurrence+1
+                desired.append((*identity,occurrence))
+            replacements={key:card for key,card in self.card_views.items() if key not in desired and hasattr(card,'update_data')}
             occurrences={}
             for index, (row, hovered) in enumerate(card_rows):
                 item = self.catalog.resolve(row.get("name"), row.get("tier")) if self.catalog else None
@@ -1687,7 +1711,11 @@ class LensWindow(QMainWindow):
                     card = self.card_views[key]
                     card.update_data(**data)
                 else:
-                    card = self.card_views[key] = price_card(watchlist=self.watchlist,**data)
+                    old_key=next((old_key for old_key in replacements if old_key[0] is hovered),None)
+                    if old_key is not None:
+                        card=replacements.pop(old_key);self.card_views.pop(old_key)
+                        card.update_data(**data);self.card_views[key]=card
+                    else:card = self.card_views[key] = price_card(watchlist=self.watchlist,**data)
                 ordered.append(card)
                 card.setProperty('gameItemId',item.game_id if item else None)
                 card.thumbnail.setVisible(item is not None)
@@ -1700,8 +1728,8 @@ class LensWindow(QMainWindow):
                     card.hide();card.deleteLater()
             for index,card in enumerate(ordered):
                 if self.cards_layout.indexOf(card)!=index:self.cards_layout.insertWidget(index,card)
-            if not getattr(self,'card_spacer',False):
-                self.cards_layout.addStretch();self.card_spacer=True
+            self.card_area.setProperty('suppressMotion',False)
+            self.card_area.complete()
             self.scroll.verticalScrollBar().setValue(position)
         self.update_price_layout()
         self.draw_labels(now, screen_old)
@@ -1725,7 +1753,7 @@ class LensWindow(QMainWindow):
             sx, sy = geometry.width() / image.width(), geometry.height() / image.height()
             crop = self.reader.crop
             offset_x, offset_y = (crop.x(), crop.y()) if crop else (0, 0)
-            for index, row in enumerate(self.rows):
+            for row in self.rows:
                 if not row.get('name'):
                     continue
                 area = row["area"]
@@ -1735,9 +1763,16 @@ class LensWindow(QMainWindow):
                 status = reference_status(quote, state, now, self.ttl)
                 price = row.get("price") or {}
                 verdict = compare(item, price.get("quantity"), price.get("mesos"), quote, now, self.ttl)
+                compatible=bool(item and quote and quote.game_id==item.game_id and quote.world==WORLD
+                    and quote.condition=='clean' and quote.per_set==item.per_set and quote.fresh(now,self.ttl))
+                quote_key=(self.quote_generation,quote) if compatible else None
+                presentation=self.shop_rows.presentation_for(row,quote_key=quote_key) if compatible else None
+                presentation_held=bool(presentation and not row.get('price'))
+                if presentation_held:
+                    verdict=compare(item,presentation.get('quantity'),presentation.get('mesos'),quote,now,self.ttl)
                 if quote and quote.price is not None and quote.fresh(now, self.ttl):
                     ready_price = True
-                    suffix = "listing covered" if row.get("listing_old") else "listing price unclear" if verdict.label == "Unreadable" else ""
+                    suffix = "listing covered" if row.get("listing_old") and not presentation_held else "listing price unclear" if verdict.label == "Unreadable" else ""
                     text = f"FM {mesos(quote.price)} • {suffix} • {status}"
                     if not suffix:text = f"FM {mesos(quote.price)} • {status}"
                     if verdict.label == "Thin data":
@@ -1752,11 +1787,15 @@ class LensWindow(QMainWindow):
                     text = "FM " + (status if state else "unavailable" if item.game_id in self.errors else "checking…")
                 else:
                     text = "FM • checking item version" if item is None and row.get("name") else "FM • name unreadable"
+                slot=row.get('shop_slot') or self.shop_rows.relative_slot(row)
+                if slot is None:continue
+                page=row.get('shop_page',self.shop_rows.page_revision)
                 annotations.append({"x": round((area["x"] + area["width"] + offset_x) * sx) + 24,
                                     "y": round((area["y"] + offset_y + area["height"] / 2) * sy) - 12,
                                     "name": item.name if item else row.get("name") or "Unresolved item",
                                     "text": text, "color": COLORS[verdict.tone],
-                                    "key": f"shop:{index}:{item.game_id if item else row.get('name')}",
+                                    "key": f"shop:{page}:{item.game_id if item else row.get('name')}:{tuple(slot)}",
+                                    "shop_page":page,"shop_slot":list(slot),"presentation_held":presentation_held,
                                     "item_id": item.game_id if item else None,
                                     "content_id":[item.game_id if item else row.get('name'),quote.price if quote else None],
                                     "animate_move": True,"kind":"shop",

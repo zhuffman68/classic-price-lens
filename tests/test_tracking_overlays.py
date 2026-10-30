@@ -14,7 +14,7 @@ ROOT=Path(__file__).resolve().parents[1]
 
 def rows():
     return [dict(key='experience',kind='tracking',name='EXP · Character · Lv. 30',text='+1.20%',color='#e4bd7b',clock='01:20',
-                 metrics=[('Gained','+1.20%'),('Per minute','+0.90%'),('Per hour','+54.0%')],footer='Level 31 · ETA 1h 20m',basis='Last 5 min',progress='24.10%',status='Rates average the last 5m tracked'),
+                 metrics=[('Gained','+1.20%'),('Per minute','+0.90%'),('Per hour','+54.0%')],footer='Level 31 · ETA 1h 20m',basis='',progress='24.10%',status=''),
             dict(key='meso-gain',kind='tracking',name='Meso gained',text='1,200',clock='01:20',color='#b7d4a9',
                  metrics=[('Picked up','+1,200'),('Per minute','+900'),('Per hour','+54,000')],footer='Last pickup: +29',status='Watching pickup messages')]
 
@@ -75,10 +75,30 @@ class TrackingOverlayTests(unittest.TestCase):
                     self.assertLessEqual(width,parts['gain'].width())
                     self.assertTrue(window.label_rect(row,QPoint()).contains(parts['unit']))
                 self.assertEqual(window.tracking_values(window.rows[1])['detail'],'Last pickup: +29')
-                self.assertEqual(window.tracking_values(window.rows[0])['basis'],'Last 5 min')
+                self.assertEqual(window.tracking_values(window.rows[0])['basis'],'')
                 self.assertEqual(window.tracking_values(window.rows[0])['gain'],'+1.20')
             supplied=rows()[1];supplied['metrics'][0]=('Picked up','—')
             self.assertEqual(window.tracking_values(supplied)['unit'],'')
+        finally:window.close();window.deleteLater()
+
+    def test_bold_headings_begin_after_the_rate_plus_sign_without_moving_totals(self):
+        from PySide6.QtGui import QFontMetrics
+        window=AnnotationWindow(start_listener=False)
+        try:
+            for width in (200,240,273):
+                supplied=[dict(row,x=4,y=100,tracking_width=width,tracking_height=56) for row in rows()]
+                window.read_command(json.dumps(dict(geometry=[0,0,800,800],rows=supplied,reduce_motion=True)))
+                for row in window.rows:
+                    box=window.label_rect(row,QPoint());columns=window.tracking_columns(row,box)
+                    rate_left=box.left()+6
+                    plus_width=QFontMetrics(window.name_font).horizontalAdvance('+')
+                    self.assertGreater(columns['heading'].left(),rate_left+plus_width)
+                    self.assertLess(columns['heading'].right(),columns['context'].left())
+                    self.assertEqual(columns['gain'].top(),box.top()+14)
+                    self.assertEqual(columns['unit'].top(),box.top()+14)
+                    self.assertEqual(columns['context'].top(),box.top()+1)
+            row=rows()[0];row['compact_note']='Paused'
+            self.assertEqual(window.tracking_values(row)['basis'],'Paused')
         finally:window.close();window.deleteLater()
 
     def test_real_painted_cards_no_longer_destroy_window_detection(self):

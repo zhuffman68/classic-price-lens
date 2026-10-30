@@ -163,9 +163,14 @@ fn main() {
                     let tooltip_reader=tooltip_reader.get_or_insert_with(ItemTooltipReader::bundled);
                     let reading = tooltip_reader.read(&tooltip_capture);
                     value["tooltip"] = serde_json::to_value(reading.tooltip)?;
+                    let mut marker_title=true;
                     if !value["tooltip"]["found"]["name"].is_string() {
-                        let popup=centered_titles.read(&tooltip_capture)
-                            .or_else(||tooltip_text::popup(tooltip_reader,&mut tooltip_capture));
+                        let popup=if let Some(title)=centered_titles.read(&tooltip_capture) {
+                            marker_title=false;
+                            Some(title)
+                        } else {
+                            tooltip_text::popup(tooltip_reader,&mut tooltip_capture)
+                        };
                         if let Some(popup)=popup {
                             value["tooltip"]=serde_json::to_value(popup)?;
                             value["tooltip"]["found"]["pinned"]=serde_json::json!(true);
@@ -174,7 +179,7 @@ fn main() {
                     if request.tooltip_retry {
                         let found=&value["tooltip"]["found"];
                         if found.is_object() {
-                            let candidates=tooltip_text::alternatives(&tooltip_capture.frame,tooltip_capture.origin,found);
+                            let candidates=tooltip_text::alternatives(&tooltip_capture.frame,tooltip_capture.origin,found,marker_title);
                             value["tooltip"]["found"]["alternatives"]=serde_json::json!(candidates);
                         }
                         value["tooltipRetried"]=serde_json::json!(true);

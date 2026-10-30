@@ -1,7 +1,7 @@
 """Short, interruptible QWidget motion; idle and hidden widgets do no animation work."""
 import re
 from PySide6.QtCore import QEasingCurve,QPoint,Qt,QVariantAnimation,QSize,QRect
-from PySide6.QtGui import QPainter, QPalette
+from PySide6.QtGui import QPainter, QPalette,QPixmap
 from PySide6.QtWidgets import QApplication, QGraphicsOpacityEffect, QLabel, QTabWidget, QWidget,QSizePolicy,QStackedWidget,QStyle,QStyleOption
 from .number_motion import NumberRoll
 from . import gui_currency
@@ -9,6 +9,10 @@ from . import gui_currency
 
 def enabled(widget):
     app = QApplication.instance()
+    ancestor=widget
+    while ancestor is not None:
+        if ancestor.property('suppressMotion'):return False
+        ancestor=ancestor.parentWidget()
     return bool(app and not app.property("reduceMotion") and widget.isVisible()
                 and not widget.window().isMinimized())
 
@@ -141,9 +145,13 @@ class _ContentFrame(QWidget):
     def paintEvent(self,event):
         painter=QPainter(self);option=QStyleOption();option.initFrom(self)
         self.style().drawPrimitive(QStyle.PrimitiveElement.PE_Widget,option,painter,self)
-        # Fade through the panel background so old/new text never overlaps.
-        painter.setOpacity(abs(2*self.progress-1))
-        painter.drawPixmap(0,0,self.before if self.progress<.5 else self.after)
+        # Retain outgoing pixels while the incoming page settles. There must
+        # never be a blank midpoint, including when a transition is interrupted.
+        progress=self.progress
+        painter.setOpacity(1-progress if self.after.isNull() else 1.0)
+        painter.drawPixmap(0,-round(5*progress),self.before)
+        painter.setOpacity(progress)
+        painter.drawPixmap(0,round(5*(1-progress)),self.after)
 
 
 class ContentArea(QWidget):
@@ -181,6 +189,91 @@ class ContentArea(QWidget):
     def resizeEvent(self,event):
         super().resizeEvent(event)
         if self.outgoing:self.outgoing.setGeometry(self.rect())
+
+    def hideEvent(self,event):
+        self.finish();super().hideEvent(event)
+
+
+class CardArea(QWidget):
+    """A fixed-size card canvas whose clipped height moves its siblings.
+
+    Children are laid out once at their destination size. Only this viewport's
+    height changes during motion, so wrapped text is never squeezed each frame.
+    History remains a live sibling and is never part of a card snapshot.
+    """
+    def __init__(self,parent=None):
+        super().__init__(parent)
+        self.content=QWidget(self);self.before=None;self.outgoing=None
+        self.full_height=0;self.start_height=0;self.setFixedHeight(0)
+        self.animation=QVariantAnimation(self);self.animation.setDuration(180)
+        self.animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
+        self.animation.valueChanged.connect(self.advance)
+        self.animation.finished.connect(self.finish)
+
+    def begin(self):
+        current_height=self.height()
+        pixels=(self.grab() if current_height>0 else QPixmap()) if enabled(self) else None
+        self.finish();self.setFixedHeight(current_height);self.before=pixels;self.start_height=current_height
+
+    def measure(self):
+        layout=self.content.layout()
+        if layout is None or not any(layout.itemAt(i).widget() and not layout.itemAt(i).widget().isHidden() for i in range(layout.count())):return 0
+        layout.invalidate()
+        return max(0,layout.totalHeightForWidth(self.width()) if layout.hasHeightForWidth() else layout.totalSizeHint().height())
+
+    def complete(self):
+        pixels=self.before;self.before=None
+        target=self.measure()
+        if pixels is None and self.animation.state()==self.animation.State.Running and enabled(self):
+            # Quote/age changes update the destination pixels, without restarting
+            # a replacement or flashing its live widgets through the snapshot.
+            progress=float(self.animation.currentValue() or 0)
+            if target!=self.full_height and progress<1:
+                self.start_height=(self.height()-target*progress)/(1-progress)
+            self.full_height=target;self.content.resize(self.width(),target)
+            if self.content.layout():self.content.layout().activate()
+            if self.outgoing:
+                self.outgoing.after=self.content.grab() if target else QPixmap()
+                self.outgoing.setGeometry(0,0,self.width(),max(self.height(),target,round(self.start_height)))
+                self.outgoing.update()
+            return
+        self.full_height=target
+        self.content.resize(self.width(),self.full_height)
+        if self.content.layout():self.content.layout().activate()
+        self.content.setVisible(self.full_height>0)
+        if not enabled(self):
+            self.finish();return
+        if pixels is None:
+            if self.height()!=self.full_height:
+                self.start_height=self.height()
+                self.animation.setStartValue(0.0);self.animation.setEndValue(1.0);self.animation.start()
+            return
+        after=self.content.grab() if self.full_height else QPixmap()
+        self.outgoing=_ContentFrame(pixels,after,self)
+        self.outgoing.setGeometry(0,0,self.width(),max(self.start_height,self.full_height))
+        self.content.hide();self.outgoing.show();self.outgoing.raise_()
+        self.animation.setStartValue(0.0);self.animation.setEndValue(1.0);self.animation.start()
+
+    def advance(self,progress):
+        if not enabled(self):self.finish();return
+        progress=float(progress)
+        self.setFixedHeight(round(self.start_height+(self.full_height-self.start_height)*progress))
+        if self.outgoing:self.outgoing.progress=progress;self.outgoing.update()
+        parent=self.parentWidget()
+        if parent and parent.layout():parent.layout().activate()
+
+    def finish(self):
+        self.animation.stop();self.before=None
+        if self.outgoing:
+            self.outgoing.hide();self.outgoing.deleteLater();self.outgoing=None
+        self.setFixedHeight(self.full_height)
+        self.content.setVisible(self.full_height>0)
+
+    def resizeEvent(self,event):
+        super().resizeEvent(event)
+        if event.oldSize().width()!=event.size().width():
+            self.finish();self.full_height=self.measure()
+            self.content.resize(self.width(),self.full_height);self.setFixedHeight(self.full_height)
 
     def hideEvent(self,event):
         self.finish();super().hideEvent(event)

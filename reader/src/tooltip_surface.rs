@@ -3,11 +3,11 @@
 use minerva_core::Frame;
 
 #[derive(Clone, Copy)]
-struct Dot {
-    x0: u32,
-    y0: u32,
-    x1: u32,
-    y1: u32,
+pub(crate) struct Dot {
+    pub x0: u32,
+    pub y0: u32,
+    pub x1: u32,
+    pub y1: u32,
 }
 
 pub(crate) fn rgb(frame: &Frame, x: u32, y: u32) -> [u8; 3] {
@@ -41,12 +41,60 @@ pub(crate) fn title_light(p: [u8; 3]) -> Option<u8> {
 
 #[cfg(test)]
 mod title_tests {
+    use super::*;
+
     #[test]
     fn orange_and_coloured_title_ink_retains_antialiased_strokes() {
         for p in [[255,153,0],[170,105,45],[255,230,80],[190,100,240]] {
             assert!(super::title_light(p).is_some_and(|v|v>=145));
         }
         assert!(super::title_light([70,40,110]).is_none_or(|v|v<130));
+    }
+
+    fn title_frame(ink: [u8; 3]) -> Frame {
+        let mut frame = Frame {width: 80, height: 20, rgba: [30,30,70,255].repeat(1600), at_ms: 0};
+        for y in 7..12 {
+            for x in 8..13 {
+                if (x as i32 - 10).abs() + (y as i32 - 9).abs() <= 2 {
+                    let at = ((y * frame.width + x) * 4) as usize;
+                    frame.rgba[at..at+3].copy_from_slice(&ink);
+                }
+            }
+        }
+        frame
+    }
+
+    #[test]
+    fn retry_crop_excludes_only_the_leading_round_cyan_marker() {
+        let frame = title_frame([85,204,255]);
+        assert_eq!(name_glyph_start(&frame, 8, 4, 60, 12, true), 15);
+        // The public bounds remain untouched and a later cyan component is not
+        // a title marker. This also covers the marker-free centered-title path.
+        assert_eq!(name_glyph_start(&frame, 3, 4, 65, 12, true), 3);
+    }
+
+    #[test]
+    fn retry_crop_preserves_orange_names_and_real_punctuation() {
+        for colour in [[255,153,0], [255,255,255], [190,100,240]] {
+            let frame = title_frame(colour);
+            assert_eq!(name_glyph_start(&frame, 8, 4, 60, 12, true), 8);
+        }
+        let mut frame = title_frame([85,204,255]);
+        // A tall cyan glyph clipped by the text bounds is not the small marker.
+        for y in 4..16 {
+            let at = ((y * frame.width + 8) * 4) as usize;
+            frame.rgba[at..at+3].copy_from_slice(&[85,204,255]);
+        }
+        assert_eq!(name_glyph_start(&frame, 8, 4, 60, 12, true), 8);
+    }
+
+    #[test]
+    fn centered_cyan_leading_glyph_is_never_cropped_as_a_bullet() {
+        let frame=title_frame([85,204,255]);
+        // The same compact cyan component can be a real first glyph or
+        // punctuation in a marker-free centered title. Colour/shape alone do
+        // not authorize removing it; retain the originating reader's proof.
+        assert_eq!(name_glyph_start(&frame,8,4,60,12,false),8);
     }
 }
 
@@ -82,13 +130,10 @@ fn rim_score(frame: &Frame, x: u32, top: u32, bottom: u32) -> f32 {
     ys.filter(|&y| rim(frame, x, y)).count() as f32 / total as f32
 }
 
-fn dots(frame: &Frame) -> Vec<Dot> {
-    let width = frame.width;
-    let count = (width * frame.height) as usize;
-    let mut mask: Vec<u8> = frame
-        .rgba
-        .chunks_exact(4)
-        .map(|p| u8::from(cyan([p[0], p[1], p[2]])))
+pub(crate) fn dots_in(width: u32, height: u32, pixel: impl Fn(u32, u32) -> [u8; 3]) -> Vec<Dot> {
+    let count = (width * height) as usize;
+    let mut mask: Vec<u8> = (0..count)
+        .map(|i| u8::from(cyan(pixel(i as u32 % width, i as u32 / width))))
         .collect();
     let mut result = Vec::new();
     let mut queue = Vec::new();
@@ -117,7 +162,7 @@ fn dots(frame: &Frame) -> Vec<Dot> {
                 x.checked_sub(1).map(|v| y * width + v),
                 (x + 1 < width).then_some(at + 1),
                 y.checked_sub(1).map(|v| v * width + x),
-                (y + 1 < frame.height).then_some(at + width),
+                (y + 1 < height).then_some(at + width),
             ]
             .into_iter()
             .flatten()
@@ -138,6 +183,26 @@ fn dots(frame: &Frame) -> Vec<Dot> {
         }
     }
     result
+}
+
+fn dots(frame: &Frame) -> Vec<Dot> {
+    dots_in(frame.width, frame.height, |x, y| rgb(frame, x, y))
+}
+
+/// Minerva's verified name bounds include the cyan bullet, whereas its primary
+/// glyph crop does not. A retry must not turn that decoration into punctuation.
+/// Centered/marker-free names keep their complete crop, including punctuation.
+pub(crate) fn name_glyph_start(frame: &Frame, x: u32, y: u32, w: u32, h: u32, marker_title: bool) -> u32 {
+    if !marker_title { return x }
+    let width = w.min(12);
+    let markers = dots_in(width, h, |col, row| rgb(frame, x + col, y + row));
+    let mut leading = markers.into_iter().filter(|dot| {
+        dot.x0 == 0 && dot.x1 < w && dot.y0 > 0 && dot.y1 < h
+    });
+    match (leading.next(), leading.next()) {
+        (Some(dot), None) => x + (dot.x1 + 2).min(w),
+        _ => x,
+    }
 }
 
 pub fn prepare(frame: &Frame) -> Option<Frame> {

@@ -23,6 +23,70 @@ class ShopRowsTests(unittest.TestCase):
         self.assertIsNone(result["price"])
         self.assertTrue(result["retained"])
 
+    def test_held_presentation_is_separate_from_a_current_offer_and_expires(self):
+        row=self.memory.observe(self.covered(),self.image,1)[0]
+        self.assertIsNone(row['price']);self.assertTrue(row['reference_only'])
+        self.assertTrue(row['presentation_held'])
+        self.assertEqual(self.memory.presentation_for(row,1),{'quantity':1,'mesos':100})
+        expired=self.memory.observe(self.covered(),self.image,31)[0]
+        self.assertIsNone(self.memory.presentation_for(expired,31))
+        self.assertIsNone(expired['presentation_price'])
+        self.assertFalse(expired['presentation_held'])
+
+    def test_changed_page_invalidates_a_previously_returned_presentation(self):
+        held=self.memory.observe(self.covered(),self.image,1)[0]
+        changed=deepcopy(self.shop);changed['rows'][0]['price']['mesos']=200
+        self.memory.observe(changed,self.image,2)
+        self.assertIsNone(self.memory.presentation_for(held,2))
+        current=self.memory.observe(self.covered(),self.image,3)[0]
+        self.assertEqual(self.memory.presentation_for(current,3)['mesos'],200)
+
+    def test_held_deal_cannot_be_rerated_by_a_new_market_quote(self):
+        visible=self.memory.observe(self.shop,self.image,1)[0]
+        first_quote=(1000,100,20);new_quote=(2000,101,21)
+        self.memory.presentation_for(visible,1,quote_key=first_quote)
+        held=self.memory.observe(self.covered(),self.image,2)[0]
+        self.assertEqual(self.memory.presentation_for(held,2,quote_key=first_quote)['mesos'],100)
+        self.assertIsNone(self.memory.presentation_for(held,2,quote_key=new_quote))
+        # Only newly verified row pixels/OCR may establish the new comparison.
+        visible=self.memory.observe(self.shop,self.image,3)[0]
+        self.memory.presentation_for(visible,3,quote_key=new_quote)
+        held=self.memory.observe(self.covered(),self.image,4)[0]
+        self.assertEqual(self.memory.presentation_for(held,4,quote_key=new_quote)['mesos'],100)
+
+    def test_unsafe_guard_invalidates_held_presentation_even_without_another_read(self):
+        held=self.memory.observe(self.covered(),self.image,1)[0]
+        self.image.setPixelColor(363,160,QColor('white'))
+        self.memory.observe(self.covered(),self.image,2)
+        self.assertIsNone(self.memory.presentation_for(held,2))
+
+    def test_slot_and_page_identity_survive_ocr_order_changes_and_shop_drag(self):
+        shop=deepcopy(self.shop);other=deepcopy(self.row)
+        other['name']='Other Hat';other['area']['y']+=50;shop['rows'].append(other)
+        original=self.memory.observe(shop,self.image,1)
+        keys={r['name']:(r['shop_page'],r['shop_slot']) for r in original}
+        moved=deepcopy(shop);moved['area']['x']+=30;moved['area']['y']+=20
+        for row in moved['rows']:row['area']['x']+=30;row['area']['y']+=20
+        moved['rows'].reverse()
+        latest=self.memory.observe(moved,self.image,2)
+        self.assertEqual(keys,{r['name']:(r['shop_page'],r['shop_slot']) for r in latest})
+
+    def test_reset_ends_the_page_identity_even_for_the_same_item(self):
+        row=self.memory.observe(self.shop,self.image,1)[0]
+        self.memory.reset()
+        self.assertIsNone(self.memory.presentation_for(row,2))
+        new=self.memory.observe(self.shop,self.image,2)[0]
+        self.assertNotEqual(row['shop_page'],new['shop_page'])
+
+    def test_slot_recovery_cache_is_bounded_even_with_unstable_geometry(self):
+        for index in range(self.memory.ROW_LIMIT+8):
+            noisy=deepcopy(self.shop)
+            noisy['rows'][0]['area']['y']=170+index*5
+            self.memory.observe(noisy,self.image,index+1)
+        self.assertLessEqual(len(self.memory.rows),self.memory.ROW_LIMIT)
+        self.assertTrue(set(self.memory.row_pixels)<=set(self.memory.rows))
+        self.assertTrue(set(self.memory.quote_proofs)<=set(self.memory.rows))
+
     def test_watch_page_revision_changes_for_another_listing_but_not_occlusion_or_drag(self):
         initial=self.memory.page_revision
         self.memory.observe(self.covered(),self.image,1)
@@ -111,6 +175,18 @@ class ShopRowsTests(unittest.TestCase):
         self.image.setPixelColor(110,146,QColor('white'))
         row=self.memory.observe(self.covered(),self.image,10,tooltip=QRect(200,150,220,300))[0]
         self.assertFalse(row.get('reference_only'));self.assertIsNone(row['name'])
+
+    def test_partial_guard_overlap_does_not_excuse_changes_outside_tooltip(self):
+        # This tooltip overlaps the right guard only below y=250. Its upper
+        # scrollbar change still proves that the old page cannot be held.
+        self.image.setPixelColor(363,160,QColor('white'))
+        row=self.memory.observe(self.covered(),self.image,1,tooltip=QRect(200,250,220,200))[0]
+        self.assertIsNone(row['name']);self.assertIsNone(row['presentation_price'])
+
+    def test_fully_hidden_guards_do_not_prove_a_page(self):
+        self.image.fill(QColor('black'))
+        row=self.memory.observe(self.covered(),self.image,1,tooltip=QRect(0,0,800,800))[0]
+        self.assertIsNone(row['name']);self.assertIsNone(row['presentation_price'])
 
     def test_animated_owner_portrait_is_not_a_page_guard(self):
         self.image.setPixelColor(110,120,QColor('white'))

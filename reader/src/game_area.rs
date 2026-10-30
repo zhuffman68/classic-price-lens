@@ -145,7 +145,7 @@ impl Locator {
                 if old.x.abs_diff(lv.x)>3 || old.y.abs_diff(lv.y)>3
                     || score(image,&self.level,old)>=24.0 || !caption_still_present(image,last.area) {return None}
                 self.last_footer
-            });
+            }).or_else(|| footer_span_across_description(image, lv, scale));
             let Some((left, right)) = span else {
                 continue;
             };
@@ -331,28 +331,12 @@ fn caption_bounds(
 }
 
 fn footer_span(image: &RgbaImage, lv: Rect, scale: f32) -> Option<(u32, u32)> {
-    let light = |x, y| {
-        let p = image.get_pixel(x, y).0;
-        let low = p[..3].iter().min().unwrap();
-        let high = p[..3].iter().max().unwrap();
-        *low > 130 && *high - *low < 70
-    };
     let mut best = None;
     let from = lv.y.saturating_sub((9.0 * scale).ceil() as u32);
     let end = (lv.y + (3.0 * scale).ceil() as u32).min(image.height() - 1);
     let sample = (lv.x + (12.0 * scale).round() as u32).min(image.width() - 1);
     for y in from..=end {
-        if !light(sample, y) {
-            continue;
-        }
-        let mut left = sample;
-        let mut right = sample + 1;
-        while left > 0 && light(left - 1, y) {
-            left -= 1;
-        }
-        while right < image.width() && light(right, y) {
-            right += 1;
-        }
+        let Some((left, right)) = light_run(image, sample, y) else { continue };
         let width = (right - left) as f32 / scale;
         if !(740.0..=840.0).contains(&width) || left.abs_diff(lv.x) as f32 > 9.0 * scale {
             continue;
@@ -362,6 +346,166 @@ fn footer_span(image: &RgbaImage, lv: Rect, scale: f32) -> Option<(u32, u32)> {
         }
     }
     best
+}
+
+fn footer_light(image: &RgbaImage, x: u32, y: u32) -> bool {
+    let p = image.get_pixel(x, y).0;
+    let low = p[..3].iter().min().unwrap();
+    let high = p[..3].iter().max().unwrap();
+    *low > 130 && *high - *low < 70
+}
+
+fn light_run(image: &RgbaImage, sample: u32, y: u32) -> Option<(u32, u32)> {
+    if sample >= image.width() || !footer_light(image, sample, y) {
+        return None;
+    }
+    let mut left = sample;
+    let mut right = sample + 1;
+    while left > 0 && footer_light(image, left - 1, y) {
+        left -= 1;
+    }
+    while right < image.width() && footer_light(image, right, y) {
+        right += 1;
+    }
+    Some((left, right))
+}
+
+/// Cold acquisition cannot use cached bounds when a description crosses the
+/// footer. Require both real rim endpoints on repeated rows, a complete native
+/// description frame/title marker inside the gap, and the independent caption.
+/// Arbitrary covered/fragmented footers remain ineligible.
+fn footer_span_across_description(image: &RgbaImage, lv: Rect, scale: f32) -> Option<(u32, u32)> {
+    let from = lv.y.saturating_sub((9.0 * scale).ceil() as u32);
+    let end = (lv.y + (3.0 * scale).ceil() as u32).min(image.height() - 1);
+    let left_sample = lv.x + (12.0 * scale).round() as u32;
+    let right_sample = lv.x + (786.0 * scale).round() as u32;
+    let mut candidates: Vec<(u32, u32, u32, u32, u32, u32)> = Vec::new();
+    for y in from..=end {
+        let Some((left, gap_left)) = light_run(image, left_sample, y) else { continue };
+        let Some((gap_right, right)) = light_run(image, right_sample, y) else { continue };
+        if gap_right <= gap_left || right <= left {
+            continue;
+        }
+        let width = (right - left) as f32 / scale;
+        let gap = (gap_right - gap_left) as f32 / scale;
+        if !(740.0..=840.0).contains(&width) || !(70.0..=700.0).contains(&gap)
+            || left.abs_diff(lv.x) as f32 > 9.0 * scale
+            || ((gap_left - left).min(right - gap_right) as f32) < 24.0 * scale
+        {
+            continue;
+        }
+        if let Some(candidate) = candidates.iter_mut().find(|c| {
+            c.0.abs_diff(left) <= 2 && c.1.abs_diff(right) <= 2
+                && c.2.abs_diff(gap_left) <= 2 && c.3.abs_diff(gap_right) <= 2
+        }) {
+            candidate.5 += 1;
+        } else {
+            candidates.push((left, right, gap_left, gap_right, y, 1));
+        }
+    }
+    let mut found = None;
+    for (left, right, gap_left, gap_right, y, rows) in candidates {
+        if rows < 2 || !description_crosses_rim(image, gap_left, gap_right, y, scale) {
+            continue;
+        }
+        let ui_scale = (right - left) as f32 / 798.0;
+        let bottom = ((lv.y as f32 + 38.0 * ui_scale).round() as u32).min(image.height());
+        let Some(area) = caption_bounds(image, left, right, bottom, ui_scale) else { continue };
+        if !caption_still_present(image, area) {
+            continue;
+        }
+        if found.is_some_and(|span| span != (left, right)) {
+            return None;
+        }
+        found = Some((left, right));
+    }
+    found
+}
+
+// A translucent one-pixel gap can show a dark or bright background between the
+// two matching dark frame strokes. This is used only with the other independent
+// cold-acquisition proofs, never to relax ordinary tooltip/occlusion detection.
+fn description_stroke(a: [u8; 4], b: [u8; 4], c: [u8; 4], tolerance: u8) -> bool {
+    (0..3).all(|i| a[i] < 180 && c[i] < 180 && a[i].abs_diff(c[i]) <= tolerance)
+        // A resampled single dark/light transition is not two frame strokes.
+        // The middle gap must reverse contrast against both outer samples.
+        && (0..3).any(|i| {
+            let first=i16::from(b[i])-i16::from(a[i]);
+            let second=i16::from(b[i])-i16::from(c[i]);
+            (first>=18 && second>=18) || (first<=-18 && second<=-18)
+        })
+}
+
+fn description_edge(image: &RgbaImage, x: u32, y: u32, scale: f32, horizontal: bool) -> bool {
+    let outer=(2.0*scale).round().max(2.0) as u32;
+    let middle=[scale.floor().max(1.0) as u32,scale.ceil().max(1.0) as u32];
+    // Fractional resize interpolation blends the outer strokes with different
+    // neighbours. Probe only the quantized positions inside one scaled pixel;
+    // the caption/endpoints/title/body proofs stay independently mandatory.
+    let tolerance=if (scale-1.0).abs()<0.1 {18} else {64};
+    for phase in 0..scale.ceil().max(1.0) as u32 {
+        let point=|delta:u32| if horizontal {(x,y+phase+delta)} else {(x+phase+delta,y)};
+        let (end_x,end_y)=point(outer);
+        if end_x>=image.width() || end_y>=image.height() {continue}
+        let (a_x,a_y)=point(0);
+        for offset in middle {
+            let (b_x,b_y)=point(offset);
+            if description_stroke(image.get_pixel(a_x,a_y).0,image.get_pixel(b_x,b_y).0,image.get_pixel(end_x,end_y).0,tolerance) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn description_crosses_rim(image: &RgbaImage, left: u32, right: u32, rim_y: u32, scale: f32) -> bool {
+    if left + 28 >= right || right > image.width() || rim_y < 70 {
+        return false;
+    }
+    let frame_right = right.saturating_sub((3.0*scale).round().max(3.0) as u32);
+    let top = rim_y.saturating_sub((460.0 * scale).ceil() as u32);
+    let bottom = rim_y.saturating_sub((40.0 * scale).ceil() as u32);
+    if bottom <= top { return false }
+    let marker_left = left + 4;
+    let marker_width = (28.0 * scale).ceil().clamp(12.0, 42.0) as u32;
+    if marker_left + marker_width >= frame_right { return false }
+    let markers = crate::tooltip_surface::dots_in(marker_width, bottom - top, |x, y| {
+        let p = image.get_pixel(marker_left + x, top + y).0;
+        [p[0], p[1], p[2]]
+    });
+    for marker in markers {
+        let mx = marker_left + marker.x1;
+        let my = top + marker.y0;
+        let name_top = my.saturating_sub(4);
+        let name_bottom = (top + marker.y1 + 4).min(image.height());
+        let title_pixels = (name_top..name_bottom).flat_map(|y| (mx + 2..frame_right - 4).map(move |x| (x,y)))
+            .filter(|&(x,y)| {
+                let p = image.get_pixel(x,y).0;
+                crate::tooltip_surface::title_light([p[0],p[1],p[2]]).is_some_and(|v|v>=150)
+            }).take(16).count();
+        if title_pixels < 16 { continue }
+        let header_from = my.saturating_sub((24.0 * scale).ceil() as u32);
+        let header_to = my.saturating_sub((5.0 * scale).floor() as u32);
+        let header = (header_from..header_to).find(|&y| {
+            let xs = (left + 5..frame_right - 4).step_by(6);
+            let total = xs.clone().count();
+            total >= 10 && xs.filter(|&x| description_edge(image,x,y,scale,true)).count() * 10 >= total * 7
+        });
+        let Some(header) = header else { continue };
+        let ys = (header + 5..rim_y).step_by(6);
+        let total = ys.clone().count();
+        if total < 10 || ![left, frame_right].into_iter().all(|x| {
+            ys.clone().filter(|&y| description_edge(image,x,y,scale,false)).count() * 10 >= total * 7
+        }) { continue }
+        let points = (header + 5..rim_y).step_by(7).flat_map(|y| (left + 5..frame_right - 4).step_by(11).map(move |x| (x,y)));
+        let total = points.clone().count();
+        let dark = points.filter(|&(x,y)| {
+            let p=image.get_pixel(x,y).0;
+            u32::from(p[0])*30+u32::from(p[1])*59+u32::from(p[2])*11 < 15000
+        }).count();
+        if total > 0 && dark * 10 >= total * 6 { return true }
+    }
+    false
 }
 
 fn score(image: &RgbaImage, reference: &RgbaImage, r: Rect) -> f32 {
@@ -479,4 +623,131 @@ fn orange_blobs(image: &RgbaImage) -> Vec<Blob> {
         }
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use image::Rgba;
+
+    fn fill_rect(image: &mut RgbaImage, x: u32, y: u32, w: u32, h: u32, p: [u8; 4]) {
+        for row in y..y+h {
+            for col in x..x+w {
+                image.put_pixel(col,row,Rgba(p));
+            }
+        }
+    }
+
+    fn crossing_fixture() -> (RgbaImage, Rect) {
+        let mut image = RgbaImage::from_pixel(1600,900,Rgba([55,48,43,255]));
+        fill_rect(&mut image,120,90,960,600,[145,124,108,255]);
+        fill_rect(&mut image,120,90,960,24,[40,48,59,255]);
+        fill_rect(&mut image,200,646,800,5,[235,235,235,255]);
+        let label=image::load_from_memory(include_bytes!("../../price_lens/resources/hud/level-label.png")).unwrap().into_rgba8();
+        image::imageops::replace(&mut image,&label,201,652);
+        // The level-number candidate independently leads to the exact LV image.
+        fill_rect(&mut image,245,666,12,13,[255,136,0,255]);
+        fill_rect(&mut image,500,450,243,240,[30,30,70,255]);
+        for x in [500,740] {
+            fill_rect(&mut image,x+1,450,1,240,[190,190,205,255]);
+        }
+        fill_rect(&mut image,500,451,243,1,[190,190,205,255]);
+        for y in 465..470 {
+            for x in 509..514 {
+                if (x as i32-511).abs()+(y as i32-467).abs()<=2 {
+                    image.put_pixel(x,y,Rgba([85,204,255,255]));
+                }
+            }
+        }
+        for x in (520..580).step_by(4) {
+            fill_rect(&mut image,x,464,2,7,[235,235,235,255]);
+        }
+        (image,Rect{x:201,y:652,width:36,height:37})
+    }
+
+    #[test]
+    fn cold_locator_requires_description_caption_and_both_rim_endpoints() {
+        let (image,lv)=crossing_fixture();
+        assert!(footer_span(&image,lv,1.0).is_none());
+        assert_eq!(footer_span_across_description(&image,lv,1.0),Some((200,1000)));
+        let area=Locator::new().find(&image).expect("cold acquisition across native description").area;
+        assert_eq!(area,Rect{x:120,y:90,width:960,height:600});
+
+        let mut missing_right=image.clone();
+        fill_rect(&mut missing_right,900,646,100,5,[30,30,70,255]);
+        assert!(Locator::new().find(&missing_right).is_none());
+
+        let mut missing_caption=image.clone();
+        // Remove all upper flat runs, not merely the caption colour.
+        for y in 0..290 {
+            for x in 120..1080 {
+                missing_caption.put_pixel(x,y,Rgba([((x*37+y*13)%256) as u8,20,40,255]));
+            }
+        }
+        assert!(Locator::new().find(&missing_caption).is_none());
+
+        let mut missing_level=image.clone();
+        fill_rect(&mut missing_level,201,652,76,37,[30,30,70,255]);
+        assert!(Locator::new().find(&missing_level).is_none());
+    }
+
+    #[test]
+    fn cold_locator_rejects_plain_gaps_fake_markers_and_bright_panels() {
+        let (image,lv)=crossing_fixture();
+        for defect in ["marker","top","side","body","plain"] {
+            let mut altered=image.clone();
+            match defect {
+                "marker"=>fill_rect(&mut altered,509,465,5,5,[30,30,70,255]),
+                "top"=>fill_rect(&mut altered,500,450,243,3,[30,30,70,255]),
+                "side"=>fill_rect(&mut altered,740,454,3,230,[30,30,70,255]),
+                "body"=>fill_rect(&mut altered,504,480,232,162,[235,235,235,255]),
+                "plain"=>fill_rect(&mut altered,500,450,243,240,[30,30,70,255]),
+                _=>unreachable!(),
+            }
+            assert!(footer_span_across_description(&altered,lv,1.0).is_none(),"{defect}");
+            assert!(Locator::new().find(&altered).is_none(),"{defect}");
+        }
+    }
+
+    #[test]
+    fn cold_description_proofs_follow_fractional_and_double_pixel_scales() {
+        let (image,lv)=crossing_fixture();
+        for scale in [1.25_f32,1.5,2.0] {
+            for filter in [FilterType::Nearest,FilterType::Triangle] {
+                let scaled=image::imageops::resize(&image,(image.width() as f32*scale).round() as u32,(image.height() as f32*scale).round() as u32,filter);
+                let scaled_lv=Rect{x:(lv.x as f32*scale).round() as u32,y:(lv.y as f32*scale).round() as u32,width:(lv.width as f32*scale).round() as u32,height:(lv.height as f32*scale).round() as u32};
+                assert!(footer_span(&scaled,scaled_lv,scale).is_none());
+                assert!(footer_span_across_description(&scaled,scaled_lv,scale).is_some(),"{scale} {filter:?}");
+                let area=Locator::new().find(&scaled).unwrap_or_else(||panic!("{scale} {filter:?}")).area;
+                for (value,expected) in [(area.x,120.0*scale),(area.y,90.0*scale),(area.width,960.0*scale),(area.height,600.0*scale)] {
+                    assert!(value.abs_diff(expected.round() as u32)<=4,"{scale} {filter:?}: {area:?}");
+                }
+                for defect in ["marker","top","plain"] {
+                    let mut altered=image.clone();
+                    match defect {
+                        "marker"=>fill_rect(&mut altered,509,465,5,5,[30,30,70,255]),
+                        "top"=>fill_rect(&mut altered,500,450,243,3,[30,30,70,255]),
+                        "plain"=>fill_rect(&mut altered,500,450,243,240,[30,30,70,255]),
+                        _=>unreachable!(),
+                    }
+                    let negative=image::imageops::resize(&altered,scaled.width(),scaled.height(),filter);
+                    assert!(footer_span_across_description(&negative,scaled_lv,scale).is_none(),"{scale} {filter:?}: {defect}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn warm_caption_and_level_guards_survive_description_after_cold_acquisition() {
+        let (mut image,_)=crossing_fixture();
+        let mut locator=Locator::new();
+        let before=locator.find(&image).unwrap();
+        // Cover the rim's right endpoint after acquisition. Only the existing
+        // verified LV+caption path may retain bounds; a cold locator rejects it.
+        fill_rect(&mut image,900,646,100,5,[30,30,70,255]);
+        assert!(Locator::new().find(&image).is_none());
+        assert_eq!(locator.find(&image).unwrap().area,before.area);
+        fill_rect(&mut image,201,652,76,37,[30,30,70,255]);
+        assert!(locator.find(&image).is_none());
+    }
 }

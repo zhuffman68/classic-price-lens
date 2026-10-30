@@ -1,6 +1,6 @@
 """Session history stays bounded and does not become a price-request queue."""
 import tempfile,time,unittest
-from PySide6.QtCore import Qt,QCoreApplication,QEvent
+from PySide6.QtCore import Qt,QCoreApplication,QEvent,QPoint,QObject
 from PySide6.QtWidgets import QApplication
 from PySide6.QtTest import QTest
 from price_lens.domain import Catalog,Quote
@@ -33,6 +33,7 @@ class RecentItemsTests(unittest.TestCase):
         self.see(1);self.panel.refresh(self.market,900,self.now);self.assertTrue(self.panel.isHidden())
         self.panel.observe([],self.catalog,self.now);self.panel.refresh(self.market,900,self.now);self.app.processEvents()
         self.assertFalse(self.panel.isHidden());self.assertEqual(self.panel.rows.count(),1)
+        QTest.qWait(190)
         chosen=[];self.panel.chosen.connect(chosen.append);row=self.panel.rows.item(0)
         QTest.mouseClick(self.panel.rows.viewport(),Qt.MouseButton.LeftButton,pos=self.panel.rows.visualItemRect(row).center())
         self.assertEqual(chosen[0].game_id,1)
@@ -76,3 +77,57 @@ class RecentItemsTests(unittest.TestCase):
         self.see(2);self.panel.observe([],self.catalog,self.now);self.panel.refresh(self.market,900,self.now)
         self.panel.animation.setCurrentTime(40)
         self.assertEqual(old.progress,1);self.assertNotIn(1,self.panel.animating)
+
+    def test_inserted_row_fades_in_while_old_rows_slide_and_height_grows(self):
+        self.app.setProperty('reduceMotion',False)
+        self.see(1);self.panel.observe([],self.catalog,self.now);self.panel.refresh(self.market,900,self.now)
+        self.panel.geometry_animation.setCurrentTime(180);self.app.processEvents()
+        old=self.panel.rows_by_id[1];start=self.panel.rows.visualItemRect(old).top();height=self.panel.height()
+        self.see(2);self.panel.observe([],self.catalog,self.now);self.panel.refresh(self.market,900,self.now)
+        new=self.panel.rows_by_id[2]
+        self.assertEqual(self.panel.rows.visualItemRect(old).top(),start);self.assertEqual(self.panel.rows.opacity(new),0)
+        self.panel.geometry_animation.setCurrentTime(90)
+        self.assertTrue(start<self.panel.rows.visualItemRect(old).top()<start+59)
+        self.assertTrue(0<self.panel.rows.opacity(new)<1)
+        self.assertTrue(height<self.panel.height()<height+59)
+        self.panel.geometry_animation.setCurrentTime(180)
+        self.assertEqual(self.panel.rows.visualItemRect(old).top(),start+59);self.assertEqual(self.panel.rows.opacity(new),1)
+
+    def test_insertion_preserves_the_visible_scroll_anchor(self):
+        for identity in range(1,9):self.see(identity)
+        self.panel.observe([],self.catalog,self.now);self.panel.refresh(self.market,900,self.now)
+        self.panel.geometry_animation.setCurrentTime(180);self.app.processEvents()
+        self.panel.rows.verticalScrollBar().setValue(100)
+        anchor=self.panel.rows.itemAt(QPoint(8,2));top=self.panel.rows.visualItemRect(anchor).top()
+        self.see(9);self.panel.observe([],self.catalog,self.now);self.panel.refresh(self.market,900,self.now)
+        self.assertEqual(self.panel.rows.visualItemRect(anchor).top(),top)
+        self.panel.geometry_animation.setCurrentTime(90);self.assertEqual(self.panel.rows.visualItemRect(anchor).top(),top)
+        self.panel.geometry_animation.setCurrentTime(180);self.assertEqual(self.panel.rows.visualItemRect(anchor).top(),top)
+
+    def test_reference_refresh_does_not_restart_row_motion_and_number_repaints_are_local(self):
+        self.app.setProperty('reduceMotion',False)
+        for identity in range(1,7):self.see(identity)
+        self.panel.observe([],self.catalog,self.now);self.panel.refresh(self.market,900,self.now)
+        self.panel.geometry_animation.setCurrentTime(70)
+        quote=Quote(6,2000,self.now,self.now,10,'MesoWatch','','24h')
+        self.market.cached=lambda item:quote if item.game_id==6 else None
+        self.panel.refresh(self.market,900,self.now)
+        self.assertEqual(self.panel.geometry_animation.currentTime(),70)
+        self.panel.geometry_animation.setCurrentTime(180);self.panel.animation.setCurrentTime(160);self.app.processEvents()
+        regions=[]
+        class Paints(QObject):
+            def eventFilter(self,watched,event):
+                if event.type()==QEvent.Type.Paint:regions.append(event.region().boundingRect())
+                return False
+        observer=Paints(self.panel);self.panel.rows.viewport().installEventFilter(observer)
+        self.panel.animating={6};self.panel.advance(.5);self.app.processEvents()
+        self.assertTrue(regions)
+        self.assertTrue(all(rect.height()<=59 for rect in regions),regions)
+
+    def test_reduced_motion_settles_an_in_progress_history_insertion(self):
+        self.app.setProperty('reduceMotion',False);self.see(1)
+        self.panel.observe([],self.catalog,self.now);self.panel.refresh(self.market,900,self.now)
+        self.panel.geometry_animation.setCurrentTime(50);self.assertTrue(self.panel.rows.motion)
+        self.app.setProperty('reduceMotion',True);self.panel.advance_geometry(.5)
+        self.assertFalse(self.panel.rows.motion);self.assertEqual(self.panel.rows.height(),61)
+        self.app.setProperty('reduceMotion',False)

@@ -314,6 +314,50 @@ class ContextUiTests(unittest.TestCase):
         w.render()
         self.assertIn(old,w.card_views.values())
 
+    def test_missing_hover_card_gets_500_ms_gui_grace_without_retaining_its_overlay(self):
+        w=self.window;w.show();self.app.processEvents()
+        with patch('price_lens.recent_items.time.monotonic',return_value=99):
+            w.on_reading(self.reading(shop_hover=False));card=next(iter(w.card_views.values()))
+        self.assertTrue(w.overlay.rows)
+        w.tooltip_result=None
+        for clock in (100,100.499):
+            with patch('price_lens.recent_items.time.monotonic',return_value=clock):w.render()
+            self.assertIn(card,w.card_views.values());self.assertEqual(w.overlay.rows,[])
+            self.assertEqual(w.recent_items.rows.count(),0)
+        with patch('price_lens.recent_items.time.monotonic',return_value=100.5):w.render()
+        self.assertNotIn(card,w.card_views.values());self.assertIn(1,w.recent_items.rows_by_id)
+        self.assertEqual(w.recent_items.height(),0)
+        self.assertEqual(w.cards_stack.spacing(),0)
+        start=w.card_area.height()
+        for ms in (0,45,90,135,180):
+            w.card_area.animation.setCurrentTime(ms);w.recent_items.geometry_animation.setCurrentTime(ms);self.app.processEvents()
+            self.assertLessEqual(w.card_area.height()+w.recent_items.height(),max(start,w.recent_items.full_height))
+
+    def test_new_hover_reuses_the_active_card_before_history_grace_expires(self):
+        w=self.window;w.on_catalog(Catalog({'items':[dict(id=1,name='Example Hat'),dict(id=2,name='Example Cape')]}))
+        w.show();self.app.processEvents()
+        with patch('price_lens.recent_items.time.monotonic',return_value=99):
+            w.on_reading(self.reading(shop_hover=False));card=next(iter(w.card_views.values()))
+        w.tooltip_result=None
+        with patch('price_lens.recent_items.time.monotonic',return_value=100):w.render()
+        w.tooltip_result={'name':'Example Cape','area':dict(x=100,y=100,width=180,height=20)}
+        with patch('price_lens.recent_items.time.monotonic',return_value=100.2):w.render()
+        self.assertEqual(len(w.card_views),1);self.assertIs(next(iter(w.card_views.values())),card)
+        self.assertEqual(card.property('gameItemId'),2);self.assertIn(1,w.recent_items.rows_by_id)
+        self.assertIsNone(w.price_content.outgoing)
+        outgoing=w.card_area.outgoing;w.card_area.animation.setCurrentTime(70)
+        now=time.time();w.on_quote(2,Quote(2,1200,now,now,20,'Test','','24h'))
+        self.assertIs(w.card_area.outgoing,outgoing);self.assertEqual(w.card_area.animation.currentTime(),70)
+
+    def test_shop_annotation_identity_survives_an_omitted_neighbor(self):
+        w=self.window;w.on_catalog(Catalog({'items':[dict(id=1,name='Example Hat'),dict(id=2,name='Example Cape')]}))
+        geometry=w.screens[w.screen_index].geometry();w.reader.image=QImage(geometry.width(),geometry.height(),QImage.Format.Format_RGBA8888)
+        w.rows=[dict(name=name,price=dict(quantity=1,mesos=100),area=dict(x=100,y=100+60*index,width=180,height=40),
+                     shop_page=1,shop_slot=(40,20+60*index,180,40)) for index,name in enumerate(('Example Hat','Example Cape'))]
+        w.draw_labels(time.time(),False);key=w.overlay.rows[-1]['key']
+        w.rows=w.rows[1:];w.draw_labels(time.time(),False)
+        self.assertEqual(w.overlay.rows[-1]['key'],key);self.assertEqual(w.overlay.rows[-1]['shop_slot'],[40,80,180,40])
+
     def test_search_transitions_preserve_shop_cards_and_animate_their_return(self):
         self.window.on_reading(self.reading(shop_hover=True))
         self.window.resize(460,960);self.window.show();self.app.processEvents()
@@ -383,10 +427,14 @@ class ContextUiTests(unittest.TestCase):
         from price_lens.domain import Item
         w=self.window;w.show();self.app.processEvents()
         for n in range(5):w.watchlist.toggle(Item(1000000+n,f'Example {n}'))
-        section=w.search_panel.watched_items;QTest.qWait(230);self.app.processEvents()
+        section=w.search_panel.watched_items;self.app.processEvents()
+        # Delivered animation ticks can lag wall time under load. Establish
+        # the actual endpoint before using it as the strict geometry baseline.
+        section.body.animation.setCurrentTime(section.body.animation.duration());self.app.processEvents()
         self.assertEqual(section.rows.height(),130)
         self.assertGreater(section.rows.verticalScrollBar().maximum(),0)
         full=section.body.height();contents=section.body.content.height()
+        self.assertEqual(full,section.body.full_height)
         section.set_expanded(False);section.body.animation.setCurrentTime(100)
         self.assertGreater(section.body.height(),0);self.assertLess(section.body.height(),full)
         self.assertEqual(section.body.content.height(),contents)

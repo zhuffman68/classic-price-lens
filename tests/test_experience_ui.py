@@ -219,13 +219,22 @@ class ExperienceUiTests(unittest.TestCase):
         for _ in range(31):self.feed(self.panel.tracker.current.exp+10,1)
         self.assertIsNotNone(self.panel.tracker.window(300)['rate'])
 
-    def test_overlay_labels_the_rolling_window_and_caps_it_at_five_minutes(self):
+    def test_shared_rate_explanation_replaces_normal_overlay_window_labels(self):
         self.panel.set_connected(True);self.panel.start();self.feed(2000)
+        self.assertIn('Measuring pace',self.panel.overlay_rows()[0]['status'])
+        self.assertEqual(self.panel.overlay_rows()[0]['basis'],'')
         for _ in range(361):self.feed(self.panel.tracker.current.exp+1,1)
         row=self.panel.overlay_rows()[0]
-        self.assertEqual(row['basis'],'Last 5 min')
+        self.assertEqual(row['basis'],'')
+        self.assertEqual(row['status'],'')
+        self.assertEqual(self.panel.observation.text(),'')
+        self.assertEqual(self.panel.rates_note.text(),'Rates based on the last 5 minutes')
+        self.assertAlmostEqual(self.panel.tracker.window(300)['seconds'],300)
         self.assertGreater(self.panel.mesos.seconds,300)
         self.assertIn('Level 28 · ETA',row['footer'])
+        self.panel.toggle_pause()
+        self.assertEqual(self.panel.overlay_rows()[0]['compact_note'],'Paused')
+        self.assertEqual(self.panel.overlay_rows()[0]['basis'],'')
 
     def test_shared_pickup_tracking_holds_pause_and_saves_its_basis(self):
         self.train();self.pickup();self.pickup(1200);self.pickup(1200)
