@@ -12,11 +12,11 @@ from .chat_tracking import stamp, locate_offset, move_source
 
 class ScanMemory:
     def __init__(self):
-        self.reads=OrderedDict();self.sources=[];self.geometry=None
+        self.reads=OrderedDict();self.sources=[];self.geometry=None;self.visits=OrderedDict();self.serial=0
 
     def prepare(self,image):
         geometry=(image.width(),image.height())
-        if geometry!=self.geometry:self.sources=[];self.geometry=geometry
+        if geometry!=self.geometry:self.sources=[];self.visits.clear();self.geometry=geometry
         now=time.monotonic()
         self.sources=[source for source in self.sources if now-source['seen']<=12][-12:]
 
@@ -54,9 +54,18 @@ class ScanMemory:
             source.update(speaker_box=list(row['speaker_box']),speaker_stamp=stamp(image,row['speaker_box']))
         self.sources.append(source);self.sources=self.sources[-12:]
 
-    def read(self,crop,is_bubble,recognizer,cancelled,deadline):
-        from .chat_ocr import lines, pixels, contrast_line
-        key=(is_bubble,crop.width(),crop.height(),hashlib.blake2s(pixels(crop).tobytes(),digest_size=16).digest())
+    @staticmethod
+    def key(crop,is_bubble):
+        from .chat_ocr import pixels
+        return (is_bubble,crop.width(),crop.height(),hashlib.blake2s(pixels(crop).tobytes(),digest_size=16).digest())
+
+    def visited(self,key):
+        self.serial+=1;self.visits[key]=self.serial;self.visits.move_to_end(key)
+        while len(self.visits)>192:self.visits.popitem(last=False)
+
+    def read(self,crop,is_bubble,recognizer,cancelled,deadline,*,key=None):
+        from .chat_ocr import lines, contrast_line
+        key=key or self.key(crop,is_bubble)
         if key in self.reads:
             self.reads.move_to_end(key);return self.reads[key]
         result=[]
@@ -123,51 +132,65 @@ def make_row(image,box,is_bubble,read,translator,contexts,role_for,cancelled):
 
 
 def scan_frame(image,recognizer,translator,emit,role_for,*,budget=.75,cancelled=lambda:False,
-               exclude=(),offset=0,contexts=(),memory=None):
+               exclude=(),contexts=(),memory=None):
     from .chat_ocr import bubbles, text_regions
     start=time.perf_counter();memory=memory or ScanMemory()
-    count=readable=korean=processed=0;emitted=[];index=max(0,offset)
-    def result(next_):
-        return dict(count=count,bubbles=len(bubble_boxes),regions=region_count,next_offset=next_,
+    count=readable=korean=processed=0;emitted=[]
+    def result():
+        return dict(count=count,bubbles=len(bubble_boxes),regions=region_count,processed=processed,
             readable=readable,korean=korean,elapsed_ms=round((time.perf_counter()-start)*1000,1))
     bubble_boxes=[];region_count=0
-    if cancelled():return result(index)
+    if cancelled():return result()
     for row in memory.priority(image,exclude,contexts,role_for):
-        if cancelled():return result(index)
+        if cancelled():return result()
         emit({**row,'elapsed_ms':round((time.perf_counter()-start)*1000,1)})
         emitted.append(row);count+=1
-        if time.perf_counter()-start>budget:return result(index)
+        if time.perf_counter()-start>budget:return result()
         if count>=2:break  # Reserve work for newly visible full-window text.
-    if cancelled():return result(index)
+    if cancelled():return result()
     bubble_boxes=bubbles(image)
     bubble_candidates=[(box,True) for box in bubble_boxes
         if not any(QRect(*box).intersects(QRect(*r)) for r in exclude)]
-    candidates=None
-    while not cancelled():
-        if count>=4 or processed and time.perf_counter()-start>budget:break
-        # The first bubble may produce a result before the comparatively costly
-        # full-window colored-text pass. After that, alternate the two queues.
-        if index==0 and candidates is None and bubble_candidates:
-            box,is_bubble=bubble_candidates[0]
-        else:
-            if candidates is None:
-                generic=[(box,False) for box in text_regions(image,exclude=(*exclude,*bubble_boxes))
-                    if not any(QRect(*box).intersects(QRect(*r)) for r in exclude)]
-                candidates=[]
-                for position in range(max(len(bubble_candidates),len(generic))):
-                    if position<len(bubble_candidates):candidates.append(bubble_candidates[position])
-                    if position<len(generic):candidates.append(generic[position])
-                region_count=len(candidates)
-                if index>=len(candidates):index=0
-            if not candidates or index>=len(candidates):break
-            box,is_bubble=candidates[index]
-        index+=1;processed+=1
-        if any(max(abs(a-b) for a,b in zip(box,row['box']))<=2 for row in emitted):continue
+    def crop_for(box,is_bubble):
         x,y,w,h=box;crop=image.copy(x+1,y+1,w-2,h-2) if is_bubble else image.copy(x,y,w,h)
-        read=memory.read(crop,is_bubble,recognizer,cancelled,start+budget);readable+=len(read)
+        return crop
+
+    def inspect(box,is_bubble,key,crop=None):
+        nonlocal processed,readable,korean,count
+        if any(max(abs(a-b) for a,b in zip(box,row['box']))<=2 for row in emitted):return
+        processed+=1
+        read=memory.read(crop if crop is not None else crop_for(box,is_bubble),is_bubble,recognizer,cancelled,start+budget,key=key)
+        if cancelled():return
+        memory.visited(key);readable+=len(read)
         row=make_row(image,box,is_bubble,read,translator,contexts,role_for,cancelled)
         if row is not None:
             korean+=1;memory.remember(row,image)
             emit({**row,'elapsed_ms':round((time.perf_counter()-start)*1000,1)})
             emitted.append(row);count+=1
-    return result(0 if candidates is not None and index>=len(candidates) else index)
+
+    # A new first bubble can still emit before full-window text detection.
+    # Unchanged first bubbles no longer reset progress or starve later text.
+    early=None
+    if bubble_candidates:
+        box,is_bubble=bubble_candidates[0];crop=crop_for(box,is_bubble);key=memory.key(crop,is_bubble)
+        if key not in memory.visits:
+            early=(tuple(box),is_bubble);inspect(box,is_bubble,key,crop)
+            if cancelled() or count>=4 or time.perf_counter()-start>budget:return result()
+    generic=[(box,False) for box in text_regions(image,exclude=(*exclude,*bubble_boxes))
+        if not any(QRect(*box).intersects(QRect(*r)) for r in exclude)]
+    candidates=[]
+    for position in range(max(len(bubble_candidates),len(generic))):
+        if position<len(bubble_candidates):candidates.append(bubble_candidates[position])
+        if position<len(generic):candidates.append(generic[position])
+    region_count=len(candidates);queue=[]
+    for position,(box,is_bubble) in enumerate(candidates):
+        if cancelled():return result()
+        if early==(tuple(box),is_bubble):continue
+        key=memory.key(crop_for(box,is_bubble),is_bubble)
+        queue.append((memory.visits.get(key,0),position,box,is_bubble,key))
+    # Exact new/changed pixels first, then least recently examined candidates.
+    # Positional cursors cannot reset this bounded progress on a new hotkey.
+    for _,_,box,is_bubble,key in sorted(queue,key=lambda value:value[:2]):
+        if cancelled() or count>=4 or processed and time.perf_counter()-start>budget:break
+        inspect(box,is_bubble,key)
+    return result()

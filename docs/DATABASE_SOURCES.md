@@ -67,6 +67,11 @@ button. Opening one does not request a drop feed. Client NX retail prices and
 rental flags are omitted from cards where they cannot establish the actual released
 product's terms. Regular item Sources and monster Drops retain the evidence below.
 Crafting disciplines are excluded from skill browsing and search.
+Crafting **quests** and Citizenship quests remain available when supported by
+the release index; the skill exclusion does not remove those quest categories.
+Quest browsing groups towns, job advancement and systems/events. Category
+thumbnails prefer a released entry with an image, rather than hiding a category
+whose lowest-ID entry has no artwork.
 
 ## Quests, maps and images
 

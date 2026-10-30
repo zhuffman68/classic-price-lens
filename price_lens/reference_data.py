@@ -33,7 +33,8 @@ def excluded(kind,identity,name):
 
 
 GROUP_FIELDS={'category':'e.category','sub_category':"json_extract(e.body,'$.sub_category')",'weapon.type':"json_extract(e.body,'$.weapon.type')",
-    'job_id':"json_extract(e.body,'$.job_id')",'family':"CAST(json_extract(e.body,'$.job_id')/100 AS INTEGER)",'region':"json_extract(e.body,'$.region')"}
+    'job_id':"json_extract(e.body,'$.job_id')",'family':"CAST(json_extract(e.body,'$.job_id')/100 AS INTEGER)",'region':"json_extract(e.body,'$.region')",
+    'quest.section':"CASE WHEN json_extract(e.body,'$.region') IN ('Warrior','Magician','Bowman','Thief') THEN 'Job advancement' WHEN json_extract(e.body,'$.region') IN ('Citizenship','Crafting','Event') THEN 'Systems & events' ELSE 'Towns' END"}
 CLASS_LABEL="CASE WHEN e.kind='items' THEN COALESCE((SELECT GROUP_CONCAT(j.value, ', ') FROM json_each(e.body,'$.req_classes') j),'All classes') ELSE e.job END"
 CLASS_ORDER="COALESCE((SELECT MIN(CASE j.value WHEN 'Warrior' THEN 1 WHEN 'Magician' THEN 2 WHEN 'Bowman' THEN 3 WHEN 'Thief' THEN 4 ELSE 5 END) FROM json_each(e.body,'$.req_classes') j),0)"
 SORTS={'name':'e.name COLLATE NOCASE,e.id','level':'e.level IS NULL,e.level,e.name COLLATE NOCASE,e.id',
@@ -286,7 +287,7 @@ class ReferenceStore:
         scoped(where,params,scope)
         where.append(expression+' IS NOT NULL');where.append(expression+"!=''")
         with self.connect() as db:
-            rows=db.execute('SELECT '+expression+',COUNT(*),MIN(e.id) FROM entities e WHERE '+' AND '.join(where)+' GROUP BY '+expression,params).fetchall()
+            rows=db.execute('SELECT '+expression+",COUNT(*),COALESCE(MIN(CASE WHEN COALESCE(e.icon,'')!='' THEN e.id END),MIN(e.id)) FROM entities e WHERE "+' AND '.join(where)+' GROUP BY '+expression,params).fetchall()
         return [{'value':value,'count':count,'entry':self.entry(kind,identity)[0]} for value,count,identity in rows]
 
     def entry(self,kind,identity):

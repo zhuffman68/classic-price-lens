@@ -67,10 +67,10 @@ def source_role(box,text,is_bubble,contexts=(),game_size=None):
     return 'text',False
 
 
-def scan(image, recognizer, translator, emit, budget=.75, cancelled=lambda:False, exclude=(), offset=0,contexts=(),memory=None):
+def scan(image, recognizer, translator, emit, budget=.75, cancelled=lambda:False, exclude=(),contexts=(),memory=None):
     from .chat_scan import scan_frame
     return scan_frame(image,recognizer,translator,emit,source_role,budget=budget,cancelled=cancelled,
-                      exclude=exclude,offset=offset,contexts=contexts,memory=memory)
+                      exclude=exclude,contexts=contexts,memory=memory)
 
 
 def send(message):
@@ -119,7 +119,7 @@ def main():
             with condition:state['closed']=True;condition.notify()
     threading.Thread(target=receive,name='local-frame-input',daemon=True).start()
     from .chat_scan import ScanMemory
-    memory=ScanMemory();generation=None;offset=0
+    memory=ScanMemory()
     while True:
         with condition:
             condition.wait_for(lambda:state['latest'] is not None or state['closed'])
@@ -128,11 +128,9 @@ def main():
                 break
             request,image=state['latest'];state['latest']=None
         identity=request['id']
-        if request.get('generation')!=generation:generation=request.get('generation');offset=0
         result=scan(image,recognizer,translator,lambda row:send({'id':identity,'row':row}),
-                    cancelled=lambda:identity<state['minimum'],exclude=request.get('exclude',[])[:64],offset=offset,
+                    cancelled=lambda:identity<state['minimum'],exclude=request.get('exclude',[])[:64],
                     contexts=request.get('contexts',[])[:8],memory=memory)
-        offset=result.pop('next_offset')
         send({'id':identity,'done':result})
     return 0
 

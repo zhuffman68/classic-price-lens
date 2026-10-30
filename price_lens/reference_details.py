@@ -39,18 +39,20 @@ def formatted(value):
     return str(value)
 
 
-def heading(layout,title):layout.addWidget(text(title,12,'#e5c28b',True))
+def heading(layout,title):
+    row=QHBoxLayout();row.setSpacing(9);row.addWidget(text(title,11,'#e2c69b',True))
+    line=QFrame();line.setFixedHeight(1);line.setStyleSheet('background:#334154;border:0');row.addWidget(line,1);layout.addLayout(row)
 
 
 def stats(layout,values,*,columns=2,compact=False):
     if not values:return {}
-    frame=QFrame();frame.setStyleSheet('QFrame{background:#222b39;border-radius:8px;}')
-    grid=QGridLayout(frame);grid.setContentsMargins(12,10,12,10);grid.setHorizontalSpacing(16);grid.setVerticalSpacing(9)
+    frame=QFrame();frame.setStyleSheet('background:transparent;border:0;' if compact else 'background:#222d3d;border:0;border-radius:8px;')
+    grid=QGridLayout(frame);grid.setContentsMargins(*(0,3,0,3) if compact else (12,11,12,11));grid.setHorizontalSpacing(16);grid.setVerticalSpacing(10)
     fields={}
     for index,(key,caption,value) in enumerate(values):
         cell=QWidget();cell.setStyleSheet('background:transparent');column=(QHBoxLayout if compact else QVBoxLayout)(cell);column.setContentsMargins(0,0,0,0);column.setSpacing(5 if compact else 2)
-        column.addWidget(text(caption,10,'#a2afc0'));label=RollingLabel(formatted(value))
-        label.setStyleSheet('font-size:15px;font-weight:600;color:#e5eaf2;background:transparent')
+        column.addWidget(text(caption,10,'#b3c2d5'));label=RollingLabel(formatted(value))
+        label.setStyleSheet(f'font-size:{12 if compact else 18}px;font-weight:600;color:#e5eaf2;background:transparent')
         if compact:column.addStretch();label.setAlignment(Qt.AlignmentFlag.AlignRight|Qt.AlignmentFlag.AlignVCenter)
         column.addWidget(label);grid.addWidget(cell,index//columns,index%columns);fields[key]=label
     for index in range(columns):grid.setColumnStretch(index,1)
@@ -58,17 +60,17 @@ def stats(layout,values,*,columns=2,compact=False):
 
 
 def page():
-    widget=QWidget();layout=QVBoxLayout(widget);layout.setContentsMargins(0,8,5,0);layout.setSpacing(9)
+    widget=QWidget();layout=QVBoxLayout(widget);layout.setContentsMargins(1,9,5,0);layout.setSpacing(10)
     scroll=QScrollArea();scroll.setWidgetResizable(True);scroll.setFrameShape(QFrame.Shape.NoFrame)
     scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff);scroll.setWidget(widget)
     return scroll,widget,layout
 
 
 def facts(layout,values):
-    grid=QGridLayout();grid.setContentsMargins(0,0,0,0);grid.setHorizontalSpacing(8);grid.setVerticalSpacing(5)
+    grid=QGridLayout();grid.setContentsMargins(2,0,2,0);grid.setHorizontalSpacing(10);grid.setVerticalSpacing(6)
     for index,(caption,value) in enumerate(values):
-        grid.addWidget(text(caption,10,'#a6b4c7'),index,0)
-        label=text(formatted(value),12,'#e9dbc2',True);label.setAlignment(Qt.AlignmentFlag.AlignRight|Qt.AlignmentFlag.AlignVCenter)
+        grid.addWidget(text(caption,11,'#b1bfd1'),index,0)
+        label=text(formatted(value),12,'#e6eaf1',True);label.setAlignment(Qt.AlignmentFlag.AlignRight|Qt.AlignmentFlag.AlignVCenter)
         grid.addWidget(label,index,1)
     grid.setColumnStretch(0,1);layout.addLayout(grid)
 
@@ -89,13 +91,14 @@ class EntryDetails(QFrame):
             self.market_label=self.summary_card.fields['market'];self.thumbnail=self.summary_card.thumbnail;self.header=self.summary_card.header;self.fields=self.summary_card.fields
             self.thumbnail.show();self.thumbnail.set_image(self.media.image(entry.icon))
         else:
-            header=QWidget();head=QHBoxLayout(header);head.setContentsMargins(0,0,0,0);head.setSpacing(10)
+            header=QFrame();header.setObjectName('referenceHeader');header.setStyleSheet('QFrame#referenceHeader{background:#202a38;border:0;border-radius:9px;}')
+            head=QHBoxLayout(header);head.setContentsMargins(9,9,10,9);head.setSpacing(11)
             self.sprite=ReferenceSprite(self.media,header);head.addWidget(self.sprite,0,Qt.AlignmentFlag.AlignTop)
             names=QVBoxLayout();names.setContentsMargins(0,1,0,0);names.setSpacing(4)
             self.item_name=text(entry.name,16,'#edcf9f',True);self.item_name.setProperty('currencyIcon',False);names.addWidget(self.item_name)
             sub=row.get('sub_category') or entry.category
-            names.addWidget(text(entry.job+' · '+entry.category if entry.kind=='skills' else row.get('region') or sub,10,'#9cacc1'))
-            self.animations=QComboBox();self.animations.setMaximumWidth(118);self.animations.setAccessibleName('Monster animation')
+            names.addWidget(text(entry.job+' · '+entry.category if entry.kind=='skills' else row.get('region') or sub,11,'#b0bfd2'))
+            self.animations=QComboBox();self.animations.setMaximumWidth(96);self.animations.setStyleSheet('font-size:10px;padding:3px 7px');self.animations.setAccessibleName('Monster animation')
             animations=row.get('animation_urls') or {};labels={'move':'Move','stand':'Idle','attack1':'Attack','hit1':'Hit','die1':'Defeated','jump':'Jump'}
             if entry.kind=='monsters':
                 for action in ('move','stand',*[k for k in animations if k not in ('move','stand')]):
@@ -113,15 +116,15 @@ class EntryDetails(QFrame):
             self.map_preview=MapPreview(self.media,row);self.map_preview.chosen.connect(lambda mid:self.panel.open(('monsters',mid)))
             layout.addWidget(self.map_preview)
         self.tabs=AnimatedTabs()
-        self.tabs.animation.setDuration(240)
+        self.tabs.animation.setDuration(220)
         if self.summary_card:self.summary_card.set_panel(self.tabs);layout.addStretch()
         else:layout.addWidget(self.tabs,1)
         self.tabs.tabBar().setDrawBase(False)
         self.tabs.setStyleSheet('QTabWidget::pane{border:0;background:transparent;} QTabWidget::tab-bar{alignment:center;} QTabBar::tab{padding:6px 9px;margin:0 3px 2px 0;} QScrollArea,QScrollArea>QWidget>QWidget{background:transparent;}')
         if self.summary_card:
-            self.tabs.setStyleSheet('QTabWidget{background:#222b39;border-radius:8px;} QTabWidget::pane{border:0;padding:0;} QTabWidget QWidget{background:transparent;} QTabWidget::tab-bar{alignment:center;} QTabBar::tab{padding:6px 9px;margin:0 2px 0 0;border-radius:5px;} QTabBar::tab:selected{background:#3a495f;color:#f1dfbf;} QScrollArea{border:0;}')
+            self.tabs.setStyleSheet('QTabWidget{background:transparent;} QTabWidget::pane{border:0;padding:0;} QTabWidget QWidget{background:transparent;} QTabWidget::tab-bar{alignment:center;} QTabBar::tab{padding:6px 8px;margin:0 2px 0 0;border-radius:5px;color:#b5c3d6;} QTabBar::tab:selected{background:#3a495f;color:#f1dfbf;} QScrollArea{border:0;}')
         overview,self.overview,body=page();self.tabs.addTab(overview,'Overview')
-        if entry.kind=='items':body.setContentsMargins(7,3,7,0);body.setSpacing(7)
+        if entry.kind=='items':body.setContentsMargins(5,7,5,0);body.setSpacing(9)
         if entry.kind=='items':self.item(body)
         elif entry.kind=='monsters':self.monster(body)
         elif entry.kind=='skills':self.skill(body)
@@ -207,7 +210,8 @@ class EntryDetails(QFrame):
         for place in self.store.locations(self.entry.id):
             detail=place.get('street_name') or place.get('region','')
             if place.get('count') is not None:detail+=f" · {place['count']} spawn points"
-            rows.append(dict(key=('map',place['id']),name=place['name'],subtitle=detail,icon=image_url(place.get('map_mark_url'))))
+            rows.append(dict(key=('map',place['id']),target=('maps',place['id']) if self.store.available('maps',place['id']) else None,
+                name=place['name'],subtitle=detail,icon=image_url(place.get('map_mark_url'))))
         listing.populate(rows)
         if not rows:places.addWidget(text('No verified location recorded.',11,'#a1afc2'))
         drop_scroll,self.drops,drops=page();self.tabs.addTab(drop_scroll,'Drops')
@@ -219,7 +223,7 @@ class EntryDetails(QFrame):
         if npc:values.append(('Quest giver',npc[0].name))
         if row.get('repeat'):values.append(('Repeat',row['repeat'].capitalize()))
         facts(layout,values)
-        description=(row.get('description') or '').split('\n')[0]
+        description=(row.get('description') or '').replace('\\n','\n').split('\n')[0]
         if description:layout.addWidget(text(description,12,'#bac5d5'))
         maps=[]
         if npc:
@@ -237,7 +241,10 @@ class EntryDetails(QFrame):
             if kind:
                 quantity=requirement.get('count');caption=f"×{quantity:,}" if type(quantity) is int else 'Completed' if kind=='quests' else 'Rank '+str(requirement.get('level','—'))
                 record=relationship(self.store,kind,requirement.get('id'),caption,key=('requirement',index))
-                if record:records.append(record)
+                if record:
+                    if type(quantity) is int:
+                        record['trailing']=f'×{quantity:,}';record['subtitle']='Defeat' if kind=='monsters' else 'Collect' if kind=='items' else 'Completed' if kind=='quests' else 'Required'
+                    records.append(record)
             elif requirement.get('type')=='citizenship':other.append((requirement.get('town','Citizenship'),'Grade '+str(requirement.get('grade','—'))))
         if records:self.add_list(body).populate(records)
         if other:facts(body,other)
@@ -251,10 +258,12 @@ class EntryDetails(QFrame):
             elif kind=='item':
                 quantity=reward.get('count',1);caption=f"×{quantity:,} · "+reward['caption'] if type(quantity) is int else reward['caption']
                 record=relationship(self.store,'items',reward.get('id'),caption,key=reward['key'])
-                if record:records.append(record)
+                if record:
+                    if type(quantity) is int:record['trailing']=f'×{quantity:,}';record['subtitle']=reward['caption']
+                    records.append(record)
         if numbers:
-            totals=QHBoxLayout();totals.setContentsMargins(0,0,0,0);totals.setSpacing(18)
-            for caption,value in numbers:totals.addWidget(text(value+' '+caption,13,'#e9dbc2',True))
+            totals=QHBoxLayout();totals.setContentsMargins(1,3,1,6);totals.setSpacing(18)
+            for caption,value in numbers:totals.addWidget(text(value+' '+caption,16,'#ead1a8',True))
             totals.addStretch();body.addLayout(totals)
         if records:self.add_list(body).populate(records)
         source=QPushButton('Quest source ↗');source.setObjectName('quiet');source.clicked.connect(lambda:self.panel.source_requested.emit('https://meowdb.com/msclassic/quest-tracker/'+str(self.entry.id)))
@@ -277,12 +286,10 @@ class EntryDetails(QFrame):
 
     def skill(self,layout):
         row=self.row;description=re.sub(r'^\[Master Level:\s*\d+\]\s*','',row.get('description') or '')
-        if description:layout.addWidget(text(description,12,'#bac5d5'))
-        if row.get('passive'):layout.addWidget(text('Passive',11,'#a7b5c7'))
         levels,descriptions,notes=skill_ranks(row)
         if levels:
             ranks={level['level']:level for level in levels};maximum=max(ranks)
-            controls=QWidget();bar=QHBoxLayout(controls);bar.setContentsMargins(0,0,0,0)
+            controls=QWidget();controls.setStyleSheet('background:#222d3d;border-radius:8px');bar=QHBoxLayout(controls);bar.setContentsMargins(10,9,10,9)
             rank=text(f'Rank {maximum} / {maximum}',12,'#edc68a',True);rank.setMinimumWidth(94)
             self.rank_slider=QSlider(Qt.Orientation.Horizontal);self.rank_slider.setRange(min(ranks),maximum);self.rank_slider.setValue(maximum)
             self.rank_slider.setAccessibleName('Skill rank');self.rank_slider.setObjectName('referenceRank')
@@ -299,6 +306,8 @@ class EntryDetails(QFrame):
             self.rank_slider.valueChanged.connect(update)
             per_level.setToolTip(notes.get(maximum,''))
             for label in fields.values():label.setToolTip(notes.get(maximum,''))
+        if description:layout.addWidget(text(description,12,'#b9c7da'))
+        if row.get('passive'):layout.addWidget(text('Passive skill',11,'#b3c2d5'))
         required=[]
         for item in row.get('required_skills') or []:
             target=self.store.entry('skills',item.get('skill_id'))

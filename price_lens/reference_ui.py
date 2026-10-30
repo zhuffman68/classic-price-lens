@@ -2,13 +2,14 @@
 from datetime import datetime
 from PySide6.QtCore import Qt,QTimer,Signal
 from PySide6.QtGui import QKeySequence,QShortcut
-from PySide6.QtWidgets import QComboBox,QHBoxLayout,QPushButton,QSizePolicy,QStackedWidget,QTabBar,QVBoxLayout,QWidget
+from PySide6.QtWidgets import QComboBox,QHBoxLayout,QPushButton,QStackedWidget,QTabBar,QVBoxLayout,QWidget
 from .motion import MotionLabel
 from .reference_media import ReferenceMedia
 from .reference_widgets import ReferenceList,BrowserContent,thumbnail
 from .reference_details import EntryDetails
 from .domain import key as name_key
 from .search_field import SearchField
+from .reference_navigation import Breadcrumb
 
 FAMILIES={0:'Beginner',1:'Warrior',2:'Magician',3:'Bowman',4:'Thief'}
 JOBS={0:'Beginner',100:'Warrior',110:'Fighter',120:'Page',130:'Spearman',200:'Magician',210:'Fire / Poison',220:'Ice / Lightning',230:'Cleric',
@@ -27,32 +28,34 @@ class DatabasePanel(QWidget):
         super().__init__(parent);self.service=service;self.store=service.store;self.media=media or ReferenceMedia(media_folder,self)
         self.kind='items';self.scope=();self.selected=None;self.history=[];self.catalog={};self.market=None;self.ttl=900;self.external_demand=None
         self.active=False;self.closed=False;self._entry=None;self.entries={};self.results_current=True;self.limit=80;self.match_count=0;self.sort_mode=None
-        self.external_return=None
+        self.external_return=None;self.kind_states={}
         self.setStyleSheet('QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical{height:0;} QScrollBar::up-arrow:vertical,QScrollBar::down-arrow:vertical{width:0;height:0;}')
-        layout=QVBoxLayout(self);layout.setContentsMargins(0,0,0,0);layout.setSpacing(8)
+        layout=QVBoxLayout(self);layout.setContentsMargins(0,0,0,0);layout.setSpacing(7)
         self.kind_bar=QTabBar();self.kind_bar.setExpanding(False);self.kind_bar.setDrawBase(False)
         for kind in KINDS:self.kind_bar.addTab(kind.capitalize())
         self.kind_bar.setAccessibleName('Database category');layout.addWidget(self.kind_bar,0,Qt.AlignmentFlag.AlignHCenter)
         self.kind_bar.currentChanged.connect(lambda index:self.choose_kind(KINDS[index]))
         tools=QHBoxLayout();tools.setSpacing(6)
         self.query=SearchField('Search items…');self.query.setAccessibleName('Search database')
-        tools.addWidget(self.query,1);layout.addLayout(tools)
+        tools.addWidget(self.query,1)
+        self.search_all=QPushButton('Search all');self.search_all.setObjectName('quiet');self.search_all.setStyleSheet('font-size:11px;padding:7px 8px')
+        self.search_all.clicked.connect(self.search_everywhere);tools.addWidget(self.search_all);self.search_all.hide();layout.addLayout(tools)
         navigation=QHBoxLayout();navigation.setSpacing(7)
-        self.back=QPushButton('‹');self.back.setFixedSize(30,28);self.back.setAccessibleName('Back');self.back.setToolTip('Back · Alt+Left');self.back.clicked.connect(self.go_back)
-        navigation.addWidget(self.back);self.breadcrumb=MotionLabel('Items');self.breadcrumb.setStyleSheet('font-size:11px;color:#b6c2d2')
-        self.breadcrumb.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Fixed);self.breadcrumb.setMinimumWidth(0);navigation.addWidget(self.breadcrumb,1)
+        self.back=QPushButton('‹ Back');self.back.setFixedSize(62,28);self.back.setStyleSheet('font-size:11px;padding:3px 6px');self.back.setAccessibleName('Back');self.back.setToolTip('Back · Alt+Left');self.back.clicked.connect(self.go_back)
+        navigation.addWidget(self.back);self.breadcrumb=Breadcrumb();self.breadcrumb.chosen.connect(self.browse_to);navigation.addWidget(self.breadcrumb,1)
         self.summary=MotionLabel();self.summary.setStyleSheet('font-size:10px;color:#9dacc0');self.summary.setAlignment(Qt.AlignmentFlag.AlignRight|Qt.AlignmentFlag.AlignVCenter)
-        navigation.addWidget(self.summary);layout.addLayout(navigation)
+        navigation.addWidget(self.summary)
+        self.sort_row=QWidget();sorts=QHBoxLayout(self.sort_row);sorts.setContentsMargins(0,0,0,0)
+        self.sort_choice=QComboBox();self.sort_choice.setAccessibleName('Sort database results');self.sort_choice.setFixedWidth(136);self.sort_choice.setStyleSheet('font-size:10px;padding:4px 7px')
+        sorts.addWidget(self.sort_choice);navigation.addWidget(self.sort_row);self.sort_choice.currentIndexChanged.connect(self.sort_changed)
+        layout.addLayout(navigation)
         self.content=BrowserContent();content=QVBoxLayout(self.content);content.setContentsMargins(0,0,0,0)
         self.pages=QStackedWidget();content.addWidget(self.pages);layout.addWidget(self.content,1)
         self.list_page=QWidget();listing=QVBoxLayout(self.list_page);listing.setContentsMargins(0,0,0,0);listing.setSpacing(6)
-        self.sort_row=QWidget();sorts=QHBoxLayout(self.sort_row);sorts.setContentsMargins(0,0,0,0);sorts.addStretch()
-        self.sort_choice=QComboBox();self.sort_choice.setAccessibleName('Sort database results');self.sort_choice.setMinimumWidth(165)
-        sorts.addWidget(self.sort_choice);listing.addWidget(self.sort_row);self.sort_choice.currentIndexChanged.connect(self.sort_changed)
         self.results=ReferenceList(self.media);self.results.chosen.connect(self.choose_result);self.results.viewport_changed.connect(self.observe_media)
         listing.addWidget(self.results,1);self.more=QPushButton('Show more');listing.addWidget(self.more);self.more.hide();self.more.clicked.connect(self.show_more);self.pages.addWidget(self.list_page)
         self.tiles=ReferenceList(self.media,tiles=True);self.tiles.chosen.connect(self.enter_group);self.tiles.viewport_changed.connect(self.observe_media);self.pages.addWidget(self.tiles)
-        self.status=MotionLabel();self.status.setWordWrap(True);self.status.setMinimumHeight(27);self.status.setStyleSheet('font-size:10px;color:#96a6bb');layout.addWidget(self.status)
+        self.status=MotionLabel();self.status.setWordWrap(True);self.status.setMinimumHeight(18);self.status.setStyleSheet('font-size:10px;color:#96a6bb');layout.addWidget(self.status)
         self.status.setToolTip('Released-content evidence: NiaMeowDB source/release indexes and dated exact-ID market sales.\nReference values and images: OSMS Data Explorer / @ohmi, CC BY 4.0.\nDrop observations: MapleClassic Wiki; extra reports: NiaMeowDB. Game artwork © Nexon.')
         self.timer=QTimer(self);self.timer.setSingleShot(True);self.timer.setInterval(100);self.timer.timeout.connect(self.search)
         self.query.textChanged.connect(self.schedule);self.query.returnPressed.connect(self.open_first)
@@ -97,15 +100,28 @@ class DatabasePanel(QWidget):
 
     def sync_kind(self):
         self.kind_bar.blockSignals(True);self.kind_bar.setCurrentIndex(KINDS.index(self.kind));self.kind_bar.blockSignals(False)
-        self.query.setPlaceholderText('Search '+self.kind+'…')
+        self.query.setPlaceholderText('Search '+(str(self.scope[-1][2]).lower() if self.scope else self.kind)+'…')
+        self.search_all.setVisible(bool(self.scope));self.search_all.setToolTip('Search all '+self.kind)
 
     def choose_kind(self,kind):
-        if kind not in KINDS:return
+        if kind not in KINDS or kind==self.kind:return
+        self.kind_states[self.kind]=(self.state(),list(self.history))
         self.external_return=None
         old=KINDS.index(self.kind);new=KINDS.index(kind)
-        self.content.begin();self.kind=kind;self.scope=();self.selected=None;self.history=[];self.timer.stop();self.limit=80;self.sort_mode=None
-        self.query.blockSignals(True);self.query.clear();self.query.blockSignals(False);self.sync_kind();self.search(False)
-        self.content.complete(1 if new>old else -1 if new<old else 0)
+        state,history=self.kind_states.get(kind,({'kind':kind,'scope':(),'query':'','selected':None},[]))
+        self.history=list(history);self.restore_state(state,1 if new>old else -1)
+
+    def browse_to(self,depth):
+        if not 0<=depth<=len(self.scope):return
+        if depth==len(self.scope) and not self.selected and not self.query.text():return
+        self.history.append(self.state());self.history=self.history[-32:];self.content.begin();self.timer.stop()
+        self.scope=self.scope[:depth];self.selected=None;self.limit=80
+        self.query.blockSignals(True);self.query.clear();self.query.blockSignals(False);self.search(False);self.content.complete(-1)
+
+    def search_everywhere(self):
+        if not self.scope:return
+        self.history.append(self.state());self.history=self.history[-32:];self.content.begin();self.timer.stop()
+        self.scope=();self.limit=80;self.search(False);self.content.complete(-1)
 
     def schedule(self):self.results_current=False;self.limit=80;self.timer.start()
     def scope_filters(self):return tuple((field,value) for field,value,label in self.scope)
@@ -141,7 +157,10 @@ class DatabasePanel(QWidget):
         if self.kind=='skills':
             if not self.scope:return 'family'
             if len(self.scope)==1 and self.scope[0][1]!=0:return 'job_id'
-        if self.kind in ('maps','quests') and not self.scope:return 'region'
+        if self.kind=='quests':
+            if not self.scope:return 'quest.section'
+            if len(self.scope)==1 and self.scope[0][0]=='quest.section':return 'region'
+        if self.kind=='maps' and not self.scope:return 'region'
         return None
 
     def groups(self):
@@ -151,12 +170,13 @@ class DatabasePanel(QWidget):
         if len(rows)==1 and field=='sub_category' and rows[0]['value'] in ('Etc','Install'):return []
         if field=='category':rows.sort(key=lambda row:ORDER.get(row['value'],99))
         elif field=='sub_category':rows.sort(key=lambda row:(ORDER.get(row['value'],99),str(row['value'])))
+        elif field=='quest.section':rows.sort(key=lambda row:('Towns','Job advancement','Systems & events').index(row['value']))
         elif field=='family':rows.sort(key=lambda row:row['value'])
         else:rows.sort(key=lambda row:row['value'])
         result=[]
         for row in rows:
             value=row['value'];label=CATEGORIES.get(value,value) if field=='category' else PLURALS.get(value,value) if field=='sub_category' else FAMILIES.get(value,str(value)) if field=='family' else JOBS.get(value,str(value)) if field=='job_id' else value
-            result.append(dict(key=(field,value),target=(field,value,label),name=str(label),subtitle=f"{row['count']:,} {self.kind}",icon=row['entry'].icon))
+            result.append(dict(key=(field,value),target=(field,value,label),name=str(label),subtitle=f"{row['count']:,} {self.kind}",count=row['count'],icon=row['entry'].icon))
         return result
 
     def search(self,animate=True):
@@ -169,7 +189,7 @@ class DatabasePanel(QWidget):
         if self.active:self.service.extra.select(None)
         self.entries={entry.key:entry for entry in entries}
         if groups:
-            self.tiles.populate(groups);self.pages.setCurrentWidget(self.tiles);self.summary.setText(f'{len(groups)} groups')
+            self.tiles.populate(groups);self.pages.setCurrentWidget(self.tiles);self.summary.setText(f'{len(groups)} categories');self.sort_row.hide()
         else:
             records=[]
             for entry in entries:
@@ -211,6 +231,7 @@ class DatabasePanel(QWidget):
         if self.selected and self.selected.key==key:return
         record=self.store.entry(*key)
         if not record or not self.store.available(*key):return
+        if key[0]!=self.kind and key[0] in KINDS:self.kind_states[self.kind]=(self.state(),list(self.history))
         if remember:self.history.append(self.state());self.history=self.history[-32:]
         self.timer.stop();self.content.begin()
         if key[0]!=self.kind and key[0] in KINDS:
@@ -218,7 +239,7 @@ class DatabasePanel(QWidget):
         self.sync_kind();self.selected,row=record
         self.dispose_entry();self._entry=EntryDetails(self,self.selected,row);self._entry.media_changed.connect(self.observe_media)
         self.pages.addWidget(self._entry);self.pages.setCurrentWidget(self._entry)
-        self._entry.set_active(self.active);self.summary.setText('');self.update_navigation();self.content.complete(direction)
+        self._entry.set_active(self.active);self.summary.setText('');self.sort_row.hide();self.update_navigation();self.content.complete(direction)
         self.service.extra.select(self.selected if self.active else None);QTimer.singleShot(0,self.observe_media)
         self.service.sources.select(self.selected if self.active else None)
 
@@ -238,19 +259,23 @@ class DatabasePanel(QWidget):
         if not self.history:
             if self.selected:self.selected=None;self.search()
             return
-        state=self.history.pop();remaining=list(self.history);self.content.begin();self.selected=None
+        state=self.history.pop();remaining=list(self.history);self.restore_state(state,-1)
+        self.history=remaining;self.update_navigation()
+
+    def restore_state(self,state,direction=0):
+        self.content.begin();self.timer.stop();self.selected=None
         self.kind=state['kind'];self.scope=tuple(state['scope']);self.limit=state.get('limit',80);self.sort_mode=state.get('sort');self.sync_kind()
         self.query.blockSignals(True);self.query.setText(state['query']);self.query.blockSignals(False)
         if state['selected']:
-            self.content.finish();self.open(tuple(state['selected']),False,-1)
+            self.content.finish();self.open(tuple(state['selected']),False,direction)
             if self._entry:self._entry.restore(state.get('details',{}))
+            if not self.selected:self.search(False)
         else:
-            self.search(False);self.results.verticalScrollBar().setValue(state.get('scroll',0));self.tiles.verticalScrollBar().setValue(state.get('tile_scroll',0));self.content.complete(-1)
-        self.history=remaining;self.update_navigation()
+            self.search(False);self.pages.layout().activate()
+            self.results.verticalScrollBar().setValue(state.get('scroll',0));self.tiles.verticalScrollBar().setValue(state.get('tile_scroll',0));self.content.complete(direction)
 
     def update_navigation(self):
-        title=' › '.join([self.kind.capitalize(),*[str(label) for field,value,label in self.scope]])
-        self.breadcrumb.setText(title);self.breadcrumb.setToolTip(title);self.back.setEnabled(bool(self.history or self.selected))
+        self.sync_kind();self.breadcrumb.set_path(self.kind,self.scope,self.selected);self.back.setEnabled(bool(self.history or self.selected or self.scope))
 
     def update_market(self):
         if self._entry:self._entry.update_market()

@@ -39,7 +39,7 @@ def normalize(text):
 
 # Match phrases before their shorter components. Do not replace 심 inside 심심해,
 # 공 inside 공팟, or 삼 (three) as a buying verb.
-GLOSSES = (
+NOUN_GLOSSES = (
     (r"국산\s*팟(?:으로)?", "Korean-speaking party"),
     (r"(?:커파|커닝\s*파퀘|커닝\s*파티퀘스트)", "Kerning PQ"),
     (r"(?:러시|러쉬)\s*(?:팟|파티|짜)", "rush party"),
@@ -48,10 +48,13 @@ GLOSSES = (
     (r"장갑\s*공격력\s*주문서|장공", "Glove ATT scroll"),
     (r"홀리\s*심볼", "Holy Symbol"),
     (r"헤이스트", "Haste"), (r"하이퍼\s*바디", "Hyper Body"),
+    (r"킹\s*슬라임", "King Slime"),
+)
+GLOSSES = NOUN_GLOSSES + (
     (r"심심해(?:요)?", "I'm bored"),
     (r"초대\s*(?:점여|좀요|좀|점|해주세요|해줘요)", "please invite me"),
     (r"가실\s*분", "looking for people to join"),
-    (r"(?:암데나|아무데나|어디든)", "any party"),
+    (r"(?:아무\s*(?:파티|팟)(?:나|든|도)?|암데나|아무데나|어디든)", "any party"),
     (r"갑니다|갈게요|가요", "I'd like to join"),
     (r"파티\s*구해요|파티\s*구함|파티\s*구합니다", "looking for a party"),
     (r"귓속말\s*주세요|귓말\s*주세요|귓\s*주세요", "whisper me"),
@@ -79,6 +82,22 @@ def message_key(text):
 def recruiting_phrase(text):
     """Complete, explicit party/count or job/join structures, never a substring."""
     value=re.sub(r'\s+','',normalize(text))
+    # Complete requests only: source options, a joining verb and any-party
+    # language must all be explicit. Unknown tails/negation never match.
+    activity=r'(?:보너스|보너쓰|러시|러쉬)(?:팟|파티)?'
+    match=re.fullmatch(rf'({activity})(?:(?:이나|나|또는|혹은|/|,|랑|와)?({activity}))?아무(?:파티|팟)(?:나|든|도)?(?:다)?(?:감|가요|갑니다|갈게요|갈께요)([!.]*)',value)
+    if match:
+        first,second,punctuation=match.groups();options=[]
+        for word in (first,second):
+            if word:
+                name='bonus' if word.startswith(('보너스','보너쓰')) else 'rush'
+                if name not in options:options.append(name)
+        return "I'll join any "+' or '.join(options)+' party'+punctuation
+    match=re.fullmatch(r'(?:(커파|커닝파퀘|커닝파티퀘스트))?킹슬라임(?:을|를)?(?:딱)?(한번|1번)(만)?(?:같이)?(?:잡으실|잡을|잡을수있는)분(?:구함|구해요|모집)?([0-9]{1,2}/[0-9]{1,2})?([!.]*)',value)
+    if match:
+        context,times,only,occupancy,punctuation=match.groups()
+        count='once' if times=='한번' else '1 time'
+        return ('Kerning PQ · ' if context else '')+'Looking for someone to defeat King Slime '+('just ' if only else '')+count+(f' · {occupancy}' if occupancy else '')+punctuation
     parties='|'.join(sorted(PARTIES,key=len,reverse=True));counts='|'.join(PEOPLE)
     invite=r'(?:팟|파티)(?:점여|점요|좀여|좀요|주세요|부탁해요)|초대(?:점여|점요|좀여|좀요|좀|해주세요|부탁해요)'
     match=re.fullmatch(rf'({parties})?({invite})([!?!.]*)',value)
@@ -126,7 +145,9 @@ def supported_ocr_alternative(original,candidates):
 def model_source(text):
     """Expand established game nouns; ordinary sentence grammar stays intact."""
     required=[];value=normalize(text)
-    nouns=GLOSSES[:9]+tuple((re.escape(k),JOBS[k]) for k in sorted(JOBS,key=len,reverse=True))
+    nouns=NOUN_GLOSSES+tuple((re.escape(k),JOBS[k]) for k in sorted(JOBS,key=len,reverse=True))
+    if re.search(r'아무|구함|구해|모집|초대|감(?:[!.]|$)|갑니다|가요|갈게요',text):
+        nouns += ((r'아무\s*(?:파티|팟)(?:나|든|도)?','any party'),(r'보너스|보너쓰','bonus'),(r'러시|러쉬','rush'))
     for pattern,english in nouns:
         value,count=re.subn(pattern,lambda _:f' {english} ',value)
         if count:required.append(english)

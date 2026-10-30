@@ -51,6 +51,22 @@ def row():
 
 
 class TranslationScanTests(unittest.TestCase):
+    def test_repeated_scans_prioritize_changed_pixels_and_keep_progress_without_a_cursor(self):
+        image=QImage(400,200,QImage.Format.Format_RGB888);image.fill(QColor('white'))
+        boxes=[[10,20,80,14],[100,20,80,14],[190,20,80,14]];memory=ScanMemory();reads=[]
+        for number,box in enumerate(boxes):image.setPixelColor(box[0],box[1],QColor(10+number,20,30))
+        recognizer=SimpleNamespace(read=lambda crop:(reads.append(crop.pixelColor(0,0).red()) or 'English',.99))
+        with patch('price_lens.chat_ocr.bubbles',return_value=[]),patch('price_lens.chat_ocr.text_regions',return_value=boxes):
+            for _ in range(3):scan(image,recognizer,SimpleNamespace(),lambda row:None,memory=memory,budget=0)
+            self.assertEqual(reads,[10,11,12])
+            image.setPixelColor(100,20,QColor(40,20,30))
+            scan(image,recognizer,SimpleNamespace(),lambda row:None,memory=memory,budget=0)
+            self.assertEqual(reads[-1],40)
+            for _ in range(3):scan(image,recognizer,SimpleNamespace(),lambda row:None,memory=memory,budget=0)
+            self.assertEqual(reads,[10,11,12,40])  # Unchanged English stays in its exact-pixel cache.
+        for number in range(250):memory.visited(('bounded',number))
+        self.assertEqual(len(memory.visits),192)
+
     def test_vectorized_run_edges_preserve_connected_component_geometry(self):
         from price_lens.chat_ocr import components
         rng=np.random.default_rng(17)
@@ -156,6 +172,22 @@ class TranslationRescanUiTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         os.environ.setdefault('QT_QPA_PLATFORM','offscreen');cls.app=QApplication.instance() or QApplication([])
+
+    def test_newest_history_is_visible_first_and_reading_older_rows_keeps_its_anchor(self):
+        panel=TranslationPanel();panel.resize(432,640);self.app.setProperty('reduceMotion',True)
+        cards=[{**row(),'id':n,'original':f'안녕하세요 {n}','text':f'Hello {n}'} for n in range(16)]
+        try:
+            panel.set_cards(cards);panel.show();self.app.processEvents();self.app.processEvents()
+            self.assertIs(panel.results_layout.itemAt(0).widget(),panel.result_cards[15])
+            bar=panel.scroll.verticalScrollBar();bar.setValue(350);self.app.processEvents();position=bar.value();self.assertGreater(position,0)
+            candidates=sorted((frame.y(),identity,frame) for identity,frame in panel.result_cards.items() if frame.y()+frame.height()>position)
+            _,identity,frame=candidates[0];offset=frame.y()-position
+            panel.set_cards([*cards,{**row(),'id':16,'original':'안녕하세요 16','text':'Hello 16'}]);self.app.processEvents();self.app.processEvents()
+            self.assertIs(panel.results_layout.itemAt(0).widget(),panel.result_cards[16]);self.assertEqual(panel.result_cards[identity].y()-bar.value(),offset)
+            bar.setValue(0)
+            panel.set_cards([*cards,{**row(),'id':17,'original':'안녕하세요 17','text':'Hello 17'}]);self.app.processEvents();self.app.processEvents()
+            self.assertEqual(bar.value(),0)
+        finally:panel.close();panel.deleteLater();QCoreApplication.sendPostedEvents(None,QEvent.Type.DeferredDelete)
 
     def test_padding_changes_keep_one_arrival_but_absence_allows_a_new_one(self):
         chat=ChatTranslation(ROOT)

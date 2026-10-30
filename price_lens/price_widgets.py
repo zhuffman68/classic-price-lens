@@ -15,9 +15,9 @@ class SelectedCardBody(QWidget):
         super().__init__(card)
         self.card,self.panel=card,panel
         for child in (card.header_widget,card.price_column,panel):child.setParent(self);child.show()
-        self.setMinimumHeight(224)
+        self.setMinimumHeight(264)
 
-    def sizeHint(self):return QSize(420,224)
+    def sizeHint(self):return QSize(420,264)
 
     def resizeEvent(self,event):
         super().resizeEvent(event)
@@ -26,8 +26,10 @@ class SelectedCardBody(QWidget):
         title_height=max(19,card.fields['name'].heightForWidth(name_width))
         header=max(42,title_height+18)
         card.header_widget.setGeometry(0,0,width,header)
-        card.price_column.setGeometry(0,header+8,174,max(140,self.height()-header-8))
-        self.panel.setGeometry(184,title_height+5,max(140,width-184),188)
+        available=max(200,self.height()-header-10)
+        card.price_column.setGeometry(0,header+10,146,available)
+        panel_top=title_height+7
+        self.panel.setGeometry(158,panel_top,max(140,width-158),self.height()-panel_top)
 
 
 def display_age(quote,now,ttl):
@@ -98,8 +100,8 @@ class PriceCard(QFrame):
         self.layout().removeWidget(self.header_widget);self.layout().removeWidget(self.columns_widget)
         self.columns.removeWidget(self.price_column)
         self.fields['context'].setWordWrap(False)
-        self.price_column.setMinimumWidth(174);self.price_column.setMaximumWidth(174)
-        panel.setMinimumWidth(0);panel.setFixedHeight(188)
+        self.price_column.setMinimumWidth(146);self.price_column.setMaximumWidth(146)
+        panel.setMinimumWidth(0);panel.setMinimumHeight(200)
         self.selected_body=SelectedCardBody(self,panel);self.layout().addWidget(self.selected_body)
         self.columns_widget.hide();self.columns_widget.deleteLater()
 

@@ -1,5 +1,34 @@
 # Verification — 2026-10-30
 
+## Pending Database and Korean translation changes — source only
+
+- All **652 source tests pass in 79.550 seconds**, with three platform/offscreen
+  skips, after the combined interface and translation changes. New checks cover
+  per-section browsing memory, ancestor/search-scope navigation, exact linked
+  locations, quest-category retention and artwork selection, cropped minimap
+  projection, recorded recruitment phrases, unknown-clause rejection, changed
+  text priority, bounded scan cadence and translation-history scroll anchors.
+- Private offline previews use the current 432-pixel Database content width
+  within a 464-pixel frame, copied reference data and clearly marked sample
+  prices. The redesigned selected-item card is shared with Prices. No live
+  reference cache, installed app, screen-sharing session or game is modified.
+- The newest recording isolates two translation errors with substantially
+  correct Korean OCR: an incomplete King Slime recruitment request and a
+  hallucinated bonus/rush joining message. Actual bundled-translator replay now
+  uses complete phrase handling for both, preserving the stated `3/4` count and
+  both party options. Unknown clauses still require conservative model/partial
+  handling. This does not establish general translation accuracy.
+- A four-second controlled frame/worker probe requests 16 frames, accepts a new
+  source introduced at 1.4 seconds, retains two distinct history events and ends
+  idle. This verifies scheduling/event behavior with a simulated worker; it is
+  not a live game detection or latency benchmark. Compressed OBS frames remain
+  unsuitable for proving strict raw-pixel detector coverage.
+- A fresh check using the installed ReleaseClient succeeds: installed v0.17.7
+  and GitHub's latest published v0.17.7 match, so no update is offered. v0.17.9
+  remains unpublished at the user's request. These changes have no new package
+  build or Windows acceptance claim; existing local v0.17.9 artifacts predate
+  them. Publication is held for the later approved release.
+
 ## Lupin v0.17.9 — pre-build source checks
 
 - All 638 source tests pass in 68.186 seconds, with three platform/offscreen

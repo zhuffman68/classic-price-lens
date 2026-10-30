@@ -1,5 +1,6 @@
 """Translation controls and the latest local results; no capture or networking."""
-from PySide6.QtCore import Signal,Qt
+from PySide6.QtCore import Signal,Qt,QTimer
+from shiboken6 import isValid
 from PySide6.QtWidgets import QWidget,QVBoxLayout,QHBoxLayout,QCheckBox,QPushButton,QScrollArea,QFrame,QLabel,QDoubleSpinBox
 from .motion import reveal,AnimatedTabs,MotionLabel
 from .composer_ui import ComposerWidget
@@ -71,7 +72,7 @@ class TranslationPanel(QWidget):
         self.translate_button.setEnabled(enabled)
         self.enabled_check.toggled.connect(self.translate_button.setEnabled)
         actions.addWidget(self.translate_button,1);layout.addLayout(actions)
-        self.hint=QLabel("Scan the Classic World window for Korean text. Results appear as soon as they’re ready.")
+        self.hint=QLabel("Keep checking the Classic World window for new Korean text during each scan. Results appear as soon as they’re ready.")
         self.hint.setWordWrap(True);self.hint.setStyleSheet("color:#a6b1bf; font-size:11px")
         layout.addWidget(self.hint)
         timings=QVBoxLayout();timings.setSpacing(7)
@@ -90,7 +91,7 @@ class TranslationPanel(QWidget):
         layout.addLayout(timings)
         self.scan.setToolTip('Results appear as soon as text is read. Keep checking for new or moving text during this window; press again to restart.')
         for spin in (self.scan,self.linger):spin.valueChanged.connect(lambda *_:self.timing_changed.emit(self.scan.value(),self.linger.value()))
-        scroll=QScrollArea();scroll.setWidgetResizable(True);scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll=self.scroll=QScrollArea();scroll.setWidgetResizable(True);scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.results=QWidget();self.results_layout=QVBoxLayout(self.results);self.results_layout.setContentsMargins(0,0,0,0)
         scroll.setWidget(self.results);layout.addWidget(scroll,1)
         clear=QPushButton("Clear results and popups");clear.clicked.connect(self.clear_requested.emit)
@@ -107,8 +108,14 @@ class TranslationPanel(QWidget):
 
     def set_cards(self,cards):
         cards=grouped_history(cards)
+        cards.reverse()
         key=tuple((c['_widget_key'],c.get('speaker'),c.get('original'),c.get('text'),c.get('note'),c['repeat_count']) for c in cards)
         if key==self.card_key:return
+        bar=self.scroll.verticalScrollBar();position=bar.value();anchor=None
+        if position>2:
+            visible=sorted(((frame.y(),identity,frame) for identity,frame in self.result_cards.items() if frame.y()+frame.height()>position))
+            if visible:
+                _,identity,frame=visible[0];anchor=(identity,frame.y()-position)
         self.card_key=key
         wanted={card['_widget_key'] for card in cards}
         for identity in list(self.result_cards):
@@ -130,3 +137,10 @@ class TranslationPanel(QWidget):
             label.setWordWrap(True);label.setStyleSheet('color:#939eac;font-size:11px');self.results_layout.insertWidget(0,label);self.empty_label=label
         if not getattr(self,'results_stretch',False):
             self.results_layout.addStretch();self.results_stretch=True
+        def restore_position():
+            if not isValid(self) or self.card_key!=key:return
+            if anchor:
+                identity,offset=anchor;frame=self.result_cards.get(identity)
+                if frame:self.scroll.verticalScrollBar().setValue(frame.y()-offset)
+            elif position<=2:self.scroll.verticalScrollBar().setValue(0)
+        QTimer.singleShot(0,restore_position)

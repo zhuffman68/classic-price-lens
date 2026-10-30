@@ -18,7 +18,7 @@ class ChatTranslation(QObject):
         super().__init__(parent)
         self.root=Path(root);self.process=None;self.ready=False;self.busy=False;self.identity=0
         self.buffer=b'';self.cards=[];self.history=[];self.frame=QImage();self.region=QRect();self.started=0
-        self.enabled=False;self.scan_seconds=4.0;self.linger_seconds=1.5;self.generation=0
+        self.enabled=False;self.scan_seconds=4.0;self.linger_seconds=1.5
         self.events=[];self.batch_identity=None
         self.watching=False;self.waiting=False;self.until=0;self.hits=0;self.serial=0
         self.notice='';self.notice_until=0;self.last_track=0;self.last_image=None
@@ -66,7 +66,7 @@ class ChatTranslation(QObject):
         process.start(sys.executable,['-B','-m','price_lens.chat_worker',str(models)])
 
     def start_scan(self):
-        self.identity+=1;self.generation+=1
+        self.identity+=1
         if self.busy and self.process is not None:
             self.process.write((json.dumps({'cancel_before':self.identity})+'\n').encode())
         self.hits=0;self.notice='';self.notice_until=0;self.notice_timer.stop()
@@ -136,7 +136,11 @@ class ChatTranslation(QObject):
             if message.get('row') and time.monotonic()-self.started<2.5:self.accept_row(message['row'])
             if message.get('done'):
                 self.busy=False;self.deadline.stop();self.frame=QImage();self.hits+=message['done']['count']
-                if self.watching:self.status.emit('Scanning Korean…');self.cadence.start()
+                if self.watching:
+                    self.status.emit('Scanning Korean…')
+                    # A slow OCR pass has already used the cadence interval.
+                    # Keep a small floor; cached passes still run at <=4 Hz.
+                    self.cadence.start(max(50,round((.25-(time.monotonic()-self.started))*1000)))
                 elif not self.hits:self.announce('No readable Korean found')
                 else:self.status.emit('Scan complete · recent messages remain below')
                 self.changed.emit()
@@ -271,7 +275,7 @@ class ChatTranslation(QObject):
         if not self.region.isEmpty() and self.region!=region:self.cards=[];self.events=[]
         self.frame=image.copy(region);self.region=QRect(region);crop=self.frame.convertToFormat(QImage.Format.Format_RGB888)
         data=bytes(crop.constBits());self.identity+=1
-        request={'id':self.identity,'generation':self.generation,'width':crop.width(),'height':crop.height(),'stride':crop.bytesPerLine(),
+        request={'id':self.identity,'width':crop.width(),'height':crop.height(),'stride':crop.bytesPerLine(),
                  'exclude':[[r[0]-region.x(),r[1]-region.y(),r[2],r[3]] for r in exclude]}
         request['contexts']=[]
         for context in list(contexts)[:8]:

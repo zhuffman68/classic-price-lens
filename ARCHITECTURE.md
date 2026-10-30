@@ -172,11 +172,45 @@ Wiki Cargo observations refresh daily. Their own monster/drop/item joins must ma
 
 `reference_media.py` retains original decoded pixels in an eight-MiB/128-image LRU. `reference_widgets.py` renders directly at the requested size/device scale: integer enlargement for pixel art, quality downsampling when needed. At most four image requests run; visible rows precede nearby prefetch and obsolete requests yield without creating false negative-cache entries. Up to twelve static landing-page icons can warm while the main window is visible. Disk caching remains 64 MiB/1,024 files, with 30-day freshness and six-hour misses. PNG/WebP byte/dimension/frame limits bound decoding; disk cleanup avoids rescanning on every thumbnail. One selected monster movie uses source timing without a frame cache and pauses when hidden/minimized or under Reduce motion. Downloads remain outside installers/source.
 
-`ReferenceStore.catalog` builds the same released-item identity collection for both manual searches, preserving exact matching domain objects where available. The raw OCR catalog remains separate for recognition. `EntryDetails` embeds the Prices-style `PriceCard` summary beside a fixed-height sliding stats/Sources panel on both pages; compact on-screen listings remain simple price cards. Prices owns selection demand, while Database coordinates the shared reference-image/report services for whichever page is visible. Quote updates retain the header, watch control and stat widgets; core-data changes preserve the selected subpage. Selected cards omit redundant check ages, per-item captions and generic explanations, retaining sale recency and source links.
+`ReferenceStore.catalog` builds the same released-item identity collection for both manual searches, preserving exact matching domain objects where available. The raw OCR catalog remains separate for recognition. `EntryDetails` embeds the Prices-style `PriceCard` summary beside a sliding stats/Sources panel on both pages; compact on-screen listings remain simple price cards. The narrower price column gives the detail panel more room at 460-pixel window widths. Its height follows the stable card canvas, independently of quote updates. Prices owns selection demand, while Database coordinates the shared reference-image/report services for whichever page is visible. Quote updates retain the header, watch control and stat widgets; core-data changes preserve the selected subpage. Selected cards omit redundant check ages, per-item captions and generic explanations, retaining sale recency and source links.
+
+Database keeps bounded browsing state independently for Items, Monsters, Skills,
+Maps and Quests: query, category, sort, selection, subpage/rank, scroll and a
+32-entry Back stack. No hidden entry widget or animation is retained for this
+memory. `reference_navigation.py` provides a labelled Back action, an immediate
+root breadcrumb and a compact ancestor menu whose full path remains accessible
+when elided. Scoped search names its current category; Search all keeps the
+query and is reversible with Back. Count and sorting share the navigation row.
+Quest categories group towns, job advancement and systems/events without
+removing Citizenship or crafting quests. Category images use a released entry
+with actual artwork when one exists; a reference-book placeholder handles
+missing images. Release predicates and canonical links still apply to every
+group and result.
+
+Reference headers, category tiles and linked source/drop/reward rows share
+spacing and hover states. Combat rows use a flat grid; main monster/skill values
+have stronger hierarchy. Quest objectives and rewards retain explicit right-side
+quantities alongside their original source metadata. Minimap previews crop only
+transparent margins for display. Verified spawn coordinates still refer to the
+full source image and are remapped into that displayed crop; cropping never
+establishes a projection proof or enables unverified markers.
 
 Database update checks live in Settings and use the manifest/hash comparison, without a forced full refresh. Equipment sorts by class/name/required level; other categories expose relevant type/value/rate orders, monsters level/name, and skills job order without crafting. Monster drops use fixed two-column tiles and preserve subpage/list position across item navigation. `SearchField` supplies the same field geometry and contrasting 28-pixel clear control on both pages.
 
 Market cards read the existing shared snapshot and watch controls, with updates through normal signals. Database browsing never starts individual price requests. Reference, release, drop and market refresh ages stay separate. Raw map placement counts mean spawn points, not server respawn timing; community samples are not official server probabilities.
+
+Korean scans now prioritize exact new/changed candidate pixels, then the least
+recently examined candidates, in a 192-entry visit ledger. This replaces the
+positional cursor/generation reset in the worker; cancellation still uses the
+monotonic request identity and latest-frame slot. The existing exact-pixel OCR
+cache and verified-source templates remain separate and bounded. Cadence is
+measured from request start, with a 50 ms floor after slow passes and 250 ms for
+idle/fast passes. Translation history groups consecutive equal arrivals before
+presenting newest-first cards and retaining an older visible scroll anchor.
+Complete recruitment templates preserve explicit boss/action/once/occupancy and
+bonus/rush/any-party intent; unknown prose retains protected-noun and numeric
+validation before partial fallback. No model files, game access or input paths
+change.
 
 
 ## Session history and expanded references

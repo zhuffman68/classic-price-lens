@@ -8,7 +8,19 @@ Enable **Korean translation** under Read Korean, or press **Super/Win+F11** to e
 
 Each activation scans the full detected Classic World window for four seconds by default, without requiring the pointer near a message. The scan alternates visible speech bubbles with high-confidence text-line candidates, including colored chat, shop text and megaphones. Source roles require structural or explicit prefix/context evidence; unidentified prose stays ordinary text. It has one worker and no overlapping frame jobs. Pressing the shortcut again restarts the scan window, cancels older work between model operations and rejects late results. Scan time is adjustable from 1 to 10 seconds. The GUI and overlay distinguish scanning from finishing an outstanding translation.
 
+Fresh or changed candidate pixels take priority, followed by the least recently
+examined text regions. This bounded progress survives another shortcut press;
+there is no positional scan cursor to reset to the first bubble. Idle/fast passes
+use a 250 ms cadence measured from their start. Slow passes use a small delay
+before requesting the next fresh frame, rather than adding another full interval.
+This is repeated scanning for the selected duration, not a guarantee that every
+message is detected or translated during a crowded scene.
+
 English appears beside the source with the Korean original below. Cards size around their text and prefer a five-pixel source gap, avoiding other popups and existing annotations when space permits. Stable placement follows modest verified movement instead of repeatedly changing sides. Cards remain while matching source pixels are visible and stay another 1.5 seconds after disappearance by default. That delay is adjustable from 0 to 5 seconds. Scanning/translating/loading status appears briefly in game; a no-result notice disappears after 2.5 seconds. Recent text remains on the Translation page until cleared or the app exits. A source that moves far, is obscured or uses unusual colors may require another scan; recognition is not guaranteed for every text style.
+
+History shows the newest group first. Adding a new result preserves the visible
+row when the user has scrolled down to review older messages; repeated results
+still reuse their existing card and the underlying arrival ledger is unchanged.
 
 A short, bounded event ledger coalesces matching speaker/message text arriving in both a bubble and chat. It prefers the visible bubble anchor, retains both source locations for visibility checks and keeps a single history entry. A verified partial crop of the same bubble can upgrade to its complete reading atomically. Different speakers and separately established repeat messages remain independent; there is no global fuzzy name/text merge.
 
@@ -24,6 +36,15 @@ The source is the existing approved shared frame, cropped to the detected game a
 ## Meaning and numbers
 
 Complete game phrases use a conservative glossary or explicit party-recruiting/join templates. Ordinary and mixed sentences reach the local model before any partial-glossary fallback; known terms and explicit numeric roles must survive. Partial translations retain unknown Korean and are labelled accordingly. The bundled model can still mistranslate ordinary grammar. The original remains visible because OCR and translation can both be wrong. A glossary does not establish mechanics or terminology frequency in Classic World.
+
+Whole-message recruitment templates cover explicit King Slime requests to defeat
+it once, optional stated Kerning PQ context and participant fractions such as
+`3/4`, plus joining any bonus/rush party. Whitespace/newlines and documented
+joining-verb variants are accepted; extra unknown clauses or negation prevent
+the complete template from matching. Native `한번` becomes "once"; explicit
+`1번` keeps its numeric value as "1 time". King Slime and context-qualified party
+terms are also protected when longer, unknown sentences reach the local model.
+These cases add neither fuzzy spelling search nor inferred price units.
 
 Party-invitation requests include forms such as `팟점여`, `팟좀요` and `초대점여`.
 When an uncertain OCR syllable has a plausible alternative supplied by the model,

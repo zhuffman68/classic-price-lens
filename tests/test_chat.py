@@ -65,6 +65,20 @@ class ChatSnapshotTests(unittest.TestCase):
         os.environ.setdefault("QT_QPA_PLATFORM","offscreen")
         cls.app=QApplication.instance() or QApplication([])
 
+    def test_slow_scan_does_not_add_another_full_wait_and_fast_scans_stay_bounded(self):
+        class Pipe:
+            def __init__(self):self.output=b''
+            def readAllStandardOutput(self):value=self.output;self.output=b'';return value
+        chat=ChatTranslation(ROOT);chat.process=pipe=Pipe();chat.enabled=chat.ready=chat.watching=True;chat.until=104
+        try:
+            for duration,expected in ((.75,50),(.05,200)):
+                chat.identity=chat.batch_identity=7;chat.busy=True;chat.started=100-duration
+                pipe.output=(json.dumps({'id':7,'done':{'count':0}})+'\n').encode()
+                with patch('price_lens.chat.time.monotonic',return_value=100):chat.receive()
+                self.assertFalse(chat.busy);self.assertTrue(chat.watching);self.assertEqual(chat.cadence.interval(),expected)
+        finally:
+            chat.process=None;chat.close();chat.deleteLater();QCoreApplication.sendPostedEvents(None,QEvent.Type.DeferredDelete)
+
     def test_restarting_a_busy_scan_drops_late_results_and_requests_only_latest_frame(self):
         class Pipe:
             def __init__(self):self.writes=[];self.output=b''

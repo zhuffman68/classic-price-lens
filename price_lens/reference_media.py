@@ -136,7 +136,7 @@ class ReferenceMedia(QObject):
 class ReferenceSprite(QWidget):
     def __init__(self,media,parent=None):
         super().__init__(parent);self.media=media;self.movie=None;self.url='';self.icon='';self.active=False;self.image=QImage()
-        self.setFixedSize(64,64);self.setAccessibleName('Reference image')
+        self.setFixedSize(56,56);self.setAccessibleName('Reference image')
         media.ready.connect(self.received)
 
     def set_source(self,icon,animation=''):
@@ -176,7 +176,7 @@ class ReferenceSprite(QWidget):
 
     def paintEvent(self,event):
         image=self.movie.currentImage() if self.movie else self.image
-        painter=QPainter(self);painter.setPen(Qt.PenStyle.NoPen);painter.setBrush(QColor('#222c3b'));painter.drawRoundedRect(self.rect(),9,9)
+        painter=QPainter(self)
         if image.isNull():
             painter.setPen(QColor('#728198'));painter.drawText(self.rect(),Qt.AlignmentFlag.AlignCenter,'—');return
         size=image.size()
