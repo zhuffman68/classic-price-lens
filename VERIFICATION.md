@@ -1,5 +1,27 @@
 # Verification — 2026-10-30
 
+## Published 1.0.0 distribution
+
+- The public stable release contains three native packages, checksums, signed
+  update metadata, build information and a verification report. All three
+  anonymous downloads match the signed manifest, GitHub digests and local files;
+  independent Ed25519 verification passes. The tag resolves to `ed4527a`.
+- Final Windows Setup passes 788 installed tests with 30 platform skips and
+  install/upgrade/removal checks under Wine. Final Linux packages pass 163
+  targeted checks on each of Arch/Manjaro, Debian 12 and Ubuntu 22.04, following
+  their successful 788-test initial installed suites.
+- The installed 0.17.10 updater and exact tagged 0.17.7 client both recognize
+  the public signed 1.0.0 update. No host installation was performed.
+- Fourteen older GitHub releases were removed after download verification.
+  Source tags and history remain. Later README/media commits do not change
+  application code or the published packages.
+- The README includes the four-tab screenshot overview and updated header and
+  donation layout. Original screenshots and both composite layouts remain local.
+- Native Windows acceptance remains unverified. The dedicated test clone did
+  not provide a usable display or GuestControl after its Windows configuration
+  screen. Its state was saved successfully, closing it without discarding the
+  in-flight OS state or changing any other VM.
+
 ## Lupin 1.0.0 — source and release preflight
 
 - **794 Python tests pass in 85.012 seconds**, with three platform/offscreen
@@ -60,7 +82,8 @@
   application icon/header or existing demonstration GIF was replaced. GitHub
   Markdown rendering retains the centered layout and exact PayPal destination.
   Demo screenshots use temporary state, fresh actual market quotes and realistic
-  recorded-rate examples. They are kept outside the README and packages.
+  recorded-rate examples. The combined view appears in the README; all website
+  demonstration images stay outside application packages.
 - At the user's request, a source preview was launched after a coherent backup
   of settings and application SQLite stores. The installed main process handed
   off its existing sharing helper, whose PID stayed unchanged. The new source
