@@ -21,7 +21,7 @@ from .tray import TrayController
 from .experience_ui import ExperiencePanel
 from .platform_paths import data_directory
 from .search import PriceSearch
-from .motion import AnimatedTabs, ContentArea, CardArea, MotionLabel
+from .motion import AnimatedTabs, ContentArea, CardArea, MotionLabel,StableScrollArea
 from .fonts import interface_family
 from .branding import Brand
 from .shop_rows import ShopRows
@@ -44,7 +44,9 @@ from .reference_service import ReferenceService
 from .reference_ui import DatabasePanel
 from .recent_items import RecentItems,ActiveCards
 from .overlay_notice import OverlayNotice
-from . import APP_NAME, LEGACY_APP_NAME
+from .update_service import UpdateService
+from .update_ui import UpdatePanel,UpdateDialog
+from . import APP_NAME, LEGACY_APP_NAME,__version__
 
 COLORS = {"green": "#86ceac", "red": "#ed9394", "amber": "#e4bd7b", "blue": "#9ebde3", "muted": "#98a3b1"}
 
@@ -323,7 +325,7 @@ class LensWindow(QMainWindow):
         self.summary = label("", "font-size: 12px; color: #dde1e7", True)
         self.summary.setFixedHeight(20)
 
-        self.scroll = QScrollArea()
+        self.scroll = StableScrollArea()
         self.scroll.setWidgetResizable(True)
         self.scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.cards = QWidget()
@@ -469,12 +471,19 @@ class LensWindow(QMainWindow):
         self.setStyleSheet(self.styleSheet().replace('INTERFACE_FONT',interface_family()).replace('CHECK_ICON',str(Path(__file__).parent/'resources/check.svg').replace('\\','/')))
         self.exp_panel.set_display(self.exp_display)
         self.overlay.reduce_motion = self.reduce_motion
+        self.updates=UpdateService(self.root,data_directory()/'updates-v1',self.settings,self)
+        self.updates.changed.connect(self.update_update_status)
+        self.updates.available.connect(self.on_update_available)
+        self.updates.notice.connect(lambda title,message:self.tray.update_notice(title,message))
+        self.updates.restart_requested.connect(self.install_update_restart)
+        self.update_dialog=None
         self.build_settings()
         self.tray = TrayController(self)
         self.timer = QTimer(self)
         self.timer.setInterval(1000)
         self.timer.timeout.connect(self.tick)
         self.timer.start()
+        self.updates.start()
         self.service.start()
         self.reference.start()
         if snapshot:
@@ -568,6 +577,8 @@ class LensWindow(QMainWindow):
         layout.addWidget(self.database_update_status)
         layout.addWidget(label('Checks for changes and downloads only changed reference files. Saved data stays available offline.','font-size:11px;color:#a6b1bf',True))
         self.update_database_settings()
+        self.update_panel=UpdatePanel(self.updates,self.settings_dialog,settings=True)
+        layout.addWidget(self.update_panel)
         layout.addWidget(label("Troubleshooting", "font-size: 15px; font-weight: 650"))
         self.crop_button = QPushButton("Limit the reading area…")
         self.crop_button.clicked.connect(self.crop)
@@ -594,6 +605,28 @@ class LensWindow(QMainWindow):
         self.update_capture_controls()
         self.update_database_settings()
         self.settings_dialog.exec()
+
+    def update_update_status(self):
+        if not hasattr(self,'settings_button'):return
+        self.settings_button.setText('Settings · update' if self.updates.offer else 'Settings')
+        if hasattr(self,'tray'):self.tray.update()
+
+    def on_update_available(self,version):
+        if hasattr(self,'tray'):self.tray.update_available(version)
+
+    def open_updates(self):
+        self.tray.restore()
+        if self.update_dialog is None:self.update_dialog=UpdateDialog(self.updates,self)
+        self.update_dialog.show();self.update_dialog.raise_();self.update_dialog.activateWindow()
+
+    def install_update_restart(self):
+        compatible=__version__ in self.updates.offer['manifest'].get('capture_compatible_from',[])
+        resume=bool(compatible and self.mode=='live')
+        if self.updates.commit(resume):
+            # Windows helpers hold runtime DLLs open. Close them before the
+            # installer/directory swap, then reconnect after restart.
+            self.keep_capture=resume and self.updates.target.name.startswith('linux-')
+            self.close()
 
     def update_database_settings(self):
         if not hasattr(self,'database_update_button'):return
@@ -1414,6 +1447,17 @@ class LensWindow(QMainWindow):
         native = (shop_tooltip or {}).get('found') or ((tooltip or {}).get('found') if shop or self.shop_open else None)
         bounds=description_bounds(image,native.get('area'),exclusions) if native else None
         latest=self.reader.image.copy(self.reader.crop) if self.reader.crop else self.reader.image
+        # A known list slot supplies identity when our own price labels hide
+        # the title. It cannot anchor a panel by itself: independently visible
+        # native body pixels and the same shop's exposed guards are required.
+        if bounds is None and native and hover and self.shop_rows._page_proven:
+            point=result.get('pointerAtRead',self.reader.pointer)
+            if point is not None and self.reader.crop:point=(point[0]-self.reader.crop.x(),point[1]-self.reader.crop.y())
+            source,_=self.shop_source_row(self.rows,point,point)
+            item=self.catalog.resolve(source.get('name'),source.get('tier')) if source and self.catalog else None
+            if item:
+                candidate=description_bounds(image,native.get('area'),exclusions,source_verified=True)
+                if candidate is not None and self.shop_rows.tooltip_guards_match(latest,candidate,exclusions):bounds=candidate
         if bounds is not None and not still_present(latest,bounds,exclusions):bounds=None
         if bounds is None and self.shop_open and self.shop_tooltip_rect is not None and still_present(latest,self.shop_tooltip_rect,exclusions):
             bounds=self.shop_tooltip_rect
@@ -1497,7 +1541,30 @@ class LensWindow(QMainWindow):
         if source is None and max(abs(a-b) for a,b in zip(pointer,proof['pointer']))>8:return False
         exclusions=self.annotation_exclusions()
         if not still_present(image,self.shop_tooltip_rect,exclusions):return False
-        return self.shop_description_title_matches(image,proof,exclusions)
+        if self.shop_description_title_matches(image,proof,exclusions):return True
+        return self.shop_description_source_matches(image,proof,exclusions)
+
+    def shop_description_source_matches(self,image,proof,exclusions):
+        """Only a mostly masked title may fall back to its exact proven slot."""
+        if not proof.get('item_id') or proof.get('source') is None or not self.shop_rows._page_proven:return False
+        visible=QRegion(proof['name'])
+        for rect in (*proof['exclude'],*exclusions):visible=visible.subtracted(QRegion(rect))
+        if sum(part.width()*part.height() for part in visible)>=proof['name'].width()*proof['name'].height()*.25:return False
+        row,band=self.shop_source_row(self.rows,proof['pointer'],proof['pointer'])
+        item=self.catalog.resolve(row.get('name'),row.get('tier')) if row and self.catalog else None
+        return bool(item and item.game_id==proof['item_id'] and band==proof['source']
+                    and self.shop_rows.tooltip_guards_match(image,self.shop_tooltip_rect,exclusions))
+
+    @staticmethod
+    def shop_source_row(rows,pointer,read_point):
+        if pointer is None or read_point is None:return None,None
+        for row in rows:
+            area=row.get('area') or {}
+            if not area:continue
+            band=QRect(*(area[part] for part in ('x','y','width','height')))
+            band=band.adjusted(-round(band.width()*.26),0,0,0)
+            if band.contains(QPoint(*pointer)) and band.contains(QPoint(*read_point)):return row,band
+        return None,None
 
     @staticmethod
     def shop_description_title_matches(image,proof,exclusions):
@@ -1526,27 +1593,26 @@ class LensWindow(QMainWindow):
         if self.shop_description_matches(latest,pointer) and not native:return
         found=self.tooltip_names.resolve(native,image,self.catalog) if isinstance(native,dict) else None
         item=self.catalog.resolve(found.get('name'),found.get('tier')) if found and self.catalog else None
+        row,source=self.shop_source_row(rows,pointer,read_point)
+        listed=self.catalog.resolve(row.get('name'),row.get('tier')) if row and self.catalog else None
+        if not item and found and listed and self.shop_rows._page_proven and self.shop_tooltip_rect is not None:
+            try:
+                rect=QRect(*(int(found['area'][part]) for part in ('x','y','width','height')))
+                probe=dict(name=rect,exclude=tuple(self.annotation_exclusions()),source=source,pointer=pointer,item_id=listed.game_id)
+                if self.shop_description_source_matches(latest,probe,probe['exclude']):item=listed
+            except (KeyError,TypeError,ValueError):pass
         if not item or self.shop_tooltip_rect is None or read_point is None or max(abs(a-b) for a,b in zip(pointer,read_point))>8:
             if not self.shop_description_matches(latest,pointer):self.clear_shop_description()
             return
         try:name=QRect(*(int(found['area'][part]) for part in ('x','y','width','height')))
         except (KeyError,TypeError,ValueError):self.clear_shop_description();return
         if not image.rect().contains(name) or not self.shop_tooltip_rect.contains(name):self.clear_shop_description();return
-        source=None;price=None
-        for row in rows:
-            area=row.get('area') or {}
-            if not area:continue
-            band=QRect(*(area[part] for part in ('x','y','width','height')))
-            band=band.adjusted(-round(band.width()*.26),0,0,0)
-            if not band.contains(QPoint(*pointer)) or not band.contains(QPoint(*read_point)):continue
-            listed=self.catalog.resolve(row.get('name'),row.get('tier'))
-            if listed and listed.game_id!=item.game_id:self.clear_shop_description();return
-            source=band
-            if listed and row.get('price'):price=dict(row['price'])
-            break
+        if listed and listed.game_id!=item.game_id:self.clear_shop_description();return
+        price=dict(row['price']) if listed and row.get('price') else None
         proof=dict(found=found,name=name,pixels=image.copy(name),exclude=tuple(self.annotation_exclusions()),
-                   source=source,pointer=pointer,page=self.shop_rows.page_revision)
-        if not still_present(latest,self.shop_tooltip_rect,proof['exclude']) or not self.shop_description_title_matches(latest,proof,proof['exclude']):
+                   source=source,pointer=pointer,page=self.shop_rows.page_revision,item_id=listed.game_id if listed else None)
+        if not still_present(latest,self.shop_tooltip_rect,proof['exclude']) or not (
+                self.shop_description_title_matches(latest,proof,proof['exclude']) or self.shop_description_source_matches(latest,proof,proof['exclude'])):
             self.clear_shop_description();return
         if not self.shop_description:self.card_sightings.discard(True)
         self.shop_description={**found,'name':item.name,'price':price,'_shop_description':True}
@@ -1755,7 +1821,7 @@ class LensWindow(QMainWindow):
         normal_card_rows=self.card_sightings.observe(self.rows,self.tooltip_result,
             retain=self.mode=='live' and not screen_old and self.prices_enabled,
             context=(self.screen_index,self.reader.crop.getRect() if self.reader.crop else None),
-            page=self.shop_rows.page_revision)
+            page=self.shop_rows.page_revision,identity=lambda row:item.game_id if self.catalog and (item:=self.catalog.resolve(row.get('name'),row.get('tier'))) else None)
         focus=self.shop_description if self.shop_description and not self.tooltip_result else None
         card_rows=[(focus,True)] if focus else normal_card_rows
         cached_rows=normal_card_rows+([(focus,True)] if focus else [])
@@ -1947,6 +2013,22 @@ class LensWindow(QMainWindow):
                                                    round(self.shop_tooltip_rect.width()*sx),
                                                    round(self.shop_tooltip_rect.height()*sy)] if self.shop_tooltip_rect is not None else None),
                                     "deal_delta":f"{verdict.delta:+.0f}%" if verdict.delta is not None else ""})
+        if self.shop_description and self.shop_tooltip_rect is not None and annotations:
+            proof=self.shop_description_proof
+            source=proof.get('source') if proof else None
+            for row,annotation in zip((row for row in self.rows if row.get('name') and row.get('shop_slot') is not None),annotations):
+                if annotation.get('kind')!='shop' or source is None:continue
+                band=(row.get('area') or {})
+                if not band or not source.contains(QRect(*(band[k] for k in ('x','y','width','height')))):continue
+                if annotation.get('item_id')!=proof.get('item_id'):continue
+                region=self.reader.game_area if self.reader.auto_active else self.reader.crop or image.rect()
+                popup=self.shop_tooltip_rect
+                annotations.append({**annotation,'key':'description:'+annotation['key'],'kind':'item',
+                    'source_shop_key':annotation['key'],'occlusion':None,'animate_move':False,
+                    'description_box':[round((popup.x()+offset_x)*sx),round((popup.y()+offset_y)*sy),
+                                       round(popup.width()*sx),round(popup.height()*sy)],
+                    'bounds':[round(region.x()*sx),round(region.y()*sy),round(region.width()*sx),round(region.height()*sy)]})
+                break
         if self.prices_enabled and self.labels_enabled and self.hover_enabled and self.tooltip_result and self.mode == "live" and not screen_old and screen_matches and self.catalog and game_visible:
             found = self.tooltip_result
             area = found["area"]
@@ -2074,6 +2156,7 @@ class LensWindow(QMainWindow):
         self.closing = True
         window_size.save(self, self.settings)
         self.timer.stop()
+        self.updates.close()
         self.exp_panel.close_session()
         self.hotkeys.close()
         self.exp_hotkeys.close()

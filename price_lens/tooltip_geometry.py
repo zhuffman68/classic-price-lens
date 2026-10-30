@@ -81,7 +81,7 @@ def _framed_bounds(image,name):
     return QRect(left,top-1,right-left+3,bottom-top+3).intersected(image.rect())
 
 
-def description_bounds(image,area,exclude=()):
+def description_bounds(image,area,exclude=(),*,source_verified=False):
     if image is None or image.isNull() or not area:return None
     name=QRect(*(int(area[k]) for k in ('x','y','width','height')))
     # A tooltip can extend past a cropped fixture or the shared display edge.
@@ -89,7 +89,7 @@ def description_bounds(image,area,exclude=()):
     name=name.intersected(image.rect())
     if name.width()<12 or name.height()<8:return None
     visible=_visible_region(name,exclude)
-    if sum(part.width()*part.height() for part in visible)<name.width()*name.height()*.25:return None
+    if not source_verified and sum(part.width()*part.height() for part in visible)<name.width()*name.height()*.25:return None
     framed=_framed_bounds(image,name)
     if framed is not None:return framed if _description_body(image,framed,exclude) else None
     def fill(x,y):

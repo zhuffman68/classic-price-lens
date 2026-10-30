@@ -2,7 +2,7 @@
 import re
 from PySide6.QtCore import QEasingCurve,QPoint,Qt,QVariantAnimation,QSize,QRect
 from PySide6.QtGui import QPainter, QPalette,QPixmap
-from PySide6.QtWidgets import QApplication, QGraphicsOpacityEffect, QLabel, QTabWidget, QWidget,QSizePolicy,QStackedWidget,QStyle,QStyleOption
+from PySide6.QtWidgets import QApplication, QGraphicsOpacityEffect, QLabel, QTabWidget, QWidget,QSizePolicy,QStackedWidget,QStyle,QStyleOption,QScrollArea,QScrollBar
 from .number_motion import NumberRoll
 from . import gui_currency
 
@@ -15,6 +15,28 @@ def enabled(widget):
         ancestor=ancestor.parentWidget()
     return bool(app and not app.property("reduceMotion") and widget.isVisible()
                 and not widget.window().isMinimized())
+
+
+class _QuietScrollBar(QScrollBar):
+    def paintEvent(self,event):
+        if self.maximum()>self.minimum():super().paintEvent(event)
+
+
+class StableScrollArea(QScrollArea):
+    """Reserve a constant narrow gutter; draw a scrollbar only when needed.
+
+    A changing viewport width rewraps every card and interrupts CardArea's
+    snapshot. Keep the gutter even when the content fits, without an empty
+    scrollbar handle/track or a horizontal scrollbar at the default width.
+    """
+    def __init__(self,parent=None):
+        super().__init__(parent)
+        bar=_QuietScrollBar(Qt.Orientation.Vertical,self)
+        self.setVerticalScrollBar(bar)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        bar.rangeChanged.connect(lambda low,high:bar.setEnabled(high>low))
+        bar.setEnabled(False)
 
 
 class MotionLabel(QLabel):

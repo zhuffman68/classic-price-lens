@@ -15,7 +15,7 @@ from .number_motion import NumberRoll
 class ActiveCards(QObject):
     """GUI-only retention; never supplies screen labels or verified offers."""
     changed=Signal()
-    grace=1.0
+    grace=2.0
 
     def __init__(self,parent=None):
         super().__init__(parent);self.groups={True:(),False:()};self.actual={True:(),False:()};self.deadlines={};self.due=None
@@ -33,14 +33,15 @@ class ActiveCards(QObject):
         for key in list(self.deadlines):
             if key[0]==hovered:self.deadlines.pop(key)
 
-    def observe(self,rows,tooltip,*,retain=True,now=None,context=None,page=None):
+    def observe(self,rows,tooltip,*,retain=True,now=None,context=None,page=None,identity=None):
         now=time.monotonic() if now is None else now
         incoming={True:(tooltip,) if tooltip else (),False:tuple(rows)}
         if self.context is not None and context!=self.context:
             self.discard(True);self.discard(False)
         if self.page is not None and page!=self.page:self.discard(False)
         self.context=context;self.page=page
-        signatures={hovered:tuple((row.get('name'),row.get('tier'),row.get('shop_page'),tuple(row['shop_slot']) if row.get('shop_slot') is not None else None) for row in current)
+        valid=identity or (lambda row:bool(row.get('name')))
+        signatures={hovered:tuple((identity(row) if identity else (row.get('name'),row.get('tier')),row.get('shop_page'),tuple(row['shop_slot']) if row.get('shop_slot') is not None else None) for row in current if valid(row))
                     for hovered,current in incoming.items()}
         # A newly seen item can replace a disappearing item across contexts too;
         # an already-present shop must not cancel an inventory card's grace.
@@ -53,6 +54,16 @@ class ActiveCards(QObject):
             verified_slots=bool(current and not hovered and all(row.get('shop_slot') is not None for row in (*previous,*current))
                                 and len({row.get('shop_page') for row in (*previous,*current)})==1)
             if current and not hovered and not verified_slots:self.discard(hovered);previous=()
+            if verified_slots and retain:
+                saved={self.slot(row,index):row for index,row in enumerate(previous)}
+                usable=[]
+                for index,row in enumerate(current):
+                    slot=self.slot(row,index);old=saved.get(slot);key=(hovered,slot)
+                    if old and valid(old) and not valid(row):
+                        deadline=self.deadlines.setdefault(key,now+self.grace)
+                        if now<deadline:continue
+                    usable.append(row)
+                current=tuple(usable)
             keyed={(hovered,True if hovered else self.slot(row,index)) for index,row in enumerate(current)}
             result=list(deepcopy(current))
             for key in keyed:self.deadlines.pop(key,None)

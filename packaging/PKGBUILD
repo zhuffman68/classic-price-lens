@@ -14,7 +14,7 @@ depends=('glibc>=2.34' 'gcc-libs' 'libglvnd' 'dbus' 'fontconfig' 'freetype2'
          'xcb-util-cursor' 'xcb-util-image' 'xcb-util-keysyms' 'xcb-util-renderutil'
          'xcb-util-wm' 'libxkbcommon' 'libxkbcommon-x11' 'wayland' 'libpulse'
          'alsa-lib' 'pipewire' 'xdg-desktop-portal' 'xorg-xwayland' 'ca-certificates'
-         'webkit2gtk-4.1' 'gtk3')
+         'webkit2gtk-4.1' 'gtk3' 'polkit' 'openssl')
 optdepends=('xdg-desktop-portal-kde: screen sharing on KDE Plasma'
             'xdg-desktop-portal-gtk: portal integration on GTK desktops'
             'xdg-desktop-portal-gnome: screen sharing on GNOME'

@@ -98,7 +98,7 @@ class AnnotationWindow(QWidget):
             geometry = state.get("geometry")
             if geometry:
                 self.setGeometry(*geometry)
-            incoming = state.get("rows", [])[:24]
+            incoming = self.description_references(state.get("rows", [])[:32])
             self.rows = []
             self.retiring = []
             metrics = QFontMetrics(self.price_font)
@@ -201,6 +201,43 @@ class AnnotationWindow(QWidget):
     @staticmethod
     def row_key(row):
         return row.get("key", (row.get("name"), row.get("x"), row.get("y")))
+
+    def description_references(self,incoming):
+        """One clear reference for the hovered shop row, only if it is dimmed.
+
+        Keep native title pixels free. Decide from target rectangles rather
+        than fading pixels, so animation opacity cannot reverse this decision.
+        """
+        metrics=QFontMetrics(self.price_font)
+        shops={}
+        for row in incoming:
+            if row.get('kind')!='shop':continue
+            draft=dict(row,_width=min(350,max(230,metrics.horizontalAdvance(row['text'])+20,
+                metrics.horizontalAdvance(row.get('name',''))+20)))
+            shops[self.row_key(row)]=self.label_rect(draft,QCursor.pos())
+        result=[]
+        for row in incoming:
+            source=row.get('source_shop_key')
+            if source is None:result.append(row);continue
+            native=QRect(*row['description_box']);box=shops.get(source)
+            if box is None or not box.intersects(native):continue
+            bounds=QRect(*row['bounds']).intersected(self.rect()).adjusted(2,2,-2,-2)
+            width=min(bounds.width(),min(350,max(230,metrics.horizontalAdvance(row['text'])+20,
+                metrics.horizontalAdvance(row.get('name',''))+20)))
+            height=36;gap=8
+            candidates=[(native.left(),native.top()-height-gap),(native.right()-width+1,native.top()-height-gap),
+                (native.right()+gap,native.top()),(native.left()-width-gap,native.top()),
+                (native.left(),native.bottom()+gap),(bounds.left(),bounds.top()),(bounds.left(),bounds.bottom()-height+1)]
+            def placed(point):
+                return QRect(max(bounds.left(),min(point[0],bounds.right()-width+1)),
+                             max(bounds.top(),min(point[1],bounds.bottom()-height+1)),width,height)
+            def area(rect):return max(0,rect.width())*max(0,rect.height())
+            def cost(rect):
+                return (area(rect.intersected(native))*100+sum(area(rect.intersected(other)) for other in shops.values()),
+                        abs(rect.top()-native.top())+abs(rect.left()-native.left()))
+            target=min((placed(point) for point in candidates),key=cost)
+            result.append({**row,'x':target.x(),'y':target.y()+5})
+        return result
 
     def measure_translation(self,row):
         limit=min(360,max(1,row.get('bounds',[0,0,364,0])[2]-4))

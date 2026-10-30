@@ -314,17 +314,17 @@ class ContextUiTests(unittest.TestCase):
         w.render()
         self.assertIn(old,w.card_views.values())
 
-    def test_missing_hover_card_gets_one_second_gui_grace_without_retaining_its_overlay(self):
+    def test_missing_hover_card_gets_two_second_gui_grace_without_retaining_its_overlay(self):
         w=self.window;w.show();self.app.processEvents()
         with patch('price_lens.recent_items.time.monotonic',return_value=99):
             w.on_reading(self.reading(shop_hover=False));card=next(iter(w.card_views.values()))
         self.assertTrue(w.overlay.rows)
         w.tooltip_result=None
-        for clock in (100,100.999):
+        for clock in (100,101.999):
             with patch('price_lens.recent_items.time.monotonic',return_value=clock):w.render()
             self.assertIn(card,w.card_views.values());self.assertEqual(w.overlay.rows,[])
             self.assertEqual(w.recent_items.rows.count(),0)
-        with patch('price_lens.recent_items.time.monotonic',return_value=101):w.render()
+        with patch('price_lens.recent_items.time.monotonic',return_value=102):w.render()
         self.assertNotIn(card,w.card_views.values());self.assertIn(1,w.recent_items.rows_by_id)
         self.assertEqual(w.recent_items.height(),0)
         self.assertEqual(w.cards_stack.spacing(),0)
@@ -368,7 +368,7 @@ class ContextUiTests(unittest.TestCase):
             QTest.qWait(10)
             if retired and not w.card_views and w.card_area.animation.state()!=w.card_area.animation.State.Running:break
         timer.stop();self.app.processEvents()
-        self.assertTrue(retired);self.assertGreaterEqual(retired[0]-started,.999)
+        self.assertTrue(retired);self.assertGreaterEqual(retired[0]-started,1.999)
         self.assertFalse(w.card_views);self.assertEqual(w.card_area.height(),0);self.assertEqual(w.card_area.full_height,0)
         self.assertTrue(w.card_list.isHidden());self.assertTrue(w.summary.isHidden())
         self.assertEqual(w.recent_items.mapTo(w,QPoint()).y(),w.card_area.mapTo(w,QPoint()).y())
@@ -384,6 +384,24 @@ class ContextUiTests(unittest.TestCase):
 
     def test_natural_retirement_with_reduced_motion_leaves_no_empty_canvas(self):
         self.check_natural_card_retirement(reduced=True)
+
+    def test_scrollbar_changes_do_not_resize_or_finish_the_price_transition(self):
+        w=self.window;w.resize(460,840);w.show();self.app.processEvents()
+        w.rows=[dict(name='Example Hat',price=dict(quantity=1,mesos=100),
+                     area=dict(x=340,y=100+60*index,width=180,height=40)) for index in range(6)]
+        w.render();w.card_area.animation.setCurrentTime(180);self.app.processEvents()
+        self.assertGreater(w.scroll.verticalScrollBar().maximum(),0)
+        width=w.card_area.width()
+        w.rows=[];w.tooltip_result=dict(name='Example Hat',area=dict(x=100,y=100,width=180,height=20))
+        w.render();w.card_area.animation.pause();w.card_area.animation.setCurrentTime(140)
+        for _ in range(5):self.app.processEvents()
+        self.assertEqual(w.scroll.verticalScrollBar().maximum(),0)
+        with self.subTest(property='content width'):
+            self.assertEqual(w.card_area.width(),width)
+        with self.subTest(property='outgoing transition frame'):
+            self.assertIsNotNone(w.card_area.outgoing)
+        with self.subTest(property='transition clock'):
+            self.assertEqual(w.card_area.animation.currentTime(),140)
 
     def test_shop_annotation_identity_survives_an_omitted_neighbor(self):
         w=self.window;w.on_catalog(Catalog({'items':[dict(id=1,name='Example Hat'),dict(id=2,name='Example Cape')]}))
@@ -706,6 +724,16 @@ class ContextUiTests(unittest.TestCase):
         self.assertTrue(self.window.auto_area_check.isChecked())
         self.assertTrue(self.window.reader.auto_enabled)
 
+    def test_update_handoff_closes_windows_helpers_but_keeps_compatible_linux_sharing(self):
+        from price_lens import __version__
+        w=self.window;w.updates.offer={'manifest':{'capture_compatible_from':[__version__]}}
+        for name,keep in (('windows-installer-x64',False),('linux-arch-x64',True)):
+            w.updates.target=replace(w.updates.target,name=name)
+            with patch.object(w.updates,'commit',return_value=True) as commit,patch.object(w,'close') as close:
+                w.install_update_restart();commit.assert_called_once_with(True);close.assert_called_once()
+                self.assertEqual(w.keep_capture,keep)
+        w.keep_capture=False
+
     def test_market_updates_on_launch_with_the_selected_global_interval(self):
         self.assertTrue(self.window.service.refresh_snapshot)
         self.assertEqual(self.window.service.interval,self.window.ttl)
@@ -860,7 +888,8 @@ class ContextUiTests(unittest.TestCase):
         self.assertEqual(len(shown),1);self.assertEqual(shown[0].fields['context'].text(),'Shop item description')
         self.assertTrue(shown[0].store.isHidden());self.assertIsNone(w.shop_description['price'])
         self.assertEqual(w.service.visible,[1,2]);self.assertEqual(w.recent_items.rows.count(),0)
-        self.assertEqual(len(w.overlay.rows),2);self.assertTrue(all(row['kind']=='shop' for row in w.overlay.rows))
+        self.assertEqual(len(w.overlay.rows),3);self.assertEqual(sum(row['kind']=='shop' for row in w.overlay.rows),2)
+        self.assertEqual(w.overlay.rows[-1]['source_shop_key'],w.overlay.rows[0]['key'])
         self.assertTrue(all(w.card_views[key] is card and card.isHidden() for key,card in cards.items()))
         self.assertIsNotNone(w.card_area.outgoing)
         self.assertGreater(w.card_area.start_height,w.card_area.full_height)
@@ -938,12 +967,36 @@ class ContextUiTests(unittest.TestCase):
         w.on_image(w.reader.image)
         self.assertIsNotNone(w.shop_description);self.assertEqual(w.shop_description['name'],'Example Hat')
 
+    def test_masked_shop_title_uses_only_the_same_verified_native_source(self):
+        w=self.window;self.prepare_shop_description()
+        proof=w.shop_description_proof
+        self.assertTrue(w.shop_description_matches(w.reader.image,w.reader.pointer))
+        # A price label crossing most of the native title must not establish
+        # an identity from its own pixels, even if native OCR supplied a name.
+        w.overlay.layout_boxes=[(500,210,150,20)]
+        self.assertTrue(w.shop_description_matches(w.reader.image,w.reader.pointer))
+        w.on_image(w.reader.image)
+        self.assertIsNotNone(w.shop_description)
+        w.rows[0]['name']='Example Cape'
+        self.assertFalse(w.shop_description_matches(w.reader.image,w.reader.pointer))
+        w.overlay.layout_boxes=[]
+        self.assertTrue(w.shop_description_title_matches(w.reader.image,proof,[]))
+
     def test_inventory_hover_outside_shop_takes_over_from_shop_description_focus(self):
         w=self.window;self.prepare_shop_description();w.reader.pointer=(100,100)
         w.on_reading(self.reading(shop_hover=False,store=True))
         self.assertIsNone(w.shop_description);self.assertIsNotNone(w.tooltip_result)
         self.assertEqual(w.tooltip_result['name'],'Example Hat')
         self.assertTrue(any(row['kind']=='item' for row in w.overlay.rows))
+
+    def test_shop_hover_can_first_identify_a_masked_title_from_its_verified_slot(self):
+        w=self.window;_,_,reading=self.prepare_shop_description();w.clear_shop_description();w.shop_tooltip_rect=None
+        w.overlay.layout_boxes=[(500,210,150,20)]
+        reading['hover']['tooltip']['found']['name']=None
+        w.on_reading(reading)
+        self.assertIsNotNone(w.shop_description);self.assertEqual(w.shop_description['name'],'Example Hat')
+        self.assertIsNone(w.shop_description['price'])
+        self.assertEqual(w.service.visible,[1,2]);self.assertEqual(w.recent_items.rows.count(),0)
 
     def test_shop_focus_preserves_search_watch_precedence_and_reduced_motion(self):
         w=self.window;self.app.setProperty('reduceMotion',True);original,_,_=self.prepare_shop_description()

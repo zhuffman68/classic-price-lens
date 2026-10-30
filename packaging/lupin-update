@@ -1,0 +1,3 @@
+#!/bin/sh
+set -eu
+exec /opt/lupin/runtime/bin/python3 -I /opt/lupin/price_lens/update_install.py "$@"

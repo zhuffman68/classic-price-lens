@@ -4,7 +4,7 @@ import os
 import unittest
 from unittest.mock import patch
 
-from PySide6.QtCore import QPoint, QCoreApplication, QEvent
+from PySide6.QtCore import QPoint, QCoreApplication, QEvent,QRect
 from PySide6.QtWidgets import QApplication
 from price_lens.annotations import AnnotationWindow
 
@@ -113,6 +113,19 @@ class AnnotationMotionTests(unittest.TestCase):
         row = {"x": 120, "y": 90, "_width": 230}
         self.assertEqual(self.window.label_rect(row, QPoint(100, 100)),
                          self.window.label_rect(row, QPoint(140, 130)))
+
+    def test_hovered_shop_reference_avoids_description_and_is_only_needed_for_a_dimmed_listing(self):
+        shop=dict(x=120,y=90,key='shop:1:hat',kind='shop',name='Example Hat',text='FM 1,000',color='#86ceac',occlusion=[250,80,300,240])
+        focus=dict(shop,key='description:hat',kind='item',occlusion=None,source_shop_key=shop['key'],
+                   description_box=[250,80,300,240],bounds=[0,0,800,600])
+        self.window.read_command(json.dumps({**self.command,'rows':[shop,focus]}))
+        self.assertEqual(len(self.window.rows),2)
+        row=self.window.rows[-1];box=self.window.label_rect(row,QPoint(0,0))
+        self.assertFalse(box.intersects(QRect(*focus['description_box'])))
+        self.assertTrue(QRect(*focus['bounds']).contains(box));self.assertEqual(row['_target_alpha'],1.0)
+        clear=dict(focus,description_box=[500,300,250,240])
+        self.window.read_command(json.dumps({**self.command,'rows':[dict(shop,occlusion=None),clear]}))
+        self.assertEqual([row['kind'] for row in self.window.rows],['shop'])
 
     def test_inventory_card_has_a_short_fade_in_and_out(self):
         row = self.window.rows[0]

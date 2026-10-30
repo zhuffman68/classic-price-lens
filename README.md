@@ -151,6 +151,10 @@ Requirements: a supported 64-bit desktop, about **3 GB free space** for installa
 
 Screenshots, translations and session history stay on the device. Market requests contain item information, never screenshots. Cached references guide comparisons and do not guarantee a sale.
 
+## Updates
+
+Packaged builds check GitHub on launch and at the interval chosen in Settings. An update notification offers **Download & install**; Lupin saves tracking and restarts after installation. Linux uses the normal system authentication prompt. Smaller verified patches are used when available, with a full download as fallback. See [update details](docs/UPDATES.md).
+
 ## Help
 
 - **Game not found:** uncover the bottom status bar, or use **Settings → Limit the reading area…**.

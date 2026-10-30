@@ -54,6 +54,8 @@ def main():
     (OUT / "runtime-sources.json").write_text(json.dumps(manifest, indent=2) + "\n")
     destinations = {
         "packaging/lupin": "usr/bin/lupin",
+        "packaging/lupin-update": "usr/lib/lupin/lupin-update",
+        "packaging/io.github.zhuffman68.Lupin.update.policy": "usr/share/polkit-1/actions/io.github.zhuffman68.Lupin.update.policy",
         "packaging/classic-price-lens.desktop": "usr/share/applications/io.github.zhuffman68.ClassicPriceLens.desktop",
         "price_lens/resources/icon.png": "usr/share/icons/hicolor/256x256/apps/io.github.zhuffman68.Lupin-scaled.png",
         "price_lens/resources/icon.svg": "usr/share/icons/hicolor/scalable/apps/io.github.zhuffman68.Lupin-scaled.svg",
@@ -68,6 +70,7 @@ def main():
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(ROOT / source, target)
     (STAGE / "usr/bin/lupin").chmod(0o755)
+    (STAGE / "usr/lib/lupin/lupin-update").chmod(0o755)
     # ZIP wheel extraction does not preserve executable permissions for Qt helpers.
     for path in (site / "PySide6/Qt/libexec").glob("*"):
         if path.is_file():

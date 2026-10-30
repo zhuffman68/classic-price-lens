@@ -10,6 +10,7 @@ class TrayController(QObject):
         super().__init__(window)
         self.window = window
         self.minimize_pending = False
+        self.message_kind=''
         self.icon = QSystemTrayIcon(app_icon(window.root), window)
         self.icon.setToolTip("Lupin")
         self.menu = QMenu(window)
@@ -22,11 +23,13 @@ class TrayController(QObject):
         self.labels.setCheckable(True)
         self.labels.toggled.connect(window.labels_check.setChecked)
         self.menu.addAction("Settings…", self.settings)
+        self.update_action=self.menu.addAction('Update available…',window.open_updates)
+        self.update_action.setVisible(False)
         self.menu.addSeparator()
         self.menu.addAction("Quit Lupin", window.close)
         self.icon.setContextMenu(self.menu)
         self.icon.activated.connect(self.activated)
-        self.icon.messageClicked.connect(self.restore)
+        self.icon.messageClicked.connect(self.message_clicked)
         self.icon.show()
 
     def available(self):
@@ -41,6 +44,8 @@ class TrayController(QObject):
         self.labels.blockSignals(True)
         self.labels.setChecked(self.window.labels_enabled)
         self.labels.blockSignals(False)
+        updater=getattr(self.window,'updates',None)
+        self.update_action.setVisible(bool(updater and updater.offer))
 
     def minimize(self):
         # Wayland can acknowledge a minimize request with a normal-state
@@ -52,6 +57,7 @@ class TrayController(QObject):
             return False
         self.window.hide()
         state = "Waiting for screen sharing." if self.window.capture_starting else "Reading continues." if self.window.mode == "live" else "Reading is paused." if self.window.mode == "paused" else "Reading has not started."
+        self.message_kind='tray'
         self.icon.showMessage("Lupin is in the tray",
                               state + " Right-click the tray icon for controls, or click it to show the panel.",
                               QSystemTrayIcon.MessageIcon.Information, 6000)
@@ -72,9 +78,23 @@ class TrayController(QObject):
         self.window.open_settings()
 
     def translation_copied(self):
+        self.message_kind='translation'
         self.icon.showMessage('Translation copied to clipboard',
             'Paste into Classic World with Ctrl+V, then send when ready.',
             QSystemTrayIcon.MessageIcon.Information,3500)
+
+    def update_available(self,version):
+        self.message_kind='update'
+        self.icon.showMessage('Lupin '+version+' is available','Click to download and install, or update later from Settings.',
+                              QSystemTrayIcon.MessageIcon.Information,6000)
+
+    def update_notice(self,title,message):
+        self.message_kind='update'
+        self.icon.showMessage(title,message,QSystemTrayIcon.MessageIcon.Information,6000)
+
+    def message_clicked(self):
+        if self.message_kind=='update':self.window.open_updates()
+        else:self.restore()
 
     def activated(self, reason):
         if reason in (QSystemTrayIcon.ActivationReason.Trigger, QSystemTrayIcon.ActivationReason.DoubleClick):

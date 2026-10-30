@@ -1,5 +1,6 @@
 """Exercise card retention and real intermediate geometry without screen capture."""
 import unittest
+import os
 from PySide6.QtCore import QCoreApplication,QEvent,QPoint,Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QApplication,QLabel,QVBoxLayout,QWidget
@@ -13,7 +14,9 @@ def title(name,y=0,**extra):
 
 class PriceMotionTests(unittest.TestCase):
     @classmethod
-    def setUpClass(cls):cls.app=QApplication.instance() or QApplication([])
+    def setUpClass(cls):
+        os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
+        cls.app=QApplication.instance() or QApplication([])
 
     def setUp(self):
         self.app.setProperty('reduceMotion',False);self.window=QWidget();self.window.resize(460,600)
@@ -30,12 +33,12 @@ class PriceMotionTests(unittest.TestCase):
     def add_card(self,height):
         card=QLabel('Card');card.setFixedHeight(height);self.cards.addWidget(card);card.show();return card
 
-    def test_missing_card_is_held_at_999_ms_and_retires_at_one_second(self):
+    def test_missing_card_is_held_at_1999_ms_and_retires_at_two_seconds(self):
         state=ActiveCards(self.window);a=title('A')
         self.assertEqual(state.observe([],a,now=99),[(a,True)])
         state.observe([],None,now=100)
-        self.assertEqual(state.observe([],None,now=100.999),[(a,True)])
-        self.assertEqual(state.observe([],None,now=101),[])
+        self.assertEqual(state.observe([],None,now=101.999),[(a,True)])
+        self.assertEqual(state.observe([],None,now=102),[])
         self.assertFalse(state.timer.isActive())
 
     def test_replacement_before_deadline_does_not_visit_an_empty_state(self):
@@ -59,8 +62,8 @@ class PriceMotionTests(unittest.TestCase):
         a=title('A',0,shop_page=1,shop_slot=(0,0,200,18));b=title('B',60,shop_page=1,shop_slot=(0,60,200,18))
         state.observe([a,b],None,now=99,page=1,context=0)
         self.assertEqual(state.observe([b],None,now=100,page=1,context=0),[(a,False),(b,False)])
-        self.assertEqual(len(state.observe([b],None,now=100.999,page=1,context=0)),2)
-        self.assertEqual(state.observe([b],None,now=101,page=1,context=0),[(b,False)])
+        self.assertEqual(len(state.observe([b],None,now=101.999,page=1,context=0)),2)
+        self.assertEqual(state.observe([b],None,now=102,page=1,context=0),[(b,False)])
         state.observe([],None,now=101,page=1,context=0)
         self.assertEqual(state.observe([],None,now=101.1,page=2,context=0),[])
         state.observe([],a,now=102,page=2,context=0)
@@ -70,8 +73,24 @@ class PriceMotionTests(unittest.TestCase):
         state=ActiveCards(self.window);a,b,c=title('A'),title('B'),title('C')
         state.observe([a,b],c,now=99)
         self.assertIn((c,True),state.observe([b,a],None,now=100))
-        self.assertIn((c,True),state.observe([b],None,now=100.999))
-        self.assertNotIn((c,True),state.observe([b],None,now=101))
+        self.assertIn((c,True),state.observe([b],None,now=101.999))
+        self.assertNotIn((c,True),state.observe([b],None,now=102))
+
+    def test_unreadable_verified_slot_keeps_its_gui_identity_for_only_two_seconds(self):
+        state=ActiveCards(self.window)
+        previous=title('A',0,shop_page=1,shop_slot=(0,0,200,18));missing={**previous,'name':None,'price':None}
+        state.observe([previous],None,now=99,page=1)
+        self.assertEqual(state.observe([missing],None,now=100,page=1),[(previous,False)])
+        self.assertEqual(state.observe([missing],None,now=101.999,page=1),[(previous,False)])
+        self.assertEqual(state.observe([missing],None,now=102,page=1),[(missing,False)])
+        self.assertIsNone(missing['name']);self.assertIsNone(missing['price'])
+
+    def test_unknown_shop_read_and_equivalent_spelling_do_not_cancel_inventory_grace(self):
+        state=ActiveCards(self.window);a=title('Hat');b=title('Cape');alias=title('HAT')
+        resolve=lambda row:1 if (row.get('name') or '').lower()=='hat' else 2 if row.get('name')=='Cape' else None
+        state.observe([a],b,now=99,identity=resolve)
+        self.assertIn((b,True),state.observe([alias],None,now=100,identity=resolve))
+        self.assertIn((b,True),state.observe([title(None)],None,now=101,identity=resolve))
 
     def test_nested_empty_card_layout_does_not_reuse_a_cached_height(self):
         wrapper=QWidget();nested=QVBoxLayout(wrapper);nested.setContentsMargins(0,0,0,0)
