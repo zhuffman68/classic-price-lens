@@ -1,5 +1,6 @@
 """Small visual name proofs from captured status-bar pixels, never game identity APIs."""
 from dataclasses import dataclass,field
+from collections import deque
 import hashlib
 import math
 
@@ -118,6 +119,7 @@ class NameReference:
     scale: float=0.0
     glyphs: tuple=()
     alternatives: list=field(default_factory=list)
+    observations: deque=field(default_factory=lambda:deque(maxlen=8))
 
     @classmethod
     def create(cls,name,pixels,proof):
@@ -131,24 +133,32 @@ class TrackingIdentity:
     def __init__(self):
         self.reference=None
         self.candidate=None
+        self.accepted_at=None
+
+    @staticmethod
+    def visual_match(reference,pixels,proof,name):
+        if reference is None:return False,False
+        glyphs=parse_glyphs(proof);scale=proof.get('scale',0)
+        strict=(same_name_pixels(reference.pixels,pixels) or
+                any(same_name_pixels(other,pixels) for other in reference.alternatives) or
+                same_glyphs(reference.glyphs,glyphs))
+        scaled=bool(not strict and name==reference.name and reference.scale
+                    and type(scale) in (int,float) and 0<scale<3 and abs(scale-reference.scale)>.04
+                    and same_glyphs(reference.glyphs,glyphs,minimum=.885,average=.915))
+        return strict or scaled,scaled
 
     def prepare(self,payload):
         result=dict(payload);pixels=proof_pixels(payload.get('nameProof'))
+        result.pop('identityKey',None);result.pop('_display_name_observation',None)
         reference=self.reference
         if pixels is None:
             if reference:result['character']=''
             return result
-        proof=payload['nameProof'];glyphs=parse_glyphs(proof)
-        scale=proof.get('scale',0);name=str(payload.get('character') or '')[:80]
-        visual_match=reference and (same_name_pixels(reference.pixels,pixels) or
-            any(same_name_pixels(other,pixels) for other in reference.alternatives) or
-            same_glyphs(reference.glyphs,glyphs))
+        proof=payload['nameProof'];name=str(payload.get('character') or '').strip()[:80]
+        result['_display_name_observation']=name
+        visual_match,_=self.visual_match(reference,pixels,proof,name)
         # A different raster scale needs corroborating text and every glyph.
         # Keep its template under the original key, with a bounded variant set.
-        if (reference and not visual_match and name==reference.name and reference.scale
-                and type(scale) in (int,float) and 0<scale<3 and abs(scale-reference.scale)>.04
-                and same_glyphs(reference.glyphs,glyphs,minimum=.885,average=.915)):
-            reference.alternatives=(reference.alternatives+[pixels])[-3:];visual_match=True
         if visual_match:
             result.update(character=reference.name,identityKey=reference.key)
             self.candidate=None
@@ -157,9 +167,44 @@ class TrackingIdentity:
         candidate=self.candidate
         if not candidate or not same_name_pixels(candidate.pixels,pixels):
             candidate=self.candidate=NameReference.create(name,pixels,proof)
-        result.update(character=candidate.name,identityKey=candidate.key)
+        result.update(character=name,identityKey=candidate.key)
         return result
 
-    def accept(self,payload):
-        if self.candidate and self.candidate.key==payload.get('identityKey'):
-            self.reference=self.candidate;self.candidate=None
+    def accept(self,payload,at=None):
+        """Learn labels/templates only after the numerical reading is accepted.
+
+        The visual key never changes when spelling changes. Six corroborating
+        names, an 80 percent majority and four consecutive observations over at
+        least two seconds can refine the provisional first OCR spelling.
+        """
+        if at is not None:
+            if type(at) not in (int,float) or not math.isfinite(at):return None
+            if self.accepted_at is not None and at<=self.accepted_at:return None
+        pixels=proof_pixels(payload.get('nameProof'))
+        if pixels is None:return None
+        name=str(payload.get('_display_name_observation') or '').strip()[:80]
+        candidate=self.candidate
+        if candidate and candidate.key==payload.get('identityKey') and same_name_pixels(candidate.pixels,pixels):
+            candidate.name=name or candidate.name
+            self.reference=candidate;self.candidate=None
+        reference=self.reference
+        if reference is None or reference.key!=payload.get('identityKey'):return None
+        matched,scaled=self.visual_match(reference,pixels,payload['nameProof'],name)
+        if not matched:return None
+        if at is not None:self.accepted_at=at
+        # The native reader distinguishes reused status OCR from a fresh name
+        # recognition. Repeated cached deliveries are not independent votes.
+        if payload.get('cached') is True:return reference.name
+        if scaled:reference.alternatives=(reference.alternatives+[pixels])[-3:]
+        if at is None:return reference.name
+        observations=reference.observations
+        if observations and at-observations[-1][0]>5:observations.clear()
+        # Sampling bounds repeated same-frame deliveries without depending on
+        # reader frequency, and keeps enough elapsed evidence in eight votes.
+        if not name or not name.isprintable() or observations and at-observations[-1][0]<.4:return reference.name
+        observations.append((at,name))
+        votes=[stamp for stamp,value in observations if value==name]
+        if (name!=reference.name and len(votes)>=6 and len(votes)*5>=len(observations)*4
+                and votes[-1]-votes[0]>=2 and all(value==name for _,value in list(observations)[-4:])):
+            reference.name=name
+        return reference.name

@@ -1,5 +1,6 @@
 """EXP controls and local history; pixel capture remains in the existing reader."""
 from datetime import datetime
+from dataclasses import replace
 import sqlite3
 import time
 
@@ -126,7 +127,14 @@ class ExperiencePanel(QWidget):
             if payload['identityKey']!=previous.identity_key:self.identity_ready=False
         accepted = self.tracker.ingest(payload, at) if 'experience' in result else False
         if accepted:
-            self.identity.accept(payload)
+            display_name=self.identity.accept(payload,at)
+            if display_name and self.tracker.refine_character(payload.get('identityKey'),display_name):
+                held_reading=self.numeric_snapshot.get('reading') if self.numeric_snapshot else None
+                if held_reading and held_reading.identity_key==payload.get('identityKey'):
+                    self.numeric_snapshot['reading']=replace(held_reading,character=display_name)
+                if self.history:
+                    try:self.history.refine_character(payload['identityKey'],display_name)
+                    except (OSError,sqlite3.Error,ValueError) as error:self.storage_error='Could not update character spelling: '+str(error)
             self.identity_ready=True
             self.reacquiring=False;self.paused_window=None;self.paused_meso_rate=None
             self.tracker.observe_map(payload, at)
@@ -246,7 +254,7 @@ class ExperiencePanel(QWidget):
         now=time.monotonic() if now is None else now
         run=self.tracker.run;reading=self.tracker.current
         state=(self.requested,self.user_paused,self.reacquiring,self.identity_ready,self.paused_context_ready,self.connected,self.display_mode,
-               run.id if run else None,reading.character if reading else '',reading.level if reading else None,self.mesos.observed)
+               run.id if run else None,(reading.identity_key or reading.character) if reading else '',reading.level if reading else None,self.mesos.observed)
         if self.numeric_snapshot is not None and state==self.numeric_state and now-self.numeric_at<2:return self.numeric_snapshot
         held=(self.user_paused or self.reacquiring) and self.paused_window is not None
         meso_held=(self.user_paused or not self.connected or self.reacquiring and not self.identity_ready) and self.paused_window is not None
@@ -412,6 +420,7 @@ class ExperiencePanel(QWidget):
             self.filter.addItem(name, name)
         self.filter.setCurrentIndex(max(0, self.filter.findData(selected)))
         self.filter.blockSignals(False)
+        selected=self.filter.currentData()
         rows = [row for row in rows if not selected or row["character"] == selected]
         self.table.setRowCount(len(rows))
         from .experience_widgets import history_headers
@@ -462,4 +471,4 @@ class ExperiencePanel(QWidget):
             reading.character if reading else '', reading.job if reading else '',
             self.map_input.text().strip() or self.tracker.map_name or 'Unlabelled map',self.notes.text().strip(),
             reading.level if reading else 0,reading.level if reading else 0,
-            seconds=self.mesos.seconds,reason=reason))
+            seconds=self.mesos.seconds,reason=reason,identity_key=reading.identity_key if reading else ''))

@@ -1,7 +1,7 @@
 """Screen-derived EXP sessions. No network, game access, or reference EXP table."""
 from collections import deque
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 import csv
 import json
 import math
@@ -81,6 +81,7 @@ class Run:
     session_seconds: float | None = None
     meso_basis: str = "wallet"  # Legacy saved runs retain their original meaning.
     pickup_gaps: int = 0
+    identity_key: str = ""
 
 
 class ExperienceTracker:
@@ -115,11 +116,24 @@ class ExperienceTracker:
         detected = self.map_name if self.last_map_at is not None and r.at-self.last_map_at <= 15 else ""
         self.run = Run(uuid.uuid4().hex, time.time() if started is None else started,
                        r.character, r.job, (map_name or detected or "Unlabelled map")[:160],
-                       notes[:240], r.level, r.level)
+                       notes[:240], r.level, r.level,identity_key=r.identity_key)
         self.baseline = r
         self.paused = False
         self.recovery.clear()
         self.message = "Recording · standing still counts toward your rate."
+        return True
+
+    def refine_character(self,identity_key,name):
+        """Correct display spelling without changing session identity or pace."""
+        if not identity_key or not name or not self.current or self.current.identity_key!=identity_key:return False
+        if self.current.character==name:return False
+        for field in ('current','baseline','candidate'):
+            reading=getattr(self,field)
+            if reading and reading.identity_key==identity_key:setattr(self,field,replace(reading,character=name))
+        self.recovery=deque((replace(reading,character=name) if reading.identity_key==identity_key else reading
+                             for reading in self.recovery),maxlen=self.recovery.maxlen)
+        for run in self.completed+([self.run] if self.run else []):
+            if run.identity_key==identity_key:run.character=name
         return True
 
     def pause(self, paused=True):
@@ -346,15 +360,27 @@ class SessionHistory:
             rows = db.execute("SELECT payload FROM exp_sessions ORDER BY started DESC").fetchall()
         return [json.loads(row[0]) for row in rows]
 
+    def refine_character(self,identity_key,name):
+        """Relabel only records carrying this exact captured visual identity."""
+        if not identity_key or not name:return
+        with self.connect() as db:
+            rows=db.execute('SELECT id,payload FROM exp_sessions').fetchall()
+            for record_id,payload in rows:
+                value=json.loads(payload)
+                if value.get('identity_key')!=identity_key or value.get('character')==name:continue
+                value['character']=name
+                db.execute('UPDATE exp_sessions SET payload=? WHERE id=?',
+                           (json.dumps(value,allow_nan=False),record_id))
+
     def export(self, path):
-        fields = list(Run.__dataclass_fields__)
+        fields = [field for field in Run.__dataclass_fields__ if field!='identity_key']
         with Path(path).open("w", newline="", encoding="utf-8-sig") as stream:
             writer = csv.DictWriter(stream, fieldnames=fields)
             writer.writeheader()
             for row in self.rows():
                 # Spreadsheet programs interpret user-entered notes as formulas.
                 writer.writerow({key: ("'"+str(value) if isinstance(value,str) and value.startswith(("=","+","-","@")) else value)
-                                 for key,value in row.items()})
+                                 for key,value in row.items() if key in fields})
 
 
 def duration_text(seconds,*,seconds_in_hours=False):

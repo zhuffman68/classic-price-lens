@@ -218,7 +218,18 @@ class CardArea(QWidget):
     def measure(self):
         layout=self.content.layout()
         if layout is None or not any(layout.itemAt(i).widget() and not layout.itemAt(i).widget().isHidden() for i in range(layout.count())):return 0
-        layout.invalidate()
+        # A card removal invalidates its immediate layout first. Qt propagates
+        # that to ancestor size hints through a queued LayoutRequest, but this
+        # measurement happens before the event is delivered. Refresh children
+        # before parents so the animation never adopts an old card's height.
+        def invalidate(current):
+            for index in range(current.count()):
+                item=current.itemAt(index);child=item.widget()
+                nested=child.layout() if child is not None else item.layout()
+                if nested is not None:invalidate(nested)
+            current.invalidate()
+            current.activate()
+        invalidate(layout)
         return max(0,layout.totalHeightForWidth(self.width()) if layout.hasHeightForWidth() else layout.totalSizeHint().height())
 
     def complete(self):

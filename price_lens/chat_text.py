@@ -66,6 +66,57 @@ GLOSSES = (
     (r"주세요", "please"), (r"구함|구해요", "looking for"),
 )
 SOCIAL = {"ㅎㅇ":"hi", "ㅇㅇ":"yes", "ㄴㄴ":"no", "ㄱㄱ":"let's go", "ㄱㅅ":"thanks", "ㄳ":"thanks", "ㅈㅅ":"sorry", "ㅇㅋ":"okay"}
+PEOPLE={"한":"one","두":"two","세":"three","네":"four","다섯":"five","여섯":"six","일곱":"seven","여덟":"eight","아홉":"nine","열":"ten"}
+JOBS={"전사":"Warrior","법사":"Mage","궁수":"Archer","도적":"Thief","표도":"throwing-star thief","클레":"Cleric","클레릭":"Cleric"}
+PARTIES={"보너스":"bonus","보너스팟":"bonus party","보너스파티":"bonus party","러시팟":"rush party","러쉬팟":"rush party","커파":"Kerning PQ"}
+
+
+def message_key(text):
+    """Spacing/repeated emphasis only; preserve questions, negation and units."""
+    return re.sub(r'([!?])\1+',r'\1',re.sub(r'\s+','',normalize(text))).casefold()
+
+
+def recruiting_phrase(text):
+    """Complete, explicit party/count or job/join structures, never a substring."""
+    value=re.sub(r'\s+','',normalize(text))
+    parties='|'.join(sorted(PARTIES,key=len,reverse=True));counts='|'.join(PEOPLE)
+    match=re.fullmatch(rf'({parties})({counts}|[0-9]{{1,3}})(?:명|분)(?:구함|구해요|구합니다|모집합니다|모집)([!.]*)',value)
+    if match:
+        party,count,punctuation=match.groups();number=PEOPLE.get(count,count)
+        return f"Looking for {number} {'person' if count in ('한','1') else 'people'} for {PARTIES[party]}{punctuation}"
+    match=re.fullmatch(rf'({parties})({'|'.join(JOBS)})(?:도)?(?:껴주시나요|끼워주시나요|받아주시나요|참여가능한가요|참여가능할까요)([?!.]*)',value)
+    if match:
+        party,job,punctuation=match.groups()
+        article='an' if JOBS[job][0].casefold() in 'aeiou' else 'a'
+        return f"Are you taking {article} {JOBS[job]} for the {PARTIES[party]}{punctuation or '?'}"
+    return None
+
+
+def model_source(text):
+    """Expand established game nouns; ordinary sentence grammar stays intact."""
+    required=[];value=normalize(text)
+    nouns=GLOSSES[:9]+tuple((re.escape(k),JOBS[k]) for k in sorted(JOBS,key=len,reverse=True))
+    for pattern,english in nouns:
+        value,count=re.subn(pattern,lambda _:f' {english} ',value)
+        if count:required.append(english)
+    # Honorific 분 is a person counter only in explicit recruitment context.
+    if re.search(r'구함|구해|구합니다|모집|초대|껴|끼워|가실',text):
+        def person(match):
+            phrase=f"{PEOPLE[match[1]]} {'person' if match[1]=='한' else 'people'}"
+            required.append(phrase);return f' {phrase} '
+        value=re.sub(r'(?<![가-힣])('+'|'.join(PEOPLE)+r')\s*(?:명|분)',person,value)
+    return re.sub(r'\s+',' ',value).strip(),tuple(required)
+
+
+def terms_preserved(required,translated):
+    value=translated.casefold()
+    return all(term.casefold() in value for term in required)
+
+
+def unknown_shorthand(text):
+    if normalize(text) in SOCIAL:return False
+    return any(not re.fullmatch(r'[ㅋㅎ]+|[ㅠㅜ]+',value)
+               for value in re.findall(r'[\u3130-\u318f\u1100-\u11ff]+',text))
 
 
 def glossary(text, partial=False):
@@ -104,4 +155,8 @@ def numbers_preserved(source, translated):
         if re.search(r"\d[\d,.]*(?:만|억)?\s*원|\b(?:won|KRW)\b",text,re.I):result.add("won")
         if re.search(r"\$|\b(?:USD|dollars?)\b",text,re.I):result.add("dollars")
         return result
-    return values(source) == values(translated) and currencies(source)==currencies(translated)
+    def percentages(text):
+        return sorted(Decimal(amounts(match[0])[0]['amount'] or amounts(match[0])[0]['number'])
+                      for match in NUMBER.finditer(text)
+                      if re.match(r'\s*(?:%|퍼센트|프로|percent\b)',text[match.end():],re.I))
+    return values(source) == values(translated) and currencies(source)==currencies(translated) and percentages(source)==percentages(translated)

@@ -205,9 +205,10 @@ pub(crate) fn name_glyph_start(frame: &Frame, x: u32, y: u32, w: u32, h: u32, ma
     }
 }
 
-pub fn prepare(frame: &Frame) -> Option<Frame> {
+pub fn prepare(frame: &Frame) -> (Option<Frame>, Vec<Dot>) {
     let mut prepared = None;
-    for dot in dots(frame) {
+    let markers=dots(frame);
+    for &dot in &markers {
         if dot.x0 < 5 || dot.y0 < 2 {
             continue;
         }
@@ -258,5 +259,5 @@ pub fn prepare(frame: &Frame) -> Option<Frame> {
             }
         }
     }
-    prepared
+    (prepared,markers)
 }

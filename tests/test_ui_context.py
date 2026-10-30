@@ -314,17 +314,17 @@ class ContextUiTests(unittest.TestCase):
         w.render()
         self.assertIn(old,w.card_views.values())
 
-    def test_missing_hover_card_gets_500_ms_gui_grace_without_retaining_its_overlay(self):
+    def test_missing_hover_card_gets_one_second_gui_grace_without_retaining_its_overlay(self):
         w=self.window;w.show();self.app.processEvents()
         with patch('price_lens.recent_items.time.monotonic',return_value=99):
             w.on_reading(self.reading(shop_hover=False));card=next(iter(w.card_views.values()))
         self.assertTrue(w.overlay.rows)
         w.tooltip_result=None
-        for clock in (100,100.499):
+        for clock in (100,100.999):
             with patch('price_lens.recent_items.time.monotonic',return_value=clock):w.render()
             self.assertIn(card,w.card_views.values());self.assertEqual(w.overlay.rows,[])
             self.assertEqual(w.recent_items.rows.count(),0)
-        with patch('price_lens.recent_items.time.monotonic',return_value=100.5):w.render()
+        with patch('price_lens.recent_items.time.monotonic',return_value=101):w.render()
         self.assertNotIn(card,w.card_views.values());self.assertIn(1,w.recent_items.rows_by_id)
         self.assertEqual(w.recent_items.height(),0)
         self.assertEqual(w.cards_stack.spacing(),0)
@@ -341,13 +341,49 @@ class ContextUiTests(unittest.TestCase):
         w.tooltip_result=None
         with patch('price_lens.recent_items.time.monotonic',return_value=100):w.render()
         w.tooltip_result={'name':'Example Cape','area':dict(x=100,y=100,width=180,height=20)}
-        with patch('price_lens.recent_items.time.monotonic',return_value=100.2):w.render()
+        with patch('price_lens.recent_items.time.monotonic',return_value=100.8):w.render()
         self.assertEqual(len(w.card_views),1);self.assertIs(next(iter(w.card_views.values())),card)
         self.assertEqual(card.property('gameItemId'),2);self.assertIn(1,w.recent_items.rows_by_id)
         self.assertIsNone(w.price_content.outgoing)
         outgoing=w.card_area.outgoing;w.card_area.animation.setCurrentTime(70)
         now=time.time();w.on_quote(2,Quote(2,1200,now,now,20,'Test','','24h'))
         self.assertIs(w.card_area.outgoing,outgoing);self.assertEqual(w.card_area.animation.currentTime(),70)
+
+    def check_natural_card_retirement(self,*,shop=False,history=False,reduced=False):
+        w=self.window;self.app.setProperty('reduceMotion',reduced)
+        w.resize(520,840);w.show();self.app.processEvents()
+        if history:
+            w.on_catalog(Catalog({'items':[dict(id=1,name='Example Hat'),dict(id=2,name='Example Cape')]}))
+            w.recent_items.observe([dict(name='Example Cape',price=dict(quantity=1,mesos=900))],w.catalog,time.time())
+            w.recent_items.observe([],w.catalog,time.time());w.recent_items.refresh(w.service,w.ttl,time.time())
+        w.on_reading(self.reading(shop_hover=shop));QTest.qWait(230)
+        self.assertGreater(w.card_area.height(),40)
+        original_area=QRect(w.reader.game_area);initial=w.card_area.height();samples=[];retired=[]
+        w.card_sightings.changed.connect(lambda:retired.append(time.monotonic()))
+        timer=QTimer(w);timer.setInterval(10)
+        timer.timeout.connect(lambda:samples.append((w.card_area.height(),w.recent_items.mapTo(w,QPoint()).y())))
+        w.rows=[];w.tooltip_result=None;started=time.monotonic();w.render();timer.start()
+        deadline=started+3
+        while time.monotonic()<deadline:
+            QTest.qWait(10)
+            if retired and not w.card_views and w.card_area.animation.state()!=w.card_area.animation.State.Running:break
+        timer.stop();self.app.processEvents()
+        self.assertTrue(retired);self.assertGreaterEqual(retired[0]-started,.999)
+        self.assertFalse(w.card_views);self.assertEqual(w.card_area.height(),0);self.assertEqual(w.card_area.full_height,0)
+        self.assertTrue(w.card_list.isHidden());self.assertTrue(w.summary.isHidden())
+        self.assertEqual(w.recent_items.mapTo(w,QPoint()).y(),w.card_area.mapTo(w,QPoint()).y())
+        self.assertEqual(w.reader.game_area,original_area);self.assertEqual(w.reader.starts,0)
+        self.assertTrue(all(height<=initial for height,_ in samples),samples)
+        if not reduced:self.assertTrue(any(0<height<initial for height,_ in samples),samples)
+
+    def test_hover_retirement_collapses_the_canvas_through_the_real_event_loop(self):
+        self.check_natural_card_retirement()
+
+    def test_shop_retirement_moves_existing_history_up_without_a_locator_change(self):
+        self.check_natural_card_retirement(shop=True,history=True)
+
+    def test_natural_retirement_with_reduced_motion_leaves_no_empty_canvas(self):
+        self.check_natural_card_retirement(reduced=True)
 
     def test_shop_annotation_identity_survives_an_omitted_neighbor(self):
         w=self.window;w.on_catalog(Catalog({'items':[dict(id=1,name='Example Hat'),dict(id=2,name='Example Cape')]}))
@@ -606,6 +642,66 @@ class ContextUiTests(unittest.TestCase):
         self.assertTrue(self.window.reader.tooltip_enabled)
         self.assertFalse(any("Import MesoWatch" in button.text() for button in self.window.findChildren(QPushButton)))
 
+    def primary_inventory_reading(self):
+        w=self.window;w.reader.image.fill(QColor('#24384b'))
+        reading=self.reading(False)
+        reading['tooltipAssociation']={'state':'inventory-primary','token':'inventory:tab:slot',
+            'source':dict(x=300,y=200,width=240,height=300),
+            'slot':dict(x=324,y=224,width=36,height=36),
+            'panel':dict(x=95,y=95,width=220,height=330),
+            'guards':[dict(x=300,y=200,width=240,height=16),dict(x=95,y=95,width=220,height=2)]}
+        return reading
+
+    def test_primary_inventory_proof_expires_when_pointer_changes_cells(self):
+        w=self.window;w.on_reading(self.primary_inventory_reading())
+        self.assertEqual(w.tooltip_context.token,'inventory:tab:slot')
+        self.assertEqual(w.tooltip_result['_association_token'],'inventory:tab:slot')
+        w.on_pointer(350,245);self.assertIsNotNone(w.tooltip_result)
+        w.on_pointer(376,245)
+        self.assertIsNone(w.tooltip_result);self.assertIsNone(w.tooltip_context)
+        self.assertEqual(w.overlay.rows,[])
+
+    def test_native_rejection_cannot_resurrect_a_bridged_comparison(self):
+        w=self.window;w.on_reading(self.primary_inventory_reading())
+        result=self.reading(False);result['tooltipAssociation']={'state':'rejected'}
+        result['tooltip']['found']=None;w.on_reading(result)
+        self.assertIsNone(w.tooltip_result);self.assertIsNone(w.tooltip_context)
+        self.assertEqual(w.overlay.rows,[])
+        self.assertIsNone(w.tooltip_reference.observe(None,w.reader.image,w.reader.pointer))
+
+    def test_late_inventory_result_requires_the_same_latest_header_pixels(self):
+        w=self.window;reading=self.primary_inventory_reading()
+        w.reader.submitted_image=w.reader.image.copy()
+        w.reader.image.setPixelColor(301,201,QColor('red'));w.on_reading(reading)
+        self.assertIsNone(w.tooltip_result);self.assertIsNone(w.tooltip_context)
+        self.assertEqual(w.overlay.rows,[])
+
+    def test_new_frame_checks_only_the_bound_source_and_name_guards(self):
+        w=self.window;w.on_reading(self.primary_inventory_reading())
+        w.reader.image.setPixelColor(740,700,QColor('red'));w.on_image(w.reader.image)
+        self.assertIsNotNone(w.tooltip_result)
+        w.reader.image.setPixelColor(301,201,QColor('red'));w.on_image(w.reader.image)
+        self.assertIsNone(w.tooltip_result);self.assertIsNone(w.tooltip_context)
+        self.assertEqual(w.overlay.rows,[])
+
+    def test_translation_store_context_is_current_clipped_and_in_full_frame_coordinates(self):
+        w=self.window;geometry=w.screens[w.screen_index].geometry()
+        dpr=w.screens[w.screen_index].devicePixelRatio()
+        w.reader.image=QImage(round(geometry.width()*dpr),round(geometry.height()*dpr),QImage.Format.Format_RGBA8888)
+        w.reader.image.fill(QColor('navy'));w.reader.last_frame=time.monotonic()
+        w.reader.auto_active=False;w.reader.crop=QRect(100,50,500,500)
+        w.reader.shop_context=QRect(30,40,200,160);w.shop_open=True
+        w.chat.watching=True
+        with patch.object(w.chat,'request') as request:
+            w.submit_chat_frame()
+            self.assertEqual(request.call_args.kwargs['contexts'],[
+                {'role':'store','box':[130,90,200,160],'verified':True}])
+            w.shop_open=False;w.submit_chat_frame()
+            self.assertEqual(request.call_args.kwargs['contexts'],[])
+            w.shop_open=True;w.reader.shop_context=QRect(450,450,200,160);w.submit_chat_frame()
+            self.assertEqual(request.call_args.kwargs['contexts'],[
+                {'role':'store','box':[550,500,50,50],'verified':True}])
+
     def test_automatic_game_area_is_enabled_by_default(self):
         self.assertTrue(self.window.auto_area_check.isChecked())
         self.assertTrue(self.window.reader.auto_enabled)
@@ -738,6 +834,127 @@ class ContextUiTests(unittest.TestCase):
         self.window.on_reading(self.reading(shop_hover=True))
         self.assertTrue(self.window.shop_open)
         self.assertEqual(len(self.window.overlay.rows), 1)
+
+    def prepare_shop_description(self,*,covered=True):
+        from PySide6.QtGui import QPainter
+        w=self.window;w.on_catalog(Catalog({'items':[dict(id=1,name='Example Hat'),dict(id=2,name='Example Cape')]}))
+        w.reader.image.fill(QColor('#223344'));w.show();self.app.processEvents()
+        def reading():
+            value=self.reading(shop_hover=True)
+            value['shop']['rows'].append(dict(name='Example Cape',price=dict(quantity=1,mesos=200),area=dict(x=340,y=280,width=180,height=40)))
+            return value
+        plain=reading();w.on_reading(plain);QTest.qWait(200);original=w.reader.image.copy();cards=dict(w.card_views)
+        title=dict(x=500 if covered else 570,y=210,width=180,height=20)
+        painter=QPainter(w.reader.image);painter.fillRect(480 if covered else 550,190,260 if covered else 240,260,QColor('#464b78'))
+        painter.setPen(QColor('white'));painter.drawText(QRect(*(title[key] for key in ('x','y','width','height'))),Qt.AlignmentFlag.AlignVCenter,'Example Hat');painter.end()
+        hovered=reading();hovered['hover']['tooltip']={'found':dict(name='Example Hat',area=title)}
+        if covered:
+            for row in hovered['shop']['rows']:row.update(name=None,price=None,covered=True)
+        w.on_reading(hovered)
+        return original,cards,hovered
+
+    def test_shop_description_focus_is_gui_only_and_returns_to_the_same_shop_widgets(self):
+        w=self.window;original,cards,_=self.prepare_shop_description()
+        self.assertIsNotNone(w.shop_description);self.assertIsNone(w.tooltip_result)
+        shown=[card for card in w.card_views.values() if not card.isHidden()]
+        self.assertEqual(len(shown),1);self.assertEqual(shown[0].fields['context'].text(),'Shop item description')
+        self.assertTrue(shown[0].store.isHidden());self.assertIsNone(w.shop_description['price'])
+        self.assertEqual(w.service.visible,[1,2]);self.assertEqual(w.recent_items.rows.count(),0)
+        self.assertEqual(len(w.overlay.rows),2);self.assertTrue(all(row['kind']=='shop' for row in w.overlay.rows))
+        self.assertTrue(all(w.card_views[key] is card and card.isHidden() for key,card in cards.items()))
+        self.assertIsNotNone(w.card_area.outgoing)
+        self.assertGreater(w.card_area.start_height,w.card_area.full_height)
+        w.card_area.animation.setCurrentTime(90)
+        self.assertTrue(w.card_area.full_height<w.card_area.height()<w.card_area.start_height)
+        w.reader.image=original;w.on_image(original)
+        self.assertIsNone(w.shop_description);self.assertEqual(w.recent_items.rows.count(),0)
+        self.assertTrue(all(w.card_views[key] is card and not card.isHidden() for key,card in cards.items()))
+        self.assertEqual(len(w.overlay.rows),2)
+        self.assertIsNotNone(w.card_area.outgoing)
+        self.assertLess(w.card_area.start_height,w.card_area.full_height)
+        w.card_area.animation.setCurrentTime(90)
+        self.assertTrue(w.card_area.start_height<w.card_area.height()<w.card_area.full_height)
+
+    def test_focus_offer_is_only_from_the_current_exact_listing_and_quote_refresh_keeps_motion(self):
+        w=self.window;self.prepare_shop_description(covered=False)
+        self.assertEqual(w.shop_description['price'],dict(quantity=1,mesos=100))
+        focus=next(card for card in w.card_views.values() if not card.isHidden())
+        w.card_area.animation.setCurrentTime(70);outgoing=w.card_area.outgoing
+        now=time.time();w.on_quote(1,Quote(1,2400,now,now,20,'Test','','24h'))
+        self.assertIs(next(card for card in w.card_views.values() if not card.isHidden()),focus)
+        self.assertIs(w.card_area.outgoing,outgoing);self.assertEqual(w.card_area.animation.currentTime(),70)
+        self.assertEqual(focus.fields['market'].text(),'2,400 mesos')
+
+    def test_still_focused_item_receives_a_new_snapshot_price_without_an_initial_quote(self):
+        w=self.window;self.prepare_shop_description();w.quotes.clear()
+        card=next(card for card in w.card_views.values() if not card.isHidden())
+        w.card_area.animation.setCurrentTime(70);outgoing=w.card_area.outgoing;requests=list(w.service.requests)
+        snapshot=type('Snapshot',(),{'meta':{'checked_at':1},'rows':{}})()
+        w.service.snapshot=snapshot;lookups=[]
+        def reference(item):lookups.append(item.game_id);return w.service.cached(item)
+        w.service.reference=reference
+        now=time.time();w.service.cached_values={1:Quote(1,1400,now,now,20,'Test','','24h')}
+        w.on_price_state()
+        self.assertIn(1,lookups);self.assertEqual(card.fields['market'].text(),'1,400 mesos')
+        self.assertIs(w.card_area.outgoing,outgoing);self.assertEqual(w.card_area.animation.currentTime(),70)
+        snapshot.meta['checked_at']=2;w.service.cached_values[1]=Quote(1,2500,now,now,20,'Test','','24h')
+        w.on_price_state()
+        self.assertIs(next(card for card in w.card_views.values() if not card.isHidden()),card)
+        self.assertEqual(card.fields['market'].text(),'2,500 mesos');self.assertEqual(w.service.requests,requests)
+        self.assertEqual(w.recent_items.rows.count(),0)
+
+    def test_interrupted_shop_focus_then_another_item_and_close_does_not_make_history(self):
+        from PySide6.QtGui import QPainter
+        w=self.window;original,cards,reading=self.prepare_shop_description()
+        first=next(card for card in w.card_views.values() if not card.isHidden())
+        w.card_area.animation.setCurrentTime(70)
+        w.reader.pointer=(340,300);reading['pointerAtRead']=[340,300]
+        reading['hover']['pointer']={'x':340,'y':300};reading['hover']['tooltip']['found']['name']='Example Cape'
+        painter=QPainter(w.reader.image);painter.fillRect(500,210,180,20,QColor('#464b78'));painter.setPen(QColor('white'))
+        painter.drawText(QRect(500,210,180,20),Qt.AlignmentFlag.AlignVCenter,'Example Cape');painter.end()
+        w.on_reading(reading)
+        self.assertEqual(w.shop_description['name'],'Example Cape')
+        self.assertEqual([card.property('gameItemId') for card in w.card_views.values() if not card.isHidden()],[2])
+        self.assertIs(next(card for card in w.card_views.values() if not card.isHidden()),first)
+        w.reader.image=original;w.on_image(original)
+        self.assertIsNone(w.shop_description);self.assertEqual(w.recent_items.rows.count(),0)
+        self.assertTrue(all(w.card_views[key] is card and not card.isHidden() for key,card in cards.items()))
+
+    def test_shop_focus_requires_a_native_panel_unique_identity_and_current_title_pixels(self):
+        w=self.window;original,_,reading=self.prepare_shop_description()
+        w.reader.submitted_image=w.reader.image.copy()
+        w.reader.image=original;w.on_reading(reading)
+        self.assertIsNone(w.shop_description)
+        w.reader.image=w.reader.submitted_image.copy()
+        del w.reader.submitted_image
+        w.on_catalog(Catalog({'items':[dict(id=1,name='Example Hat'),dict(id=3,name='Example Hat')]}))
+        w.on_reading(reading);self.assertIsNotNone(w.shop_tooltip_rect);self.assertIsNone(w.shop_description)
+
+    def test_fading_our_shop_label_cannot_change_the_native_description_identity(self):
+        from PySide6.QtGui import QPainter
+        w=self.window;self.prepare_shop_description()
+        w.overlay.layout_boxes=[(500,210,40,20)]
+        painter=QPainter(w.reader.image);painter.fillRect(500,210,40,20,QColor('#171c25'));painter.end()
+        w.on_image(w.reader.image)
+        self.assertIsNotNone(w.shop_description);self.assertEqual(w.shop_description['name'],'Example Hat')
+
+    def test_inventory_hover_outside_shop_takes_over_from_shop_description_focus(self):
+        w=self.window;self.prepare_shop_description();w.reader.pointer=(100,100)
+        w.on_reading(self.reading(shop_hover=False,store=True))
+        self.assertIsNone(w.shop_description);self.assertIsNotNone(w.tooltip_result)
+        self.assertEqual(w.tooltip_result['name'],'Example Hat')
+        self.assertTrue(any(row['kind']=='item' for row in w.overlay.rows))
+
+    def test_shop_focus_preserves_search_watch_precedence_and_reduced_motion(self):
+        w=self.window;self.app.setProperty('reduceMotion',True);original,_,_=self.prepare_shop_description()
+        self.assertIsNone(w.card_area.outgoing)
+        w.search_panel.query.setText('Example');self.assertTrue(w.scroll.isHidden())
+        w.search_panel.query.clear();w.watchlist.toggle(w.catalog.resolve('Example Hat'))
+        w.search_panel.select_watched(1);self.assertTrue(w.scroll.isHidden())
+        self.assertEqual(w.search_panel.selected.game_id,1)
+        w.reader.image=original;w.on_image(original)
+        self.assertTrue(w.scroll.isHidden());self.assertEqual(w.search_panel.selected.game_id,1)
+        self.assertIsNone(w.card_area.outgoing)
 
     def test_covered_shop_rows_do_not_draw_unreadable_price_badges(self):
         reading = self.reading(shop_hover=True)

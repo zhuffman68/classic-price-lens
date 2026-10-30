@@ -1,5 +1,6 @@
 """EXP accounting through gains, losses, level-ups, interruptions and persistence."""
 import csv
+from dataclasses import replace
 from pathlib import Path
 import tempfile
 import unittest
@@ -13,6 +14,24 @@ def payload(exp=2000, total=10_000, level=27, name="TestWarrior"):
 
 
 class ExperienceTests(unittest.TestCase):
+    def test_cosmetic_spelling_refinement_keeps_every_accounting_value(self):
+        tracker=ExperienceTracker();tracker.ingest({**payload(name='ach2'),'identityKey':'visual-a'},0)
+        tracker.start('Tree Dungeon','Solo',started=1000)
+        for second in range(1,32):
+            tracker.ingest({**payload(2000+10*second,name='ach2'),'identityKey':'visual-a'},second)
+        run=tracker.run;events=list(tracker.events);window=tracker.window(300)
+        bounds=tracker.bounds;pace=tracker.pace_seconds;baseline_at=tracker.baseline.at
+        totals=(run.seconds,run.exp,run.progress,run.gaps,run.started,run.id)
+        self.assertFalse(tracker.refine_character('visual-b','SomeoneElse'))
+        self.assertTrue(tracker.refine_character('visual-a','achZ'))
+        self.assertIs(tracker.run,run)
+        self.assertEqual((tracker.current.character,tracker.baseline.character,run.character),('achZ',)*3)
+        self.assertEqual(tracker.current.identity_key,'visual-a');self.assertEqual(run.identity_key,'visual-a')
+        self.assertEqual((run.seconds,run.exp,run.progress,run.gaps,run.started,run.id),totals)
+        self.assertEqual(list(tracker.events),events);self.assertEqual(tracker.window(300),window)
+        self.assertEqual(tracker.bounds,bounds);self.assertEqual(tracker.pace_seconds,pace)
+        self.assertEqual(tracker.baseline.at,baseline_at)
+
     def tracker(self, exp=2000, total=10_000):
         tracker = ExperienceTracker()
         self.assertTrue(tracker.ingest(payload(exp,total), 0))
@@ -243,6 +262,22 @@ class ExperienceTests(unittest.TestCase):
             with output.open(encoding="utf-8-sig",newline="") as stream:
                 row = next(csv.DictReader(stream))
             self.assertTrue(row["notes"].startswith("'="))
+
+    def test_history_refines_only_exact_visual_keys_and_preserves_csv_columns(self):
+        tracker=self.tracker();tracker.ingest(payload(2010),1);run=tracker.finish()
+        with tempfile.TemporaryDirectory() as directory:
+            history=SessionHistory(Path(directory)/'sessions.sqlite')
+            for record_id,key in (('same','visual-a'),('other','visual-b'),('legacy','')):
+                history.save(replace(run,id=record_id,character='ach2',identity_key=key))
+            history.refine_character('visual-a','achZ')
+            rows={row['id']:row for row in SessionHistory(history.path).rows()}
+            self.assertEqual(rows['same']['character'],'achZ')
+            self.assertEqual(rows['other']['character'],'ach2');self.assertEqual(rows['legacy']['character'],'ach2')
+            self.assertTrue(all(row['exp']==10 for row in rows.values()))
+            output=Path(directory)/'history.csv';history.export(output)
+            with output.open(encoding='utf-8-sig',newline='') as stream:
+                reader=csv.DictReader(stream);self.assertNotIn('identity_key',reader.fieldnames)
+                self.assertEqual(len(list(reader)),3)
 
 
 if __name__ == "__main__":

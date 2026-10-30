@@ -23,9 +23,9 @@ class ChatTextTests(unittest.TestCase):
         from price_lens.chat_worker import scan
         image=QImage(500,200,QImage.Format.Format_RGB888);image.fill(QColor('#202030'))
         class Reader:
-            def read(self,_):return 'TRUMP2024님의 꽃바람 메시지:',.96
+            def read(self,_):return 'ExamplePlayer님의 꽃바람 메시지:',.96
         class Translator:
-            def translate(self,_):return 'Message from TRUMP2024','Local'
+            def translate(self,_):return 'Message from ExamplePlayer','Local'
         rows=[]
         with patch('price_lens.chat_ocr.bubbles',return_value=[]),patch('price_lens.chat_ocr.text_regions',return_value=[[50,40,200,14]]):
             result=scan(image,Reader(),Translator(),rows.append)

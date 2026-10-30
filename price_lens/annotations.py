@@ -12,6 +12,7 @@ from .number_motion import NumberRoll
 from . import gui_currency
 from .fonts import interface_font,interface_family
 from .overlay_layout import TRACKING_HEIGHT
+from .translation_layout import TranslationLayout
 
 
 class CommandPipe(QObject):
@@ -47,6 +48,7 @@ class AnnotationWindow(QWidget):
         self.last_pointer = None
         self.reduce_motion = False
         self.watch_events = {}
+        self.translation_layout=TranslationLayout()
         self.watch_star = QPolygonF([QPointF(math.cos(-math.pi/2+i*math.pi/5)*(5 if i%2==0 else 2.3),
                                             math.sin(-math.pi/2+i*math.pi/5)*(5 if i%2==0 else 2.3)) for i in range(10)])
         self.price_font = interface_font(12,QFont.Weight.DemiBold)
@@ -100,6 +102,7 @@ class AnnotationWindow(QWidget):
             self.rows = []
             self.retiring = []
             metrics = QFontMetrics(self.price_font)
+            translations=[]
             for supplied in incoming:
                 key = self.row_key(supplied)
                 old = previous.pop(key, None)
@@ -122,26 +125,11 @@ class AnnotationWindow(QWidget):
                     row['_width']=max(180,min(350,int(row.get('tracking_width',296))))
                     row['_height']=max(TRACKING_HEIGHT,min(160,int(row.get('tracking_height',TRACKING_HEIGHT))))
                 if row.get("kind")=="translation":
-                    row["_width"]=min(360,max(180,row.get("bounds",[0,0,360,0])[2]-8))
-                    wrap=Qt.TextFlag.TextWordWrap|Qt.AlignmentFlag.AlignLeft
-                    inner=QRect(0,0,row["_width"]-20,2000)
-                    row["_english_height"]=min(120,QFontMetrics(self.translation_font).boundingRect(inner,int(wrap),row["text"]).height())
-                    row["_original_height"]=min(84,QFontMetrics(self.original_font).boundingRect(inner,int(wrap),row.get("original","")).height())
-                    row["_height"]=row["_english_height"]+row["_original_height"]+46+(16 if row.get('note') else 0)
-                    if row.get('source_box'):
-                        source=QRect(*row['source_box']);bounds=QRect(*row['bounds'])
-                        width=min(row['_width'],bounds.width()-4);height=min(row['_height'],bounds.height()-4)
-                        positions=[(source.right()+8,source.top()),(source.left()-width-8,source.top()),
-                                   (source.left(),source.bottom()+8),(source.left(),source.top()-height-8)]
-                        choices=[QRect(max(bounds.left()+2,min(x,bounds.right()-width-2)),
-                                       max(bounds.top()+2,min(y,bounds.bottom()-height-2)),width,height) for x,y in positions]
-                        def overlap(rect):
-                            total=0
-                            for supplied in incoming:
-                                if supplied.get('source_box'):
-                                    hit=rect.intersected(QRect(*supplied['source_box']));total+=hit.width()*hit.height()
-                            return total
-                        target=min(choices,key=overlap);row['x'],row['y']=target.x(),target.y()
+                    row['source_box']=supplied.get('source_box')
+                    row['source_boxes']=supplied.get('source_boxes',())
+                    row['anchor_visible']=supplied.get('anchor_visible',True)
+                    self.measure_translation(row)
+                    translations.append((row,old_target))
                 if self.reduce_motion:
                     self.dispose_row(row)
                     row["_text_alpha"] = 1.0
@@ -150,7 +138,7 @@ class AnnotationWindow(QWidget):
                     point = row["follow_pointer"]
                     offset = (row["x"] - (point[0] - self.x()), row["y"] - (point[1] - self.y()))
                     row["_cursor_offset"] = row.get("_cursor_offset", offset)
-                elif row.get("animate_move") and old_target != (row["x"], row["y"]):
+                elif row.get('kind')!='translation' and row.get("animate_move") and old_target != (row["x"], row["y"]):
                     target = QPointF(row["x"], row["y"])
                     start = row.get("_draw_pos", QPointF(*old_target)) if old_target else target
                     self.animate_position(row, start, target)
@@ -169,6 +157,7 @@ class AnnotationWindow(QWidget):
                     row["_alpha"] = 0.0
                 if row.get("_fading_out") or old is None or old_alpha_target!=target:
                     self.fade(row, target)
+            self.place_translations(translations,previous,previous_boxes)
             current_hover = any(row.get("follow_pointer") is not None for row in self.rows)
             current_shops=[row for row in self.rows if row.get('kind')=='shop']
             for key, row in previous.items():
@@ -212,6 +201,58 @@ class AnnotationWindow(QWidget):
     @staticmethod
     def row_key(row):
         return row.get("key", (row.get("name"), row.get("x"), row.get("y")))
+
+    def measure_translation(self,row):
+        limit=min(360,max(1,row.get('bounds',[0,0,364,0])[2]-4))
+        metrics=((QFontMetrics(self.translation_font),row['text']),
+                 (QFontMetrics(self.original_font),row.get('original','')),
+                 (QFontMetrics(self.name_font),row.get('name','')),
+                 (QFontMetrics(self.name_font),row.get('note','')))
+        natural=max((font.horizontalAdvance(line) for font,text in metrics for line in str(text).splitlines()),default=0)+20
+        row['_width']=min(limit,max(160,natural))
+        wrap=Qt.TextFlag.TextWordWrap|Qt.AlignmentFlag.AlignLeft
+        inner=QRect(0,0,max(1,row['_width']-20),2000)
+        row['_english_height']=min(120,metrics[0][0].boundingRect(inner,int(wrap),row['text']).height())
+        row['_original_height']=min(84,metrics[1][0].boundingRect(inner,int(wrap),row.get('original','')).height())
+        row['_height']=row['_english_height']+row['_original_height']+46+(16 if row.get('note') else 0)
+
+    def place_translations(self,translations,previous,previous_boxes):
+        messages=[];occupied=[];pointer=QCursor.pos()
+        for row in self.rows:
+            if row.get('kind')=='translation':continue
+            rect=self.label_rect(row,pointer)
+            if rect is not None:occupied.append(rect.getRect())
+            if row.get('_draw_pos') is not None:
+                target=dict(row);target.pop('_draw_pos',None)
+                rect=self.label_rect(target,pointer)
+                if rect is not None:occupied.append(rect.getRect())
+            if row.get('occlusion'):occupied.append(row['occlusion'])
+        for key,row in previous.items():
+            if row.get('kind')=='translation' and previous_boxes.get(key) is not None:
+                occupied.append(previous_boxes[key].getRect())
+        for row,old_target in translations:
+            bounds=QRect(*row.get('bounds',[0,0,self.width(),self.height()])).intersected(self.rect())
+            source=row.get('source_box') or [row['x']-TranslationLayout.GAP,row['y'],1,1]
+            messages.append(dict(key=self.row_key(row),source=source,sources=row.get('source_boxes') or [source],
+                bounds=bounds.getRect(),size=(row['_width'],row['_height']),visible=row['anchor_visible']))
+        placements=self.translation_layout.place(messages,occupied)
+        targets={key:QRect(*placement.rect.tuple()) for key,placement in placements.items()}
+        for row,old_target in translations:
+            key=self.row_key(row);placement=placements[key];target=placement.rect
+            side=row.get('_translation_side');row['_translation_side']=placement.side
+            row['x'],row['y']=target.x,target.y
+            if not row.get('animate_move') or old_target==(target.x,target.y):continue
+            endpoint=QPointF(target.x,target.y);start=row.get('_draw_pos',QPointF(*old_target)) if old_target else endpoint
+            before=QRect(round(start.x()),round(start.y()),target.width,target.height)
+            swept=before.united(targets[key])
+            crosses=any(swept.intersects(rect) for other,rect in targets.items() if other!=key)
+            # A side switch must not fly through another message/card. Nearby
+            # verified motion retains the existing short, interruptible follow.
+            if self.reduce_motion or side is not None and side!=placement.side or crosses:
+                animation=row.pop('_move',None)
+                if animation:animation.stop();animation.deleteLater()
+                row.pop('_draw_pos',None)
+            else:self.animate_position(row,start,endpoint)
 
     def occlusion_alpha(self,row,covered):
         """Dim immediately; absorb one brief clear sample before reversing."""

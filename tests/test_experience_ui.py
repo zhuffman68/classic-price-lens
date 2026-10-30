@@ -358,6 +358,98 @@ class ExperienceUiTests(unittest.TestCase):
             self.now+=1;self.panel.feed({'atMs':int(self.now*1000),'experience':{**payload(2100,name='ach2'),'nameProof':proof()}})
         self.assertTrue(self.panel.paused_context_ready);self.assertIs(self.panel.tracker.run,run)
 
+    def test_first_ocr_spelling_refines_without_losing_pace_gains_or_history_grouping(self):
+        from test_tracking_identity import proof
+        panel=self.panel;panel.set_connected(True);panel.start()
+        def named(exp,name):
+            self.now+=1;panel.feed({'atMs':int(self.now*1000),
+                'experience':{**payload(exp,name=name),'nameProof':proof()}})
+        named(2000,'ach2')
+        for n in range(1,32):named(2000+n*10,'ach2')
+        self.pickup();self.pickup(120);self.pickup(120)
+        run=panel.tracker.run;key=panel.tracker.current.identity_key;epoch=panel.watch_epoch
+        gained=run.exp;seconds=run.seconds;money=panel.mesos.gain
+        panel.history.save(run);panel.refresh_history()
+        panel.filter.setCurrentIndex(panel.filter.findData('ach2'))
+        for n in range(1,8):named(2310+n*10,'achZ')
+        self.assertIs(panel.tracker.run,run);self.assertEqual(run.character,'achZ')
+        self.assertEqual(panel.tracker.current.character,'achZ');self.assertEqual(panel.character.text(),'achZ')
+        self.assertEqual(panel.tracker.current.identity_key,key);self.assertEqual(run.identity_key,key)
+        self.assertEqual(run.exp,gained+70);self.assertGreater(run.seconds,seconds)
+        self.assertIsNotNone(panel.tracker.window(300)['rate']);self.assertGreater(panel.tracker.window(300)['seconds'],30)
+        self.assertEqual(panel.watch_epoch,epoch);self.assertEqual(panel.mesos.gain,money)
+        self.assertEqual(len(panel.history.rows()),1);self.assertEqual(panel.history.rows()[0]['character'],'achZ')
+        self.assertEqual(panel.table.rowCount(),1)
+        named(2390,'ach2');self.assertEqual(run.character,'achZ')
+        self.assertEqual(panel.history.rows()[0]['character'],'achZ')
+
+    def test_rejected_stale_missing_proof_and_cached_reads_do_not_refine_spelling(self):
+        from test_tracking_identity import proof
+        panel=self.panel;panel.set_connected(True);panel.start();self.now+=1
+        at=int(self.now*1000)
+        panel.feed({'atMs':at,'experience':{**payload(name='ach2'),'nameProof':proof()}})
+        for _ in range(10):
+            panel.feed({'atMs':at,'experience':{**payload(2010,name='achZ'),'nameProof':proof()}})
+        for cached,with_proof,bar in ((False,True,None),(False,False,payload()['bar']),(True,True,payload()['bar'])):
+            for _ in range(8):
+                self.now+=1;value={**payload(name='achZ'),'bar':bar,'cached':cached}
+                if with_proof:value['nameProof']=proof()
+                panel.feed({'atMs':int(self.now*1000),'experience':value})
+        self.assertEqual(panel.identity.reference.name,'ach2')
+        self.assertEqual(panel.tracker.current.character,'ach2')
+        self.assertEqual(len(panel.identity.reference.observations),1)
+
+    def test_display_refinement_does_not_restart_the_two_second_numeric_snapshot(self):
+        from test_tracking_identity import proof
+        panel=self.panel;panel.set_connected(True);panel.start()
+        def named(exp,name):panel.feed({'atMs':int(self.now*1000),
+            'experience':{**payload(exp,name=name),'nameProof':proof()}})
+        named(2000,'ach2')
+        for n in range(1,6):self.now+=1;named(2000+10*n,'achZ')
+        self.now+=.5;panel.numeric_snapshot=None;panel.refresh()
+        snapshot=panel.numeric_snapshot;stamp=panel.numeric_at
+        values=(snapshot['reading'].exp,dict(snapshot['window']),dict(snapshot['totals']))
+        self.now+=.5;named(2060,'achZ')
+        self.assertEqual(panel.tracker.current.character,'achZ');self.assertEqual(panel.character.text(),'achZ')
+        self.assertIs(panel.numeric_snapshot,snapshot);self.assertEqual(panel.numeric_at,stamp)
+        self.assertEqual((snapshot['reading'].exp,snapshot['window'],snapshot['totals']),values)
+        self.assertEqual(snapshot['reading'].character,'achZ')
+
+    def test_paused_visual_a_b_a_reconfirmation_never_trains_display_spelling(self):
+        from test_tracking_identity import proof
+        panel=self.panel;panel.set_connected(True);panel.start();self.now+=1
+        panel.feed({'atMs':int(self.now*1000),'experience':{**payload(name='ach2'),'nameProof':proof()}})
+        run=panel.tracker.run;key=panel.tracker.current.identity_key
+        panel.toggle_pause();panel.interrupt_context()
+        for other in (True,True,False,False,False,False,False,False,False,False):
+            self.now+=1;panel.feed({'atMs':int(self.now*1000),
+                'experience':{**payload(name='Other' if other else 'achZ'),'nameProof':proof(other)}})
+            if other:self.assertFalse(panel.paused_context_ready)
+        self.assertTrue(panel.paused_context_ready);self.assertIs(panel.tracker.run,run)
+        self.assertEqual(panel.identity.reference.name,'ach2');self.assertEqual(len(panel.identity.reference.observations),1)
+        self.assertEqual(panel.tracker.current.identity_key,key);self.assertEqual(run.exp,0)
+        panel.toggle_pause()
+        for n in range(1,7):
+            self.now+=1;panel.feed({'atMs':int(self.now*1000),
+                'experience':{**payload(2000+n*10,name='achZ'),'nameProof':proof()}})
+        self.assertEqual(panel.tracker.current.character,'achZ');self.assertIs(panel.tracker.run,run)
+
+    def test_visually_different_characters_remain_separate_after_spelling_refinement(self):
+        from test_tracking_identity import proof
+        panel=self.panel;panel.set_connected(True);panel.start()
+        for n,name in enumerate(['ach2']+['achZ']*6):
+            self.now+=1;panel.feed({'atMs':int(self.now*1000),
+                'experience':{**payload(2000+n*10,name=name),'nameProof':proof()}})
+        old=panel.tracker.run;key=panel.tracker.current.identity_key
+        for n in range(2):
+            self.now+=1;panel.feed({'atMs':int(self.now*1000),
+                'experience':{**payload(3000+n*10,name='achZ'),'nameProof':proof(True)}})
+        self.assertIsNot(panel.tracker.run,old)
+        self.assertNotEqual(panel.tracker.current.identity_key,key)
+        self.assertEqual(len(panel.history.rows()),1)
+        self.assertEqual(panel.history.rows()[0]['character'],'achZ')
+        self.assertEqual(panel.history.rows()[0]['reason'],'Character changed')
+
     def test_zero_indent_level_badge_does_not_reserve_a_spare_character(self):
         self.train();self.panel.resize(428,650);self.panel.show();self.app.processEvents()
         label=self.panel.level_label;m=label.contentsMargins()

@@ -70,9 +70,9 @@ Add a map label and notes directly on the tracking page. Save sessions, compare 
 
 ### Read Korean
 
-Press the scan shortcut to translate visible Korean text into English. Lupin checks the full detected game window, including speech bubbles and chat, independently of the mouse position.
+Press the scan shortcut to translate visible Korean text into English. Lupin checks the full detected game window, including speech bubbles, chat, shop text and megaphones, independently of the mouse position.
 
-Results appear as soon as they are ready, with the Korean original kept alongside the translation. Popups follow matching text through modest movement and linger briefly after it disappears. Scan duration and popup delay are adjustable; recent results stay in the Translation tab.
+Results appear as soon as they are ready, with the Korean original kept alongside the translation. Compact popups stay near their source, follow matching text through modest movement and linger briefly after it disappears. Recognized duplicates from the same speaker in a bubble and chat share one popup; separate speakers stay separate. Scan duration and popup delay are adjustable; recent results stay in the Translation tab.
 
 <!-- DEMO: docs/media/read-korean.gif — activate a scan and show English with the original Korean. -->
 

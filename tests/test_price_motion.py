@@ -30,18 +30,18 @@ class PriceMotionTests(unittest.TestCase):
     def add_card(self,height):
         card=QLabel('Card');card.setFixedHeight(height);self.cards.addWidget(card);card.show();return card
 
-    def test_missing_card_is_held_at_499_ms_and_retires_at_500_ms(self):
+    def test_missing_card_is_held_at_999_ms_and_retires_at_one_second(self):
         state=ActiveCards(self.window);a=title('A')
         self.assertEqual(state.observe([],a,now=99),[(a,True)])
         state.observe([],None,now=100)
-        self.assertEqual(state.observe([],None,now=100.499),[(a,True)])
-        self.assertEqual(state.observe([],None,now=100.5),[])
+        self.assertEqual(state.observe([],None,now=100.999),[(a,True)])
+        self.assertEqual(state.observe([],None,now=101),[])
         self.assertFalse(state.timer.isActive())
 
     def test_replacement_before_deadline_does_not_visit_an_empty_state(self):
         state=ActiveCards(self.window);a,b=title('A'),title('B')
         state.observe([],a,now=99);state.observe([],None,now=100)
-        self.assertEqual(state.observe([],b,now=100.2),[(b,True)])
+        self.assertEqual(state.observe([],b,now=100.8),[(b,True)])
         self.assertFalse(state.timer.isActive())
         self.assertEqual(state.observe([],b,now=101),[(b,True)])
 
@@ -50,7 +50,7 @@ class PriceMotionTests(unittest.TestCase):
             state=ActiveCards(self.window);a,b=title('A'),title('B')
             state.observe([] if first_hovered else [a],a if first_hovered else None,now=99)
             state.observe([],None,now=100)
-            self.assertEqual(state.observe([b] if first_hovered else [],None if first_hovered else b,now=100.2),[(b,not first_hovered)])
+            self.assertEqual(state.observe([b] if first_hovered else [],None if first_hovered else b,now=100.8),[(b,not first_hovered)])
         state=ActiveCards(self.window);state.observe([b],a,now=99)
         self.assertEqual(state.observe([b],None,now=100),[(a,True),(b,False)])
 
@@ -59,8 +59,8 @@ class PriceMotionTests(unittest.TestCase):
         a=title('A',0,shop_page=1,shop_slot=(0,0,200,18));b=title('B',60,shop_page=1,shop_slot=(0,60,200,18))
         state.observe([a,b],None,now=99,page=1,context=0)
         self.assertEqual(state.observe([b],None,now=100,page=1,context=0),[(a,False),(b,False)])
-        self.assertEqual(len(state.observe([b],None,now=100.499,page=1,context=0)),2)
-        self.assertEqual(state.observe([b],None,now=100.5,page=1,context=0),[(b,False)])
+        self.assertEqual(len(state.observe([b],None,now=100.999,page=1,context=0)),2)
+        self.assertEqual(state.observe([b],None,now=101,page=1,context=0),[(b,False)])
         state.observe([],None,now=101,page=1,context=0)
         self.assertEqual(state.observe([],None,now=101.1,page=2,context=0),[])
         state.observe([],a,now=102,page=2,context=0)
@@ -70,8 +70,18 @@ class PriceMotionTests(unittest.TestCase):
         state=ActiveCards(self.window);a,b,c=title('A'),title('B'),title('C')
         state.observe([a,b],c,now=99)
         self.assertIn((c,True),state.observe([b,a],None,now=100))
-        self.assertIn((c,True),state.observe([b],None,now=100.499))
-        self.assertNotIn((c,True),state.observe([b],None,now=100.5))
+        self.assertIn((c,True),state.observe([b],None,now=100.999))
+        self.assertNotIn((c,True),state.observe([b],None,now=101))
+
+    def test_nested_empty_card_layout_does_not_reuse_a_cached_height(self):
+        wrapper=QWidget();nested=QVBoxLayout(wrapper);nested.setContentsMargins(0,0,0,0)
+        card=QLabel('Outgoing');card.setFixedHeight(120);nested.addWidget(card);self.cards.addWidget(wrapper)
+        self.area.begin();wrapper.show();card.show();self.area.complete();self.area.animation.setCurrentTime(180)
+        self.assertEqual(self.area.full_height,120)
+        self.area.begin();nested.removeWidget(card);card.hide();card.deleteLater()
+        self.area.complete()
+        self.assertEqual(self.area.full_height,0)
+        self.area.animation.setCurrentTime(180);self.assertEqual(self.area.height(),0)
 
     def test_first_card_moves_history_continuously_from_a_zero_height_region(self):
         start=self.history.mapTo(self.window,QPoint()).y();self.area.begin();self.add_card(120);self.area.complete()

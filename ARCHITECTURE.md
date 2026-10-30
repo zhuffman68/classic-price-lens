@@ -1,6 +1,6 @@
 # Lupin architecture
 
-Lupin v0.17.5 provides market references, EXP/meso tracking, local Korean translation and a searchable Classic World database for MapleStory Classic World.
+Lupin v0.17.6 provides market references, EXP/meso tracking, local Korean translation and a searchable Classic World database for MapleStory Classic World.
 
 ## Observation boundary
 
@@ -70,7 +70,7 @@ Paired frame strokes alone do not establish a description: bright shop panes hav
 
 Clicked item-link descriptions may be located beyond the pointer's usual search area. The Rust reader reuses its existing name/bullet recognizer over bounded analysis regions without changing the real cursor or sending input. The GUI requires a catalog match and a visible anchored native description panel before accepting those results. A structurally verified pair of native frame edges permits a local header-only contrast adjustment when chat shows through the translucent fill or upgraded equipment has colored title ink. The cyan marker and its antialiased fringe stay intact, bright foreign occluders are preserved, and the original frame still drives all shop readings and geometry. The same paired-edge proof keeps adjacent comparison panels separate even when their purple hue is lost. A unique equipment name may drop its visible upgrade count for the existing unscrolled reference; exact catalog names retain priority. Cash descriptions with no cyan marker use a separate bounded header reader. It requires paired vertical frame edges and the horizontal top rim, then reads only centered title lines. Complete descenders are retained; up to eight exact header masks cache successful/failed reads. It never searches arbitrary scene text or substitutes a guessed catalog name. Such cards remain beside the description. Small-font I/l and g/q variants and ellipsis punctuation are accepted only for unique catalog candidates; shorter shared Ink-and-Wash prefixes remain ambiguous.
 
-Search controls sit above one shared content area. Selected-item and on-screen/ready views use the same origin. A missing on-screen item gets a 500 ms GUI grace period before its card retires to history; this does not extend an overlay's lifetime or verify an old offer. A replacement item can take over the active area without a ready/history detour. Active-card changes and recent-row movement have independent transitions, so history is not faded through a blank frame with the active card. Empty status rows are hidden. New market generations synchronize retained price cards even while capture is paused. Search is part of Prices and takes space priority while active. Clearing it animates shop cards back into view. Shop cards retain their widget instances and layout positions during quote/age updates. Adding a hovered item does not change shop-card identities. Search, shop and inventory cards share an exact-ID watch star and thumbnails. The removed Details expander has no runtime path.
+Search controls sit above one shared content area. Selected-item and on-screen/ready views use the same origin. A missing on-screen item gets a 1 second GUI grace period before its card retires to history; this does not extend an overlay's lifetime or verify an old offer. A replacement item can take over the active area without a ready/history detour. Active-card changes and recent-row movement have independent transitions, so history is not faded through a blank frame with the active card. Empty status rows are hidden. New market generations synchronize retained price cards even while capture is paused. Search is part of Prices and takes space priority while active. Clearing it animates shop cards back into view. Shop cards retain their widget instances and layout positions during quote/age updates. Adding a hovered item does not change shop-card identities. Search, shop and inventory cards share an exact-ID watch star and thumbnails. The removed Details expander has no runtime path.
 
 Watched items start collapsed. Expanding shows a compact list with thumbnails and cached references, capped at three visible rows. Its contents stay at a stable full height while a clipping viewport slides, avoiding repeated list reflow. Header/empty-space clicks toggle the panel; items, stars and the scrollbar retain their actions. Rounded selection covers the full row.
 
@@ -86,6 +86,8 @@ EXP pace needs 30 seconds of accepted readings; pickup rates need 10 seconds. Co
 
 Captured name proofs keep OCR spelling changes from creating character switches. The Python reader derives the name region from the native reader's EXP-figure geometry in the same submitted frame, normalizes contrast, and supplies a bounded word mask plus glyph masks. Matching pixels retain a stable identity key even when OCR alternates Z/2 or misses the name. New raster-scale templates additionally require the same recognized name and corroborating glyph shapes; variants are bounded. Missing evidence holds a known identity, while genuinely changed name pixels require fresh confirmation before the existing switch logic accepts them. No game-window handle or process identity is used, and no name images are persisted during normal operation.
 
+The display spelling can refine within that stable identity from fresh, numerically accepted observations. At least six corroborating votes, 80 percent of the last eight and four consecutive recent votes over two seconds are required. Cached, stale, duplicate, paused and rejected readings cannot vote. The correction updates the baseline, current run and same-key saved JSON records without restarting accounting or changing the two-second numerical snapshot. Legacy records without a matching visual key remain unchanged; opaque keys are excluded from CSV. Consistently incorrect OCR cannot correct itself without new evidence.
+
 Percent is the default EXP unit; raw/both remain available. EXP and meso cards narrow from 316 down to 200 logical pixels to fit the independently verified empty corner left of the HUD; only narrower gaps use the above-HUD fallback. Each card is 56 pixels tall, totaling 114 with the gap. Placement scales capture guards into logical coordinates on both axes and never paints over or exempts them from validation. Bold headings sit above two small rate lines and a larger rolling gain; the percent unit scales with that gain. Timers retain their own header space and the footer retains Level X · ETA. Both mode includes raw gain alongside that footer. Totals align beside a fixed shared unit column, with exceptional long values scaled instead of displacing other text. The meso coin aligns with the percent symbol, and the footer shows the last confirmed pickup. Normal EXP and MESO headers omit the rolling-window basis while warmup, Paused and Log hidden states remain available. Both bold headings start after the plus-sign gutter used by the rates beneath them. The tracking page explains both windows once with “Rates based on the last 5 minutes” below the control row. Positive meso figures include a plus sign; GUI figures use the same green. Coverage-gap counts stay in the GUI. Shop price-change chips share the name row, with more vertical space before the market/last-sale line.
 
 One numeric snapshot supplies panel and overlay gains/rates/ETA every two seconds, with immediate state changes. Elapsed clocks read the same active watch clock every second independently of that snapshot. Both pace windows cover up to five active minutes. EXP's event clock survives map-history segments and pauses; its denominator contains accepted observation intervals. Meso uses at most one aggregate bucket per second, trims buckets outside the recent 300-second interval and projects per-minute/per-hour rates from that window. Session gain, the last pickup and history checkpoints remain independent of the rolling buckets. Its ten-second rate minimum is separate from EXP's thirty-second warmup.
@@ -97,6 +99,26 @@ User Pause freezes the current reading, run, map, rate snapshot, watch totals an
 The detected-map header omits a redundant street prefix and shortens overflowing names at the right edge, with the full value in its hover text. Session data and the Map Label field retain the full detected name; manual labels are not rewritten.
 
 The Korean reader scans the detected full game area for a short configurable window, independent of cursor proximity. New scans supersede old work. Matching source pixels retain cards through modest movement; linger and no-result timers are bounded. The Korean original is retained and unstated price/percentage units are not invented.
+
+Bubble and generic text candidates alternate within the bounded worker budget.
+Colored generic ink is normalized before recognition; verified source roles use
+geometry, explicit speaker/system prefixes or a current captured shop rectangle.
+A bounded event ledger merges an exact same-speaker bubble/chat arrival within
+its short evidence window, prefers a visible bubble anchor and reserves both
+source locations. Verified same-bubble fragments update one event/history row
+atomically, preserving numeric, question, negation and job distinctions. Different
+speakers, separately established repeats and anonymous prose are not globally
+merged. Scanning and finishing use one phase state in both the GUI and overlay.
+
+Complete glossary/party templates remain fast. Partial glossary output no longer
+prevents mixed sentences reaching the local model; known terms and explicit
+numeric roles must survive, otherwise the original/partial result is retained.
+The bundled model still has grammar limits; deterministic templates are not
+reported as neural inference. `translation_layout.py` sizes cards to their text
+at the existing readable font sizes, prefers a five-pixel source gap, avoids
+source/annotation/card collisions where space permits and holds a stable side
+through modest movement. Geometry caching bounds idle placement work. Lost
+source proof freezes the last verified position during the configured linger.
 
 The writer uses conservative trade/party shorthand and numeric validation before explicit Translate & Copy. Enter in the popup begins a short fade/slide dismissal while the current validated draft finishes; this intentional dismissal preserves only that explicit copy authorization. Escape/edit revokes it. Successful copying shows an expiring bottom-right notification. Editing/canceling invalidates pending copies. Both verified int8 model bundles remain included. See [Korean notes](docs/KOREAN_CHAT.md).
 
@@ -167,6 +189,30 @@ headers. Exact upgrade-suffix validation also applies to independent second read
 colored title pixels participate in their cache fingerprint. Frame structure and
 exact catalog identity remain required. No hooks, process access or game input
 are introduced.
+
+`reader/src/tooltip_association.rs` applies a bounded source proof to adjoining,
+marker-bearing inventory/comparison descriptions fitted against the right edge.
+The native inventory tabs, controls, grid cell and framed pair select the primary
+panel before its single OCR pass. A malformed pair, covered cell or lost proof
+is rejected rather than choosing the comparison by distance or market coverage.
+One remembered source keeps that rejection across repeated lost-header frames
+until the pointer/capture leaves its scope or valid evidence returns. Ordinary
+single/equipped/linked descriptions retain their existing path. Wider inventories,
+centered marker-free comparison pairs and unproven placements are outside this
+small override.
+
+One proven pair also retains its panel-body geometry independently of its title
+markers. Repeated loss of a primary marker cannot restore the equipped comparison
+through legacy selection while both framed dark bodies remain. Genuine pair
+departure releases the ordinary single-description path. Source searches reject
+out-of-frame pointers before calculating crop bounds.
+
+`tooltip_association.py` validates this native metadata in the same pixel space
+as the recognized name. A bounded name/header/frame fingerprint plus source-cell
+token ties cached readings to both the submitted and newest frame. Changing a
+cell, guard, capture origin or token clears the retained card and the brief
+description bridge; unrelated background animation does not. These are image
+proofs only, with no game-window identity or icon/name fuzzy matching.
 
 ## Named item sources
 

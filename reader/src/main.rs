@@ -12,6 +12,7 @@ mod text;
 mod pickups;
 mod tooltip_text;
 mod tooltip_surface;
+mod tooltip_association;
 mod centered_tooltip;
 mod shop_prices;
 mod shop_selection;
@@ -47,6 +48,7 @@ fn main() {
     let mut reader = None;
     let mut tooltip_reader = None;
     let mut centered_titles = centered_tooltip::CenteredTitles::default();
+    let mut tooltip_association = tooltip_association::Selector::default();
     let mut locator = Locator::new();
     let mut experience = None;
     let mut pickups = pickups::PickupLogReader::default();
@@ -159,7 +161,28 @@ fn main() {
                         origin: capture.origin,
                         pointer,
                     };
-                    if let Some(frame)=tooltip_surface::prepare(&tooltip_capture.frame) {tooltip_capture.frame=frame}
+                    let (prepared,markers)=tooltip_surface::prepare(&tooltip_capture.frame);
+                    if let Some(frame)=prepared {tooltip_capture.frame=frame}
+                    let scale_hint=location.as_ref().and_then(|l|l.guards.get(1)).map(|r|r.width as f32/36.0);
+                    let association=tooltip_association.select(&tooltip_capture,&markers,scale_hint);
+                    value["tooltipAssociation"]=association.metadata;
+                    if association.rejected {
+                        value["tooltip"]=serde_json::json!("none");
+                    } else {
+                    if let Some(rect)=association.panel {
+                        let mut rgba=Vec::with_capacity((rect.w*rect.h*4) as usize);
+                        for y in rect.y..rect.y+rect.h {
+                            let start=((y*tooltip_capture.frame.width+rect.x)*4) as usize;
+                            rgba.extend_from_slice(&tooltip_capture.frame.rgba[start..start+(rect.w*4) as usize]);
+                        }
+                        tooltip_capture.frame=Frame{width:rect.w,height:rect.h,rgba,at_ms:tooltip_capture.frame.at_ms};
+                        tooltip_capture.origin.x+=rect.x as i32;
+                        tooltip_capture.origin.y+=rect.y as i32;
+                        // This is only an internal captured-pixel probe, like
+                        // the existing popup reader. The OS pointer is never
+                        // moved; source/slot metadata retains its real proof.
+                        tooltip_capture.pointer=ScreenPoint{x:tooltip_capture.origin.x+(rect.w.min(32)/2) as i32,y:tooltip_capture.origin.y+(rect.h.min(40)/2) as i32};
+                    }
                     let tooltip_reader=tooltip_reader.get_or_insert_with(ItemTooltipReader::bundled);
                     let reading = tooltip_reader.read(&tooltip_capture);
                     value["tooltip"] = serde_json::to_value(reading.tooltip)?;
@@ -183,6 +206,7 @@ fn main() {
                             value["tooltip"]["found"]["alternatives"]=serde_json::json!(candidates);
                         }
                         value["tooltipRetried"]=serde_json::json!(true);
+                    }
                     }
                 }
             }

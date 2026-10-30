@@ -1,4 +1,4 @@
-"""Local speech-bubble OCR. Imported only inside the bounded chat worker."""
+"""Local game-text OCR. Imported only inside the bounded chat worker."""
 from collections import OrderedDict
 import hashlib
 from pathlib import Path
@@ -69,7 +69,8 @@ def text_regions(image,exclude=()):
     neighbours=[np.roll(a,d,axis=axis) for d in (-3,3) for axis in (0,1)]
     low=np.minimum.reduce(neighbours);high=np.maximum.reduce(neighbours)
     neutral=rgb.max(2).astype('int16')-rgb.min(2)<45
-    masks=[neutral&(rgb.min(2)>185)&(a-low>50),neutral&(a<110)&(high-a>75)]
+    coloured=(rgb.max(2).astype('int16')-rgb.min(2)>45)&(rgb.max(2)>95)&((a-low>35)|(high-a>55))
+    masks=[neutral&(rgb.min(2)>185)&(a-low>50),neutral&(a<110)&(high-a>75),coloured]
     result=[]
     for ink in masks:
         ink[:4]=False;ink[-4:]=False;ink[:,:4]=False;ink[:,-4:]=False
@@ -93,7 +94,25 @@ def text_regions(image,exclude=()):
             if abs((y+h/2)-(oy+oh/2))<=3 and -6<=x-(ox+ow)<=12 and x+w-ox<=1000:
                 old[:]=[ox,min(y,oy),max(x+w,ox+ow)-ox,max(y+h,oy+oh)-min(y,oy)];continue
         merged.append(box)
-    return sorted(merged,key=lambda b:(not (b[2]>=160 and b[3]<=30),b[1],b[0]))[:96]
+    unique=[]
+    for box in sorted(merged,key=lambda b:(not (b[2]>=160 and b[3]<=30),b[1],b[0])):
+        x,y,w,h=box
+        if any(max(0,min(x+w,ox+ow)-max(x,ox))*max(0,min(y+h,oy+oh)-max(y,oy))>=min(w*h,ow*oh)*.8
+               for ox,oy,ow,oh in unique):continue
+        unique.append(box)
+        if len(unique)>=96:break
+    return unique
+
+
+def contrast_line(image):
+    """Normalize colored or neutral text against its local border background."""
+    a=pixels(image);border=np.concatenate((a[0],a[-1],a[:,0],a[:,-1]))
+    background=np.median(border,axis=0)
+    ink=np.max(np.abs(a.astype('int16')-background),axis=2)
+    level=float(np.percentile(ink,95))
+    if level<35:return image
+    gray=(255-np.clip(ink*255/max(level,1),0,255)).astype('uint8')
+    return QImage(gray.tobytes(),image.width(),image.height(),image.width(),QImage.Format.Format_Grayscale8).copy()
 
 
 def lines(image):

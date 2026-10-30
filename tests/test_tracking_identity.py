@@ -23,6 +23,47 @@ def proof(alternative=False):
 
 
 class TrackingIdentityTests(unittest.TestCase):
+    def test_consistent_fresh_spelling_refines_first_read_without_changing_visual_key(self):
+        identity=TrackingIdentity();first=identity.prepare({'character':'ach2','nameProof':proof()})
+        identity.accept(first,0);key=first['identityKey']
+        for at in range(1,7):
+            prepared=identity.prepare({'character':'achZ','nameProof':proof()})
+            self.assertEqual(prepared['identityKey'],key)
+            identity.accept(prepared,at)
+            self.assertEqual(identity.reference.name,'achZ' if at==6 else 'ach2')
+        self.assertEqual(identity.reference.key,key)
+        for at in range(7,40):identity.accept(identity.prepare({'character':'achZ','nameProof':proof()}),at)
+        self.assertLessEqual(len(identity.reference.observations),8)
+
+    def test_transient_alternative_does_not_change_the_name(self):
+        identity=TrackingIdentity();identity.accept(identity.prepare({'character':'achZ','nameProof':proof()}),0)
+        for at,name in enumerate(['ach2']*5+['achZ']*3,1):
+            identity.accept(identity.prepare({'character':name,'nameProof':proof()}),at)
+            self.assertEqual(identity.reference.name,'achZ')
+
+    def test_unaccepted_cached_duplicate_and_stale_deliveries_do_not_train_spelling(self):
+        identity=TrackingIdentity();identity.accept(identity.prepare({'character':'ach2','nameProof':proof()}),10)
+        for _ in range(12):identity.prepare({'character':'achZ','nameProof':proof()})
+        for at in (10,10,9,8):
+            self.assertIsNone(identity.accept(identity.prepare({'character':'achZ','nameProof':proof()}),at))
+        for at in range(11,24):
+            identity.accept(identity.prepare({'character':'achZ','nameProof':proof(),'cached':True}),at)
+        self.assertEqual(identity.reference.name,'ach2')
+        self.assertEqual(list(identity.reference.observations),[(10,'ach2')])
+
+    def test_scale_variants_are_learned_only_after_a_fresh_accepted_read(self):
+        original={**proof(),'scale':1.0,'glyphs':[bytes([200]*192).hex()]*2}
+        scaled={**proof(True),'scale':1.5,'glyphs':[bytes([80]*24+[200]*168).hex()]*2}
+        identity=TrackingIdentity();identity.accept(identity.prepare({'character':'Player','nameProof':original}),0)
+        candidate=identity.prepare({'character':'Player','nameProof':scaled})
+        self.assertEqual(candidate['identityKey'],identity.reference.key)
+        self.assertEqual(identity.reference.alternatives,[])
+        self.assertIsNone(identity.accept(candidate,0));self.assertEqual(identity.reference.alternatives,[])
+        cached=identity.prepare({'character':'Player','nameProof':scaled,'cached':True})
+        identity.accept(cached,1);self.assertEqual(identity.reference.alternatives,[])
+        identity.accept(identity.prepare({'character':'Player','nameProof':scaled}),2)
+        self.assertEqual(len(identity.reference.alternatives),1)
+
     def test_ocr_variants_of_identical_pixels_keep_one_character(self):
         identity=TrackingIdentity();first=identity.prepare({'character':'achZ','nameProof':proof()});identity.accept(first)
         for name in ('ach2','achZ','','ach2'):

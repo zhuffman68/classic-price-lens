@@ -14,6 +14,7 @@ from .stream import StreamClient, screen_pixels
 from .platform_paths import reader_binary
 from .capture_platform import uses_system_picker
 from .tracking_identity import name_proof
+from .tooltip_association import TooltipAssociation,association_state
 
 
 class PixelReader(QObject):
@@ -51,6 +52,7 @@ class PixelReader(QObject):
         self.last_pointer = None
         self.tooltip_rect = None
         self.tooltip_fingerprint = None
+        self.tooltip_association = None
         self.tooltip_retry_requested = False
         self.tooltip_retry_key = None
         self.tooltip_retry_at = 0.0
@@ -109,6 +111,7 @@ class PixelReader(QObject):
         self.shop_rect = self.shop_fingerprint = None
         self.shop_context = None
         self.tooltip_rect = self.tooltip_fingerprint = None
+        self.tooltip_association = None
         self.status.emit("Choose a monitor or full workspace in the system sharing dialog"
                          if uses_system_picker() else "Capturing the selected display")
         self.stream.start(screen, desktop)
@@ -197,6 +200,7 @@ class PixelReader(QObject):
         self.next_area_search = 0
         self.shop_rect = self.shop_fingerprint = self.shop_context = None
         self.tooltip_rect = self.tooltip_fingerprint = None
+        self.tooltip_association = None
         self.last_experience = self.last_map_read = self.last_pickup = self.last_pickup_frame = 0
         self.area_changed.emit()
 
@@ -285,6 +289,8 @@ class PixelReader(QObject):
         tooltip_same = False
         if hover_check and not self.tooltip_retry_requested and self.tooltip_rect and self.tooltip_fingerprint is not None and self.pointer == self.last_pointer:
             tooltip_same = self.fingerprint(image, self.tooltip_rect) == self.tooltip_fingerprint
+            if tooltip_same and self.tooltip_association is not None:
+                tooltip_same=self.tooltip_association.matches(image,pointer)
         if self.shop_rect and self.shop_fingerprint is not None:
             patch = image.copy(self.shop_context or self.shop_rect)
             fingerprint = hashlib.blake2b(patch.constBits(), digest_size=8).digest()
@@ -487,10 +493,26 @@ class PixelReader(QObject):
                         self.shop_fingerprint = None
                     tooltip = (result.get("tooltip") or {})
                     found = tooltip.get("found") if isinstance(tooltip, dict) else None
+                    association=result.get('tooltipAssociation');state=association_state(association)
+                    proof=None
+                    if state=='inventory-primary':
+                        source=self.submitted_image.copy(self.crop) if self.crop else self.submitted_image
+                        current=self.image.copy(self.crop) if self.crop else self.image
+                        read_point=self.last_pointer;current_point=self.pointer
+                        if self.crop:
+                            if read_point is not None:read_point=(read_point[0]-self.crop.x(),read_point[1]-self.crop.y())
+                            if current_point is not None:current_point=(current_point[0]-self.crop.x(),current_point[1]-self.crop.y())
+                        proof=TooltipAssociation.read(association,found,source)
+                        if proof is None or not proof.contains_pointer(read_point) or not proof.matches(current,current_point):state='rejected'
+                    if state=='rejected':
+                        result['tooltipAssociation']={'state':'rejected'}
+                        result['tooltip']={**(tooltip if isinstance(tooltip,dict) else {}),'found':None}
+                        found=None;proof=None
+                    self.tooltip_association=proof
                     tooltip_area = found.get("area") if found else None
                     self.tooltip_rect = QRect(tooltip_area["x"], tooltip_area["y"], tooltip_area["width"], tooltip_area["height"]) if tooltip_area else None
-                    if self.tooltip_rect and self.image_sequence == self.submitted_sequence:
-                        source = self.image.copy(self.crop) if self.crop else self.image
+                    if self.tooltip_rect and (proof is not None or self.image_sequence == self.submitted_sequence):
+                        source = self.submitted_image.copy(self.crop) if self.crop else self.submitted_image
                         self.tooltip_fingerprint = self.fingerprint(source, self.tooltip_rect)
                     else:
                         self.tooltip_fingerprint = None

@@ -15,7 +15,7 @@ from .number_motion import NumberRoll
 class ActiveCards(QObject):
     """GUI-only retention; never supplies screen labels or verified offers."""
     changed=Signal()
-    grace=.5
+    grace=1.0
 
     def __init__(self,parent=None):
         super().__init__(parent);self.groups={True:(),False:()};self.actual={True:(),False:()};self.deadlines={};self.due=None
@@ -151,7 +151,9 @@ class RecentDelegate(QStyledItemDelegate):
         caption='Seen '+age_text(max(0,time.time()-row['seen']))+' ago'
         painter.drawText(QRectF(left,rect.top()+30,max(20,right-left),16),Qt.AlignmentFlag.AlignLeft|Qt.AlignmentFlag.AlignVCenter,caption)
         price=row.get('price') or {};listed=compare(row['item'],price.get('quantity'),price.get('mesos'),None).unit_price
-        if listed is not None:painter.drawText(QRectF(rect.right()-134,rect.top()+30,125,16),Qt.AlignmentFlag.AlignRight|Qt.AlignmentFlag.AlignVCenter,f'Last listed {listed:,.0f}')
+        if listed is not None:
+            caption=f'Last seen price {listed:,.0f}';width=painter.fontMetrics().horizontalAdvance(caption)+2
+            painter.drawText(QRectF(rect.right()-9-width,rect.top()+30,width,16),Qt.AlignmentFlag.AlignRight|Qt.AlignmentFlag.AlignVCenter,caption)
         font.setPixelSize(17);painter.setFont(font);painter.setPen(QColor('#e7c68f' if index.data(Qt.ItemDataRole.UserRole+2) else '#98a3b1'))
         value=index.data(Qt.ItemDataRole.UserRole+1);box=QRectF(rect.right()-128,rect.top()+5,106,24)
         roll=host.rolls.get(row['item'].game_id)
