@@ -47,6 +47,14 @@ Browse Classic World **Items, Monsters, Skills, Maps, and Quests**. Search for a
 
 Look up item stats and market prices, monster drops and locations, skill ranks, minimaps, and quest rewards. Follow linked items and sources to explore further. Downloaded information stays available offline.
 
+## Screenshots
+
+<p align="center">
+  <a href="https://raw.githubusercontent.com/zhuffman68/lupin/main/docs/media/lupin-four-tabs.png">
+    <img src="https://raw.githubusercontent.com/zhuffman68/lupin/main/docs/media/lupin-four-tabs.png" width="1600" alt="Lupin's Prices, EXP/Meso Tracking, Translation and Database tabs">
+  </a>
+</p>
+
 ## Installation
 
 Choose your download on the **[latest release page](https://github.com/zhuffman68/lupin/releases/latest)**:
@@ -71,8 +79,10 @@ Use **Settings** and **Hotkeys…** to customize overlays, shortcuts, and update
 
 <h3 align="center">Buy monkey a beer</h3>
 <p align="center">
-  <img src="https://raw.githubusercontent.com/zhuffman68/lupin/main/docs/media/lupin-beer.gif" width="96" align="middle" alt="Lupin drinking a beer">
   <a href="https://www.paypal.me/zhuffman68">
     <img src="https://raw.githubusercontent.com/zhuffman68/lupin/main/docs/media/donate.png" width="190" align="middle" alt="Donate with PayPal">
   </a>
+</p>
+<p align="center">
+  <img src="https://raw.githubusercontent.com/zhuffman68/lupin/main/docs/media/lupin-beer.gif" width="96" alt="Lupin drinking a beer">
 </p>
