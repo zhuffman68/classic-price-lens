@@ -17,7 +17,8 @@ class OutgoingTextTests(unittest.TestCase):
         output=validate(source,template(source))
         for value in ('8 att Work Gloves','2.5m','2m','3m','개당','현재 제시가','즉구가','흥정 불가','가격 제안은 귓말 주세요'):self.assertIn(value,output)
         self.assertTrue(output.startswith('판매:'))
-        self.assertTrue(validate(expand('WTB White Jeans 250k'),template(expand('WTB White Jeans 250k'))).startswith('구매:'))
+        names=['White Jeans'];source=expand('WTB White Jeans 250k',names)
+        self.assertTrue(validate(source,template(source,names),names).startswith('구매:'))
 
     def test_party_and_social_slang_are_contextual_and_do_not_guess_numbers(self):
         for message,expected in [('ty4pt','파티 감사해요.'),('brb','잠시 후에 돌아올게요.'),('cc 3','3채널로 이동해 주세요.')]:
@@ -47,7 +48,7 @@ class OutgoingTextTests(unittest.TestCase):
 
     def test_item_names_are_protected_inside_trade_templates_too(self):
         source=expand('WTS Meso Ranger Helmet 250k mesos')
-        output=validate(source,template(source,['Meso Ranger Helmet']))
+        output=validate(source,template(source,['Meso Ranger Helmet']),['Meso Ranger Helmet'])
         self.assertIn('Meso Ranger Helmet',output);self.assertIn('250k 메소',output)
 
 

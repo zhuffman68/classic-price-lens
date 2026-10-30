@@ -70,6 +70,7 @@ class ComposerOverlayController(QObject):
         motion_changed=self.reduced!=reduced
         self.reduced = reduced
         if not self.active:
+            if self.presented and motion_changed:self.sync()
             return
         if placement is None:
             self.close()
@@ -129,7 +130,8 @@ class ComposerOverlayController(QObject):
             may_cancel=self.active or self.submitted_identity==self.composer.identity
             self.active = False
             self.allow_cancel=False
-            if may_cancel:self.composer.cancel_copy()
+            if may_cancel:
+                self.composer.cancel_copy();self.composer.changed.emit()
         else:
             self.composer.set_text(text)
             if event == 'submit':
@@ -145,6 +147,7 @@ class ComposerOverlayController(QObject):
 class RemoteComposer(QObject):
     """Presentation mirror only; it cannot translate or write the clipboard."""
     changed = Signal()
+    submission_started = Signal(int)
     copy_submitted = Signal(int)
 
     def __init__(self, send, parent=None):
@@ -154,6 +157,7 @@ class RemoteComposer(QObject):
         self.text = self.result = self.expanded = self.note = self.error = ''
         self.status = ''
         self.busy = self.copy_pending = False
+        self.submitted=False
 
     def apply(self, command):
         session = command.get('session')
@@ -166,6 +170,7 @@ class RemoteComposer(QObject):
         state = command.get('state')
         if not isinstance(state, dict) or command.get('ack', -1) < self.sequence:
             return False
+        if command.get('operation')=='open':self.submitted=False
         for name in ('text', 'result', 'expanded', 'note', 'error', 'status'):
             value = state.get(name, '')
             setattr(self, name, value[:4096] if isinstance(value, str) else '')
@@ -190,9 +195,12 @@ class RemoteComposer(QObject):
         self.changed.emit()
 
     def request_copy(self):
-        if not self.text or self.copy_pending:
+        if not self.text or self.copy_pending or self.submitted:
             return
-        self.copy_pending = True
+        self.copy_pending = self.submitted = True
+        # Freeze before a fast reply; publish Submit before a reduced-motion
+        # hide can report the surface closed and retire this authorization.
+        self.submission_started.emit(self.session)
         self.event('submit')
         self.copy_submitted.emit(self.session)
 
@@ -211,6 +219,7 @@ class WriterOverlay(QDialog):
         self.composer, self.report = composer, report
         self.placement = None
         self.submitting = self.closing = False
+        self.submission_frozen=False
         self.reduced = False
         self.target = QRect()
         self.level = 1.0
@@ -273,10 +282,12 @@ class WriterOverlay(QDialog):
         self.activation_timer=QTimer(self);self.activation_timer.setSingleShot(True);self.activation_timer.setInterval(220)
         self.activation_timer.timeout.connect(self.check_activation)
         composer.changed.connect(self.refresh)
+        composer.submission_started.connect(self.freeze_submission)
         composer.copy_submitted.connect(lambda *_: self.finish(True))
         self.refresh()
 
     def refresh(self):
+        if self.closing or self.submission_frozen:return
         c = self.composer
         if clean(self.input.text()) != c.text:
             self.input.blockSignals(True); self.input.setText(c.text); self.input.blockSignals(False)
@@ -292,7 +303,7 @@ class WriterOverlay(QDialog):
         self.fit()
 
     def fit(self):
-        if not self.placement:
+        if not self.placement or self.closing or self.submission_frozen:
             return
         x, y, width, maximum = self.placement['box']
         self.ensurePolished()
@@ -310,7 +321,9 @@ class WriterOverlay(QDialog):
         self.target = QRect(x, bottom - height, width, height)
         self.size_motion.stop()
         if self.isVisible() and not self.closing and not self.reduced and abs(self.height() - height) > 1:
-            self.size_motion.setStartValue(self.height()); self.size_motion.setEndValue(height); self.size_motion.start()
+            self.size_motion.blockSignals(True)
+            self.size_motion.setStartValue(self.height());self.size_motion.setEndValue(height);self.size_motion.setCurrentTime(0)
+            self.size_motion.blockSignals(False);self.size_motion.start()
         else:
             self.resize_height(height)
 
@@ -326,7 +339,9 @@ class WriterOverlay(QDialog):
         self.placement = placement; self.reduced = reduced
         self.shortcut.setText(shortcut)
         self.closing = self.submitting = False
+        self.submission_frozen=False
         self.motion.stop(); self.size_motion.stop(); self.panel.setEnabled(True)
+        self.panel.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,False);self.input.setReadOnly(False)
         self.level=1.0 if self.reduced else 0.0
         self.setWindowOpacity(self.level)
         self.refresh(); self.show(); self.raise_(); self.activateWindow()
@@ -339,7 +354,16 @@ class WriterOverlay(QDialog):
         if self.reduced:
             self.animate(1.0)
         else:
-            self.motion.setDuration(140); self.motion.setStartValue(0.0); self.motion.setEndValue(1.0); self.motion.start()
+            self.start_fade(1.0,140,QEasingCurve.Type.OutCubic)
+
+    def start_fade(self,target,duration,easing):
+        start=self.level
+        # Reusing a completed QVariantAnimation otherwise emits intermediate
+        # values while duration/easing/range are being reset, causing a flash.
+        self.motion.blockSignals(True);self.motion.stop()
+        self.motion.setDuration(duration);self.motion.setEasingCurve(easing)
+        self.motion.setStartValue(start);self.motion.setEndValue(target);self.motion.setCurrentTime(0)
+        self.motion.blockSignals(False);self.animate(start);self.motion.start()
 
     def animate(self, value):
         self.level = float(value)
@@ -347,19 +371,33 @@ class WriterOverlay(QDialog):
         self.move(self.target.x(), self.target.bottom() + 1 - self.height() + round((1 - self.level) * 6))
         self.report_box()
 
+    def freeze_submission(self,*_):
+        if not self.isVisible() or self.closing:return
+        self.submission_frozen=True;self.motion.stop();self.size_motion.stop()
+        self.target=QRect(self.x(),self.y()-round((1-self.level)*6),self.width(),self.height())
+        self.panel.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True);self.input.setReadOnly(True)
+
     def finish(self, submitted=False):
         if not self.isVisible():
+            return
+        if self.closing:
+            if not submitted and self.submitting:
+                self.submitting=False;self.composer.cancel_copy()
             return
         self.focus_timer.stop()
         self.activation_timer.stop()
         if not submitted:
             self.composer.cancel_copy()
         self.submitting, self.closing = submitted, True
-        self.motion.stop(); self.size_motion.stop(); self.panel.setEnabled(False)
+        self.motion.stop(); self.size_motion.stop()
+        # Preserve the current polished geometry and enabled colours. Late
+        # preview/state updates must not resize or gray the fading surface.
+        self.target=QRect(self.x(),self.y()-round((1-self.level)*6),self.width(),self.height())
+        self.panel.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents,True);self.input.setReadOnly(True)
         if self.reduced:
             self.animate(0.0); self.motion_finished()
         else:
-            self.motion.setDuration(110); self.motion.setStartValue(self.level); self.motion.setEndValue(0.0); self.motion.start()
+            self.start_fade(0.0,180,QEasingCurve.Type.InOutCubic)
 
     def reject(self):
         self.finish(False)
@@ -426,7 +464,7 @@ class WriterHost(QObject):
             return
         if self.window is not None:
             self.window.shortcut.setText(str(command.get('shortcut',''))[:100])
-            self.window.set_reduced(command.get('reduce_motion'))
+            if operation!='open':self.window.set_reduced(command.get('reduce_motion'))
         if operation not in ('open', 'place','state'):
             return
         placement = command.get('placement')

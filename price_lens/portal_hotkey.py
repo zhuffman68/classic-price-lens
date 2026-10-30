@@ -1,10 +1,16 @@
 """Wayland global shortcuts through the desktop portal, without key interception."""
 import asyncio
 from concurrent.futures import CancelledError
+import configparser
+import os
+import stat
+import tempfile
 import threading
 import uuid
 from pathlib import Path
 import sys
+
+from . import APP_NAME,LEGACY_APP_NAME
 
 SERVICE = "org.freedesktop.portal.Desktop"
 PATH = "/org/freedesktop/portal/desktop"
@@ -15,6 +21,57 @@ class PortalError(RuntimeError):
     def __init__(self, name, message):
         super().__init__(message)
         self.name = name
+
+
+def _desktop_value(text):
+    return str(text).replace('\\','\\\\').replace('\n','\\n').replace('\r','\\r').replace('\t','\\t')
+
+
+def _development_entry(root,program):
+    # Desktop Entry string escaping runs before Exec argument unquoting. Both
+    # layers are required for literal quotes, dollar signs and backslashes.
+    argument=''.join('\\'+char if char in '\\"`$' else char for char in str(program).replace('%','%%'))
+    return dict(Type='Application',Name=_desktop_value(APP_NAME+' (development)'),NoDisplay='true',
+                Exec=_desktop_value('"'+argument+'" -m price_lens --capture'),Path=_desktop_value(root),
+                Icon=_desktop_value(root/'price_lens/resources/icon.png'),Terminal='false')
+
+
+def _desktop_fields(text):
+    parser=configparser.ConfigParser(interpolation=None);parser.optionxform=str
+    try:
+        parser.read_string(text)
+        if parser.defaults() or parser.sections()!=['Desktop Entry']:return {}
+        return dict(parser['Desktop Entry'])
+    except configparser.Error:
+        return {}
+
+
+def _refresh_development_entry(desktop,values):
+    previous=None
+    if desktop.exists() or desktop.is_symlink():
+        # Never follow a desktop-entry symlink or replace a different launcher.
+        info=desktop.lstat()
+        if not stat.S_ISREG(info.st_mode):return
+        with desktop.open(encoding='utf-8',errors='replace') as stream:text=stream.read(65537)
+        if len(text)>65536:return
+        previous=_desktop_fields(text)
+        if all(previous.get(key)==value for key,value in values.items()):return
+        legacy_names={'Lupin (development)',APP_NAME+' (development)',LEGACY_APP_NAME+' (development)'}
+        owned=(previous.get('X-Lupin-Development')=='true' or
+               previous.get('Type')=='Application' and previous.get('NoDisplay')=='true'
+               and previous.get('Name') in legacy_names and previous.get('Terminal')=='false'
+               and previous.get('Exec','').endswith(' -m price_lens --capture'))
+        if not owned:return
+    contents='[Desktop Entry]\n'+''.join(key+'='+value+'\n' for key,value in values.items())+'X-Lupin-Development=true\n'
+    temporary=None
+    try:
+        with tempfile.NamedTemporaryFile(mode='w',encoding='utf-8',dir=desktop.parent,
+                                         prefix='.'+desktop.stem+'-',suffix='.tmp',delete=False) as stream:
+            temporary=Path(stream.name);stream.write(contents);stream.flush();os.fsync(stream.fileno())
+        temporary.chmod(stat.S_IMODE(info.st_mode) if previous is not None else 0o644)
+        os.replace(temporary,desktop)
+    finally:
+        if temporary is not None:temporary.unlink(missing_ok=True)
 
 
 def application_identity():
@@ -28,13 +85,7 @@ def application_identity():
     directory = Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.ApplicationsLocation))
     directory.mkdir(parents=True, exist_ok=True)
     desktop = directory / (identity + ".desktop")
-    if not desktop.exists():
-        def value(text):
-            return str(text).replace("\\", "\\\\").replace("\n", "\\n")
-        program = str(sys.executable).replace("\\", "\\\\").replace('"', '\\"').replace("`", "\\`").replace("$", "\\$")
-        desktop.write_text("[Desktop Entry]\nType=Application\nName=Lupin (development)\nNoDisplay=true\n"
-                           f'Exec="{program}" -m price_lens --capture\nPath={value(root)}\n'
-                           f"Icon={value(root / 'price_lens/resources/icon.png')}\nTerminal=false\n")
+    _refresh_development_entry(desktop,_development_entry(root,sys.executable))
     return identity
 
 

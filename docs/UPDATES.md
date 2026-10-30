@@ -64,6 +64,34 @@ GUI's own pipe starts installation, after tracking has been saved and the app
 closed. The helper relaunches Lupin as the invoking user with a short allowlist
 of desktop environment variables. Failed transactions keep a small system log.
 
+The allowlist is shared by the GUI and Linux installer. It includes XWayland's
+`XAUTHORITY`, custom GLib schema and XDG data/config/cache locations. These values
+are used only after dropping to the invoking user; they never configure the
+privileged package-manager command. On launch, a normal user GUI can recover
+missing values from the same user's session manager after matching its display,
+Wayland socket and runtime directory. Explicit current values are retained.
+This also repairs launches made by an older updater that dropped those fields.
+
+New update jobs carry a random startup token. Both native helper paths run from
+the user's update job directory, outside the installation. After installation,
+the launched app must acknowledge that token, exact version and its own PID via
+an atomic, bounded receipt. The GUI waits for its event loop and the annotation
+helper's versioned IPC response; it does not require internet, a game window or
+screen-sharing approval. The external helper checks that its own child is still
+alive and waits at most twenty seconds. Results move from `starting` to
+`ready`/`failed`; the GUI watches only its own attempt and does not announce the
+intermediate state. A failed readiness check never starts a duplicate app.
+
+The annotation helper gets at most two automatic retries after its initial
+attempt. Exhaustion exposes Retry overlays without restarting capture. Saved
+diagnostics contain fixed error codes, never stderr, captured text or drafts.
+The receipt reader used by the privileged Linux helper has no Qt dependency.
+Already-installed older updater helpers keep their original behavior for the
+first transition; readiness verification applies to jobs initiated by this code.
+The new GUI additionally holds an older helper's success notification until its
+current overlay is ready, or shows a bounded startup warning instead. This
+avoids a false ready message during that first transition as well.
+
 Compatible app-only releases may list an older version in the signed
 `capture_compatible_from` field. Only then can a live reader hand off its sharing
 helper on Linux and reconnect after restart. Windows closes its helper so runtime

@@ -45,6 +45,7 @@ class FakeReader(QObject):
     def __init__(self, root, parent=None):
         super().__init__(parent)
         self.image = QImage(800, 800, QImage.Format.Format_RGBA8888)
+        self.image.fill(QColor('#171c25'))
         self.crop = None
         self.pointer = (340, 240)
         self.shop_context = QRect(300, 200, 240, 300)

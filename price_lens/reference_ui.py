@@ -1,8 +1,8 @@
 """Released Classic World browsing, with stable entry ownership and local search."""
 from datetime import datetime
 from PySide6.QtCore import Qt,QTimer,Signal
-from PySide6.QtGui import QKeySequence,QShortcut
-from PySide6.QtWidgets import QComboBox,QHBoxLayout,QPushButton,QStackedWidget,QTabBar,QVBoxLayout,QWidget
+from PySide6.QtGui import QActionGroup,QKeySequence,QShortcut
+from PySide6.QtWidgets import QHBoxLayout,QMenu,QPushButton,QStackedWidget,QTabBar,QToolButton,QVBoxLayout,QWidget
 from .motion import MotionLabel
 from .reference_media import ReferenceMedia
 from .reference_widgets import ReferenceList,BrowserContent,thumbnail
@@ -46,8 +46,12 @@ class DatabasePanel(QWidget):
         self.summary=MotionLabel();self.summary.setStyleSheet('font-size:10px;color:#9dacc0');self.summary.setAlignment(Qt.AlignmentFlag.AlignRight|Qt.AlignmentFlag.AlignVCenter)
         navigation.addWidget(self.summary)
         self.sort_row=QWidget();sorts=QHBoxLayout(self.sort_row);sorts.setContentsMargins(0,0,0,0)
-        self.sort_choice=QComboBox();self.sort_choice.setAccessibleName('Sort database results');self.sort_choice.setFixedWidth(136);self.sort_choice.setStyleSheet('font-size:10px;padding:4px 7px')
-        sorts.addWidget(self.sort_choice);navigation.addWidget(self.sort_row);self.sort_choice.currentIndexChanged.connect(self.sort_changed)
+        self.sort_button=QToolButton();self.sort_button.setText('Sort');self.sort_button.setFixedSize(60,28)
+        self.sort_button.setAccessibleName('Sort database results');self.sort_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.sort_button.setStyleSheet('QToolButton{font-size:11px;color:#c7d4e5;background:#263447;border:1px solid #42556e;border-radius:6px;padding:3px 8px;} QToolButton:hover{background:#34465e;border-color:#6b809f;} QToolButton::menu-indicator{subcontrol-origin:padding;subcontrol-position:right center;right:5px;}')
+        self.sort_menu=QMenu(self.sort_button);self.sort_button.setMenu(self.sort_menu)
+        self.sort_group=QActionGroup(self.sort_button);self.sort_group.setExclusive(True);self.sort_actions={};self.sort_options=()
+        sorts.addWidget(self.sort_button);navigation.addWidget(self.sort_row)
         layout.addLayout(navigation)
         self.content=BrowserContent();content=QVBoxLayout(self.content);content.setContentsMargins(0,0,0,0)
         self.pages=QStackedWidget();content.addWidget(self.pages);layout.addWidget(self.content,1)
@@ -126,8 +130,9 @@ class DatabasePanel(QWidget):
     def schedule(self):self.results_current=False;self.limit=80;self.timer.start()
     def scope_filters(self):return tuple((field,value) for field,value,label in self.scope)
 
-    def sort_changed(self,*_):
-        self.sort_mode=self.sort_choice.currentData();self.limit=80;self.search()
+    def sort_changed(self,value):
+        if value==self.sort_mode:return
+        self.sort_mode=value;self.limit=80;self.search()
 
     def sorting(self):
         if self.kind=='skills':self.sort_row.hide();return 'book'
@@ -143,9 +148,13 @@ class DatabasePanel(QWidget):
                 if any(value=='Scroll' for field,value,label in self.scope):options += [('rate','Scroll success rate')]
         else:options += [('type','Type')]
         if self.sort_mode not in [value for value,label in options]:self.sort_mode=options[0][0]
-        self.sort_choice.blockSignals(True);self.sort_choice.clear()
-        for value,label in options:self.sort_choice.addItem(label,value)
-        self.sort_choice.setCurrentIndex(self.sort_choice.findData(self.sort_mode));self.sort_choice.blockSignals(False);self.sort_row.show()
+        if tuple(options)!=self.sort_options:
+            self.sort_options=tuple(options);self.sort_menu.clear();self.sort_actions={}
+            for value,label in options:
+                action=self.sort_menu.addAction(label);action.setData(value);action.setCheckable(True);self.sort_group.addAction(action)
+                action.triggered.connect(lambda checked=False,value=value:self.sort_changed(value));self.sort_actions[value]=action
+        self.sort_actions[self.sort_mode].setChecked(True)
+        self.sort_button.setToolTip('Sort by '+dict(options)[self.sort_mode]);self.sort_row.show()
         return self.sort_mode
 
     def group_field(self):

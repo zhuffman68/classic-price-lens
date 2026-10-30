@@ -114,11 +114,12 @@ class UpdateServiceTests(unittest.TestCase):
 
     def test_native_helper_reverifies_signature_platform_and_newer_version(self):
         selected=offer(target='linux-arch-x64');target=Target('linux-arch-x64',True,self.root)
-        plan=dict(root=str(self.root),target=target.name,offer=selected)
+        plan=dict(root=str(self.root),target=target.name,offer=selected,startup_token='a'*64)
         package,newest,compatible=validate_plan(plan,self.root,'0.17.7',target,KEYS)
         self.assertEqual(package,selected['package']);self.assertEqual(newest,'0.18.0');self.assertFalse(compatible)
         with self.assertRaises(ValueError):validate_plan(plan,self.root,'0.19.0',target,KEYS)
         with self.assertRaises(ValueError):validate_plan({**plan,'target':'linux-debian-x64'},self.root,'0.17.7',target,KEYS)
+        with self.assertRaises(ValueError):validate_plan({**plan,'startup_token':''},self.root,'0.17.7',target,KEYS)
         selected['manifest']['artifacts'][target.name]['sha256']='0'*64
         with self.assertRaises(ValueError):validate_plan(plan,self.root,'0.17.7',target,KEYS)
 
@@ -158,3 +159,66 @@ class UpdateServiceTests(unittest.TestCase):
         finally:
             if process.poll() is None:process.terminate();process.wait(timeout=3)
             process.stdout.close()
+
+    def test_preparing_carries_only_allowlisted_desktop_state_and_uses_job_cwd(self):
+        import json
+        from types import SimpleNamespace
+        s=self.service;s.offer=self.client.selected;s.downloaded=self.root/'fixture.exe';s.downloaded.write_bytes(b'fixture')
+        # Use the installed resource root on Windows too; the job/cache remains
+        # temporary and Popen below never executes the copied helper.
+        s.root=Path(__file__).resolve().parents[1]
+        helper=SimpleNamespace(stdout=io.BytesIO(b'{"ready":true}\n'),stdin=io.BytesIO(),poll=lambda:1)
+        environment={'DISPLAY':':91','XAUTHORITY':'/owned/auth','GSETTINGS_SCHEMA_DIR':'/custom/schemas'}
+        with patch('price_lens.update_service.recovered_environment',return_value=environment), \
+                patch('price_lens.update_service.subprocess.Popen',return_value=helper) as spawn:
+            self.assertTrue(s.prepare_install(s.cancelled))
+        job=Path(spawn.call_args.kwargs['cwd']);plan=json.loads((job/'request.json').read_text())
+        self.assertEqual(job.parent,self.root)
+        self.assertEqual(plan['relaunch_env'],environment)
+        self.assertRegex(plan['startup_token'],r'^[0-9a-f]{64}$')
+
+    def test_starting_result_is_not_announced_and_only_matching_completed_attempt_is_accepted(self):
+        s=self.service;notices=[];s.notice.connect(lambda *args:notices.append(args))
+        path=self.root/'last-result.json';s.watch_result('job-current')
+        for row in (dict(ok=False,status='starting',version='0.18.0',attempt='job-current'),
+                    dict(ok=True,status='ready',version='0.18.0',attempt='job-other')):
+            path.write_text(__import__('json').dumps(row));s.poll_result()
+            self.assertTrue(s.result_timer.isActive());self.assertEqual(notices,[])
+        path.write_text('{"ok":true,"status":"ready","version":"0.18.0","attempt":"job-current"}')
+        s.poll_result();QTest.qWait(20)
+        self.assertFalse(s.result_timer.isActive());self.assertEqual(len(notices),1)
+        self.assertEqual(notices[0],('Lupin updated','The updated app is ready.'))
+
+    def test_overlay_startup_failure_is_not_reported_as_a_failed_install_transaction(self):
+        s=self.service;notices=[];s.notice.connect(lambda *args:notices.append(args));s.watch_result('job-current')
+        (self.root/'last-result.json').write_text('{"ok":false,"status":"failed","reason":"startup","version":"0.18.0","attempt":"job-current"}')
+        s.poll_result();QTest.qWait(20)
+        self.assertIn('installed',s.error)
+        self.assertEqual(len(notices),1);self.assertIn('overlay',notices[0][1])
+
+    def test_legacy_success_waits_for_current_overlay_without_marking_it_notified_early(self):
+        s=self.service;notices=[];s.notice.connect(lambda *args:notices.append(args))
+        result=dict(ok=True,version='0.18.0',attempt='legacy-job')
+        with patch.object(s,'startup_health',return_value=False):
+            s.announce_result(result);QTest.qWait(120)
+            self.assertEqual(notices,[]);self.assertNotIn('update-result-notified',self.settings.values)
+            self.assertTrue(s.ready_notice_timer.isActive())
+        with patch.object(s,'startup_health',return_value=True):
+            s.poll_ready_notice();QTest.qWait(20)
+        self.assertEqual(notices,[('Lupin updated','The updated app is ready.')])
+        self.assertFalse(s.ready_notice_timer.isActive())
+
+    def test_legacy_success_becomes_one_startup_warning_if_current_helper_never_readies(self):
+        s=self.service;notices=[];s.notice.connect(lambda *args:notices.append(args))
+        result=dict(ok=True,version='0.18.0',attempt='legacy-job')
+        with patch.object(s,'startup_health',return_value=False):
+            s.announce_result(result);s.ready_notice_deadline=0;s.poll_ready_notice();QTest.qWait(20)
+            s.announce_result(result);QTest.qWait(20)
+        self.assertEqual(len(notices),1);self.assertIn('overlay',notices[0][1])
+        self.assertIn('installed',s.error);self.assertFalse(s.ready_notice_timer.isActive())
+
+    def test_close_cancels_legacy_readiness_notice_without_claiming_success(self):
+        s=self.service;notices=[];s.notice.connect(lambda *args:notices.append(args))
+        with patch.object(s,'startup_health',return_value=False):
+            s.announce_result(dict(ok=True,version='0.18.0',attempt='legacy-job'));s.close();QTest.qWait(120)
+        self.assertEqual(notices,[]);self.assertFalse(s.ready_notice_timer.isActive())

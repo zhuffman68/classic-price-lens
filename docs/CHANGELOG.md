@@ -5,6 +5,37 @@ source for published downloads. A local version note or successful build does no
 mean that version has been published. Current test results and platform limits
 remain in [VERIFICATION.md](../VERIFICATION.md).
 
+## 1.0.0
+
+The first stable release brings together Prices, EXP/Meso Tracking, Translation
+and Database, with the refinements below.
+
+- Prices search results and their match count return together when cleared,
+  preserving the existing shop/item cards without a second layout jump.
+- Database sorting uses a compact popup in the existing breadcrumb row.
+- Page-footer shortcuts use brighter, larger, bolder text in the same position
+  on every tab, including both translation modes.
+- Enter dismisses the Korean writer without a late preview resizing it. The
+  translating/copied notice follows it into the same corner with a short
+  transition and an independent expiry timer.
+- Outgoing Korean uses verified game terminology for MapleStory, party quests,
+  towns and common market shorthand while preserving exact item names. Scoped
+  checks reject lost names, numeric roles, questions or negation.
+- Source-preview desktop launchers refresh their own stale runtime paths;
+  existing installed shortcut identities and custom assignments are preserved.
+- Linux restarts retain desktop authentication and schema settings; a new
+  launch can recover missing settings left by an older updater.
+- Overlay startup uses a versioned handshake, bounded retries and a visible
+  recovery action. Update success waits for the new app and its overlay helper.
+- Windows update helpers run outside the installation directory and require a
+  matching live-child startup receipt before reporting success.
+- Gloves Attack Scroll: Chaos has user-confirmed availability. Verified,
+  reachable catalyst recipes establish 14 further scroll outcomes. Fresh,
+  exact native item observations can establish circulation independently of a
+  recorded market sale; availability never supplies a missing price.
+
+Package and publication verification is recorded in [VERIFICATION.md](../VERIFICATION.md).
+
 ## 0.17.10
 
 - Clearer Database browsing, remembered sections and compact breadcrumb links.

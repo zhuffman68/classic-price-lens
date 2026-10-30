@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -18,14 +19,15 @@ ROOT=Path(__file__).resolve().parent.parent
 if not __package__:sys.path.insert(0,str(ROOT))
 from price_lens import __version__
 from price_lens.updates import artifact,read_json,signed_manifest,target_for,version,atomic_json
-
-GUI_ENV=('DISPLAY','WAYLAND_DISPLAY','XDG_RUNTIME_DIR','DBUS_SESSION_BUS_ADDRESS','XDG_SESSION_TYPE','XDG_CURRENT_DESKTOP','LANG')
+from price_lens.desktop_environment import clean_environment
 
 
 def validate_plan(plan,root,current,target,keys):
     if not isinstance(plan,dict):raise ValueError('Invalid update request')
     if Path(plan.get('root','')).resolve()!=root:raise ValueError('Wrong Lupin installation')
     if not target.installable or plan.get('target')!=target.name:raise ValueError('Wrong native package target')
+    if not isinstance(plan.get('startup_token'),str) or not re.fullmatch(r'[0-9a-f]{64}',plan['startup_token']):
+        raise ValueError('Restart Lupin before preparing another update')
     offer=plan['offer']
     document=signed_manifest(json.dumps(offer['manifest']).encode(),json.dumps(offer['signature']).encode(),keys)
     if version(document['version'])<=version(current):raise ValueError('Update is not newer than this installation')
@@ -66,21 +68,24 @@ def verify_native_identity(path,target,new_version):
         raise ValueError('The package identity does not match this Lupin release')
 
 
-def relaunch(plan,uid,resume_capture=False):
+def relaunch(plan,uid,resume_capture=False,*,job=None):
     import pwd
     account=pwd.getpwuid(uid)
     supplied=plan.get('relaunch_env',{})
     if not isinstance(supplied,dict):supplied={}
     env={'PATH':'/usr/bin:/bin','HOME':account.pw_dir,'USER':account.pw_name,'LOGNAME':account.pw_name,
-         **{key:value for key,value in supplied.items() if key in GUI_ENV and isinstance(value,str) and len(value)<4096}}
-    subprocess.Popen(['/usr/bin/lupin']+(['--capture'] if resume_capture else []),cwd=account.pw_dir,env=env,user=uid,group=account.pw_gid,
+         **clean_environment(supplied)}
+    if job is not None:
+        env['LUPIN_UPDATE_JOB']=str(job)
+        env['LUPIN_UPDATE_TOKEN']=plan['startup_token']
+    return subprocess.Popen(['/usr/bin/lupin']+(['--capture'] if resume_capture else []),cwd=account.pw_dir,env=env,user=uid,group=account.pw_gid,
         extra_groups=os.getgrouplist(account.pw_name,account.pw_gid),start_new_session=True,
         stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
 
 
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('--request',type=Path,required=True);args=parser.parse_args()
-    stage=None;committed=False;plan=None;uid=None;lock=None
+    stage=None;committed=False;plan=None;uid=None;lock=None;child=None
     try:
         if sys.platform!='linux' or os.geteuid()!=0:raise ValueError('System authentication is required')
         uid=int(os.environ.get('PKEXEC_UID','0'))
@@ -105,17 +110,27 @@ def main():
             result=subprocess.run(command,env={**os.environ,'DEBIAN_FRONTEND':'noninteractive'},stdin=subprocess.DEVNULL,stdout=log,stderr=subprocess.STDOUT)
         if result.returncode:shutil.copyfile(stage/'install.log',cache/f'last-install-{uid}.log')
         status=cache/f'last-result-{uid}.json'
-        atomic_json(status,dict(version=new_version,ok=result.returncode==0,attempt=stage.name));status.chmod(0o644)
-        relaunch(plan,uid,compatible and commit.get('resume_capture') is True)
-        return 0 if result.returncode==0 else 1
+        attempt=args.request.parent.name
+        token=plan.get('startup_token','')
+        verified_startup=result.returncode==0
+        atomic_json(status,dict(version=new_version,ok=False,status='starting' if verified_startup else 'finished',attempt=attempt));status.chmod(0o644)
+        child=relaunch(plan,uid,compatible and commit.get('resume_capture') is True,job=args.request.parent if verified_startup else None)
+        if verified_startup:
+            from price_lens.update_startup import wait_for_startup
+            healthy=wait_for_startup(args.request.parent,token,new_version,child)
+            atomic_json(status,dict(version=new_version,ok=healthy,attempt=attempt,reason='' if healthy else 'startup'));status.chmod(0o644)
+        else:
+            healthy=False
+            atomic_json(status,dict(version=new_version,ok=False,attempt=attempt));status.chmod(0o644)
+        return 0 if healthy else 1
     except (OSError,ValueError,KeyError,TypeError) as error:
         try:print(json.dumps(dict(error=str(error))),flush=True)
         except BrokenPipeError:pass
         if committed and plan and uid:
             try:
                 status=cache/f'last-result-{uid}.json'
-                atomic_json(status,dict(version=new_version,ok=False,attempt=stage.name));status.chmod(0o644)
-                relaunch(plan,uid)
+                atomic_json(status,dict(version=new_version,ok=False,attempt=args.request.parent.name));status.chmod(0o644)
+                if child is None:relaunch(plan,uid)
             except OSError:pass
         return 1
     finally:

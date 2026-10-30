@@ -1,12 +1,51 @@
 """Positive release/circulation evidence, never inferred from client presence."""
 from datetime import datetime,timezone
 import json
+import math
 import time
 from urllib.parse import urlencode
 from .domain import key as name_key,WORLD
 from .reference_community import BASE,MonsterIndex
 from .reference_data import DAY,excluded
 from .reference_indexes import ReleaseIndex,release_name
+
+
+def user_confirmed_proofs(store):
+    """A dated user report, deliberately distinct from a captured frame or sale."""
+    identity=2040803;name='Gloves Attack Scroll: Chaos';record=store.entry('items',identity)
+    if not record or record[0].name!=name or (record[1].get('scroll') or {}).get('tier')!='Chaos':return []
+    if any(proof['source']=='user-confirmed' for proof in store.evidence('items',identity)):return []
+    return [dict(kind='items',id=identity,name=name,detail={
+        'label':'User-confirmed Classic World item link','world':WORLD,'confirmed_on':'2026-10-30',
+        'context':'Super Megaphone','basis':'User reported seeing this item linked in Classic World',
+        'url':'https://meowdb.com/msclassic/item-db/106'})]
+
+
+def screen_proof(store,catalog,*,game_id,visible_name,tier,surface,captured_at,game_verified,panel_verified,
+                 mode='live',now=None):
+    """Accept only a fresh native item surface after the caller's pixel guards.
+
+    This is not a general name lookup: searches, translations, retained rows,
+    screenshots, fuzzy aliases and arbitrary chat text cannot supply proof.
+    The caller must establish game/panel guards from the captured frame first.
+    """
+    now=time.time() if now is None else now
+    if (mode!='live' or game_verified is not True or panel_verified is not True
+            or surface not in ('shop-row','item-description') or type(game_id) is not int
+            or not 0<game_id<=2147483647 or not isinstance(visible_name,str) or not 1<=len(visible_name)<=300
+            or type(captured_at) not in (int,float) or not math.isfinite(captured_at)
+            or not -.25<=now-captured_at<=3 or not catalog):return None
+    record=store.entry('items',game_id)
+    if not record or name_key(record[0].name)!=name_key(visible_name) or excluded('items',game_id,record[0].name):return None
+    # Exact key lookup only. Catalog.resolve also understands OCR confusions and
+    # clipped names, which are useful for prices but never establish release.
+    candidates=getattr(catalog,'names',{}).get(name_key(visible_name),[])
+    if len(candidates)!=1 or candidates[0].game_id!=game_id:return None
+    expected=(record[1].get('scroll') or {}).get('tier')
+    if tier!=expected or candidates[0].tier!=expected:return None
+    return dict(kind='items',id=game_id,name=record[0].name,detail={
+        'label':'Observed Classic World '+('shop listing' if surface=='shop-row' else 'item description'),
+        'world':WORLD,'surface':surface,'observed_at':captured_at,'basis':'Verified live screen pixels'})
 
 
 class AvailabilityLoader:

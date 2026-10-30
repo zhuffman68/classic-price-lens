@@ -237,6 +237,11 @@ class ReferenceStore:
                 if npc:records[key]=(Entry(entry.kind,entry.id,entry.name,entry.category,entry.level,entry.job,npc[0].icon),row)
         guard()
         with self.connect() as db:
+            previous=db.execute("SELECT value FROM metadata WHERE key='manifest'").fetchone()
+            if previous:
+                older=json.loads(previous[0]).get('data_updated_at')
+                if older and datetime.fromisoformat(meta['data_updated_at'].replace('Z','+00:00'))<datetime.fromisoformat(older.replace('Z','+00:00')):
+                    raise ValueError('Reference generation is older than the saved copy')
             db.execute('DELETE FROM entities');db.execute('DELETE FROM lookup')
             db.executemany('INSERT INTO entities VALUES(?,?,?,?,?,?,?,?)',[(e.kind,e.id,e.name,e.category,e.level,e.job,e.icon,json.dumps(row,separators=(',',':'))) for e,row in records.values()])
             db.executemany('INSERT INTO lookup VALUES(?,?,?)',[(e.kind,e.id,e.name+(' '+str(row.get('region',''))+' '+str(row.get('street_name','')) if e.kind in ('maps','quests') else '')) for e,row in records.values()])
@@ -310,11 +315,20 @@ class ReferenceStore:
             condition=' AND '+RELEASE_RULES[kind] if kind in RELEASE_RULES else ''
             return db.execute('SELECT 1 FROM entities e JOIN availability a ON a.kind=e.kind AND a.id=e.id AND a.name=e.name WHERE e.kind=? AND e.id=?'+condition+' LIMIT 1',(kind,identity)).fetchone() is not None
 
-    def confirm(self,rows,source,at=None,guard=lambda:None):
+    def confirm(self,rows,source,at=None,guard=lambda:None,*,manifest=None,payload=None):
         """Retain positive, exact-ID/name evidence even after a sale/event ends."""
-        if not isinstance(rows,list) or len(rows)>20000 or source not in ('nia-release','market','screen'):raise ValueError('Invalid availability evidence')
+        if not isinstance(rows,list) or len(rows)>20000 or source not in ('nia-release','market','screen','user-confirmed','recipe'):raise ValueError('Invalid availability evidence')
+        if source=='recipe' and (manifest is None or payload is None):raise ValueError('Recipe proof requires its verified payload')
+        if payload is not None and (source!='recipe' or manifest is None):raise ValueError('Recipe payload requires its verified generation')
         at=time.time() if at is None else at;clean=[];guard()
         with self.connect() as db:
+            if manifest is not None:
+                saved=db.execute("SELECT value FROM metadata WHERE key='manifest'").fetchone()
+                if not saved or json.loads(saved[0])!=manifest:raise ValueError('Availability generation changed')
+            if payload is not None:
+                from .reference_recipes import verified_recipes
+                verified_recipes(manifest,payload)
+                db.execute('INSERT OR REPLACE INTO files VALUES(?,?,?)',('recipes.json',manifest['files']['recipes.json']['sha256'],payload))
             names={(k,i):n for k,i,n in db.execute('SELECT kind,id,name FROM entities')}
             before=db.execute('SELECT COUNT(*) FROM availability').fetchone()[0]
             for row in rows:

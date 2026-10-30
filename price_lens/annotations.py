@@ -55,6 +55,8 @@ class AnnotationWindow(QWidget):
                                             math.sin(-math.pi/2+i*math.pi/5)*(5 if i%2==0 else 2.3)) for i in range(10)])
         self.price_font = interface_font(12,QFont.Weight.DemiBold)
         self.name_font = interface_font(10)
+        self.notice_title_font=interface_font(12,QFont.Weight.DemiBold)
+        self.notice_body_font=interface_font(11)
         self.tracking_gain_font = interface_font(24,QFont.Weight.DemiBold)
         self.translation_font=QFont(self.price_font);self.translation_font.setPixelSize(13)
         self.original_font=QFont(self.name_font);self.original_font.setPixelSize(11)
@@ -110,8 +112,12 @@ class AnnotationWindow(QWidget):
             metrics = QFontMetrics(self.price_font)
             translations=[]
             for supplied in incoming:
+                if (supplied.get('kind')=='notification' and type(supplied.get('notice_until')) in (int,float)
+                        and supplied['notice_until']<=time.monotonic()):continue
                 key = self.row_key(supplied)
                 old = previous.pop(key, None)
+                old_notice=self.notice_layers(old) if old and old.get('kind')=='notification' else []
+                old_notice_target=self.notice_content(old) if old_notice else None
                 old_target = (old["x"], old["y"]) if old else None
                 old_text = old.get("text") if old else None
                 old_content=old.get('content_id',old_text) if old else None
@@ -130,6 +136,7 @@ class AnnotationWindow(QWidget):
                 if row.get('kind')=='tracking':
                     row['_width']=max(180,min(350,int(row.get('tracking_width',296))))
                     row['_height']=max(TRACKING_HEIGHT,min(160,int(row.get('tracking_height',TRACKING_HEIGHT))))
+                if row.get('kind')=='notification':self.measure_notice(row)
                 if row.get("kind")=="translation":
                     row['source_box']=supplied.get('source_box')
                     row['source_boxes']=supplied.get('source_boxes',())
@@ -149,15 +156,16 @@ class AnnotationWindow(QWidget):
                     start = row.get("_draw_pos", QPointF(*old_target)) if old_target else target
                     self.animate_position(row, start, target)
                 self.rows.append(row)
+                if row.get('kind')=='notification':self.update_notice(row,old_notice,old_notice_target)
                 box=self.label_rect(row,QCursor.pos())
                 occlusion=row.get('occlusion')
                 covered=bool(occlusion and box and box.intersects(QRect(*occlusion)))
                 target=self.occlusion_alpha(row,covered)
                 row['_target_alpha']=target
                 if self.reduce_motion:row['_alpha']=target
-                if old_text is not None and old_text != row["text"] and old_content!=row.get('content_id',row['text']) and not self.reduce_motion and not any(c.isdigit() for c in row['text']):
+                if row.get('kind')!='notification' and old_text is not None and old_text != row["text"] and old_content!=row.get('content_id',row['text']) and not self.reduce_motion and not any(c.isdigit() for c in row['text']):
                     self.fade_text(row)
-                self.update_numbers(row)
+                if row.get('kind')!='notification':self.update_numbers(row)
                 self.update_watch(row)
                 if old is None and not self.reduce_motion:
                     row["_alpha"] = 0.0
@@ -175,7 +183,7 @@ class AnnotationWindow(QWidget):
                      and new['shop_page']!=row['shop_page']) or
                     (new.get('shop_slot') is not None and new.get('shop_slot')==row.get('shop_slot')
                      and self.row_key(new)!=key) for new in current_shops)
-                if not self.reduce_motion and state.get("hover_enabled") and box is not None and not replaced_hover and not replaced_shop:
+                if not self.reduce_motion and (state.get("hover_enabled") or row.get('kind')=='notification') and box is not None and not replaced_hover and not replaced_shop:
                     row["_retired_rect"] = box
                     self.retiring.append(row)
                     if not row.get("_fading_out"):
@@ -265,6 +273,92 @@ class AnnotationWindow(QWidget):
         row['_english_height']=min(120,metrics[0][0].boundingRect(inner,int(wrap),row['text']).height())
         row['_original_height']=min(84,metrics[1][0].boundingRect(inner,int(wrap),row.get('original','')).height())
         row['_height']=row['_english_height']+row['_original_height']+46+(16 if row.get('note') else 0)
+
+    @staticmethod
+    def notice_content(row):
+        return {key:row.get(key,'') for key in ('name','text','color','notice_icon')}
+
+    def notice_layers(self,row):
+        level=max(0,min(1,float(row.get('_notice_level',1))))
+        layers=[(content,weight*(1-level)) for content,weight in row.get('_notice_from',())]
+        layers.append((self.notice_content(row),level))
+        combined={}
+        for content,weight in layers:
+            if weight<=.001:continue
+            key=tuple(content.get(field,'') for field in ('name','text','color','notice_icon'))
+            if key in combined:combined[key]=(content,combined[key][1]+weight)
+            else:combined[key]=(content,weight)
+        selected=sorted(combined.values(),key=lambda value:value[1],reverse=True)[:4]
+        total=sum(weight for _,weight in selected)
+        return [(content,weight/total) for content,weight in selected] if total else [(self.notice_content(row),1.0)]
+
+    def measure_notice(self,row):
+        bounds=row.get('bounds',[0,0,self.width(),self.height()])
+        row['_width']=min(max(1,bounds[2]-8),max(180,min(350,int(row.get('notification_width',280)))))
+        row['_notice_height']=max(48,QFontMetrics(self.notice_title_font).height()+QFontMetrics(self.notice_body_font).height()+18)
+
+    def update_notice(self,row,old_layers,old_target):
+        import time
+        content=self.notice_content(row)
+        if self.reduce_motion:
+            row['_notice_from']=[];row['_notice_level']=1.0
+        elif old_target is not None and content!=old_target:
+            old=row.pop('_notice_transition',None)
+            if old is not None:old.stop();old.deleteLater()
+            row['_notice_from']=old_layers;row['_notice_level']=0.0
+            animation=QVariantAnimation(self);row['_notice_transition']=animation
+            animation.setDuration(200);animation.setStartValue(0.0);animation.setEndValue(1.0)
+            animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
+            def advance(value):row['_notice_level']=float(value);self.invalidate_row(row)
+            def finish():
+                if row.get('_notice_transition') is animation:
+                    row['_notice_transition']=None;row['_notice_from']=[];row['_notice_level']=1.0
+                self.invalidate_row(row);animation.deleteLater()
+            animation.valueChanged.connect(advance);animation.finished.connect(finish);animation.start()
+        elif old_target is None:
+            row['_notice_from']=[];row['_notice_level']=1.0
+        deadline=row.get('notice_until');timer=row.get('_notice_expiry')
+        if type(deadline) not in (int,float) or not math.isfinite(deadline):return
+        if timer is not None and row.get('_notice_deadline')==deadline:return
+        if timer is not None:timer.stop();timer.deleteLater()
+        timer=QTimer(self);timer.setSingleShot(True);row['_notice_expiry']=timer;row['_notice_deadline']=deadline
+        revision=row.get('notice_revision')
+        def expire_notice():
+            if row.get('_notice_expiry') is timer and row.get('notice_revision')==revision:
+                row['_notice_expiry']=None
+                if row in self.rows:
+                    before=self.label_rect(row,QCursor.pos());self.rows.remove(row)
+                    if not self.reduce_motion and before is not None:
+                        row['_retired_rect']=before;self.retiring.append(row);self.fade(row,0.0)
+                    else:
+                        self.dispose_row(row)
+                        if not self.rows and not self.retiring:self.hide()
+                    self.invalidate_row(row,before)
+            timer.deleteLater()
+        timer.timeout.connect(expire_notice);timer.start(max(1,min(65000,math.ceil((deadline-time.monotonic())*1000))))
+
+    def paint_notice(self,painter,row,box):
+        painter.save();painter.setClipRect(box.adjusted(6,4,-6,-4))
+        alpha=float(row.get('_alpha',1.0))
+        title_height=QFontMetrics(self.notice_title_font).height();body_height=QFontMetrics(self.notice_body_font).height()
+        for content,weight in self.notice_layers(row):
+            painter.setOpacity(alpha*weight);color=QColor(content.get('color') or '#91d0b0')
+            painter.setPen(QPen(color,1.7));painter.setBrush(Qt.BrushStyle.NoBrush)
+            center=QPointF(box.left()+17,box.top()+7+title_height/2)
+            if content.get('notice_icon')=='copied':
+                painter.drawLine(center+QPointF(-5,0),center+QPointF(-1,4));painter.drawLine(center+QPointF(-1,4),center+QPointF(6,-4))
+            elif content.get('notice_icon')=='warning':
+                painter.drawEllipse(center,6,6);painter.drawLine(center+QPointF(0,-3),center+QPointF(0,1));painter.drawPoint(center+QPointF(0,4))
+            else:
+                painter.setPen(QPen(QColor('#536277'),1.5));painter.drawEllipse(center,6,6)
+                painter.setPen(QPen(color,1.8));painter.drawArc(QRect(round(center.x()-6),round(center.y()-6),12,12),20*16,235*16)
+            painter.setFont(self.notice_title_font);painter.setPen(color)
+            title=painter.fontMetrics().elidedText(content['name'],Qt.TextElideMode.ElideRight,max(1,box.width()-42))
+            painter.drawText(QRect(box.left()+32,box.top()+7,box.width()-42,title_height),Qt.AlignmentFlag.AlignVCenter,title)
+            painter.setFont(self.notice_body_font);painter.setPen(QColor('#c0cad8'))
+            text=painter.fontMetrics().elidedText(content['text'],Qt.TextElideMode.ElideRight,max(1,box.width()-42))
+            painter.drawText(QRect(box.left()+32,box.top()+11+title_height,box.width()-42,body_height),Qt.AlignmentFlag.AlignVCenter,text)
+        painter.restore()
 
     def place_translations(self,translations,previous,previous_boxes):
         messages=[];occupied=[];pointer=QCursor.pos()
@@ -420,10 +514,10 @@ class AnnotationWindow(QWidget):
         row["_fading_out"] = target == 0
         animation = QVariantAnimation(self)
         row["_fade"] = animation
-        animation.setDuration(90 if target == 0 else 110)
+        animation.setDuration((180 if target==0 else 160) if row.get('kind')=='notification' else (90 if target == 0 else 110))
         animation.setStartValue(float(row.get("_alpha", 1.0)))
         animation.setEndValue(target)
-        animation.setEasingCurve(QEasingCurve.Type.OutQuad)
+        animation.setEasingCurve(QEasingCurve.Type.InOutCubic if row.get('kind')=='notification' else QEasingCurve.Type.OutQuad)
 
         def changed(value):
             row["_alpha"] = value
@@ -490,7 +584,9 @@ class AnnotationWindow(QWidget):
     def dispose_row(row):
         timer=row.pop('_occlusion_release',None)
         if timer is not None:timer.stop();timer.deleteLater()
-        for key in ("_move", "_fade", "_text_fade", "_watch_pulse"):
+        notice_timer=row.pop('_notice_expiry',None)
+        if notice_timer is not None:notice_timer.stop();notice_timer.deleteLater()
+        for key in ("_move", "_fade", "_text_fade", "_watch_pulse",'_notice_transition'):
             animation = row.get(key)
             if animation is not None:
                 animation.stop()
@@ -543,6 +639,14 @@ class AnnotationWindow(QWidget):
             x, y = round(position.x()), round(position.y())
         width = row["_width"]
         height = 36+17*len(row.get('extra','').splitlines())
+        if row.get('kind')=='notification':
+            height=row.get('_notice_height',48)
+            notice_box=row.get('notification_box')
+            if notice_box:
+                requested=QRect(*notice_box);bounds=QRect(*row['bounds']).intersected(self.rect()).adjusted(2,2,-2,-2)
+                width=min(width,max(1,bounds.width()));height=min(height,max(1,bounds.height()))
+                return QRect(max(bounds.left(),min(requested.right()-width+1,bounds.right()-width+1)),
+                    max(bounds.top(),min(requested.bottom()-height+1,bounds.bottom()-height+1)),width,height)
         if row.get('kind')=='tracking':height=row['_height']
         if row.get("kind")=="translation":
             height=row["_height"]
@@ -591,6 +695,9 @@ class AnnotationWindow(QWidget):
             painter.setPen(QPen(border,1.3 if watched else 1))
             painter.setBrush(QColor(22, 28, 38, 247))
             painter.drawRoundedRect(box, 5, 5)
+            if row.get('kind')=='notification':
+                self.paint_notice(painter,row,box)
+                continue
             if row.get('kind')=='tracking':
                 self.paint_tracking(painter,row,box)
                 continue
@@ -737,6 +844,8 @@ def main():
     app.setApplicationName("Lupin labels")
     window = AnnotationWindow()
     app._annotation_window = window
+    from . import __version__
+    QTimer.singleShot(0,lambda:print(json.dumps({'ready':True,'version':__version__}),flush=True))
     return app.exec()
 
 

@@ -99,12 +99,29 @@ class DatabaseUiTests(unittest.TestCase):
         self.assertEqual(p.detail.drop_list.verticalScrollBar().value(),position)
 
     def test_sort_controls_are_relevant_to_kind_and_match_shared_search_style(self):
-        p=self.panel;p.choose_kind('monsters');self.assertEqual(p.sort_choice.currentData(),'level')
+        p=self.panel;p.choose_kind('monsters');self.assertEqual(p.sort_group.checkedAction().data(),'level')
         p.choose_kind('skills');self.assertTrue(p.sort_row.isHidden())
         p.choose_kind('items');p.enter_group(('category','Equipment','Equipment'))
-        self.assertIn('class',[p.sort_choice.itemData(i) for i in range(p.sort_choice.count())])
+        self.assertIn('class',p.sort_actions)
         from price_lens.search_field import SearchField
         self.assertIsInstance(p.query,SearchField);self.assertEqual(p.query.minimumHeight(),42)
+
+    def test_sort_popup_preserves_navigation_space_and_does_not_add_a_row(self):
+        p=self.panel;p.resize(460,480);p.enter_group(('category','Equipment','Equipment'))
+        p.query.setText('Leaf');p.timer.stop();p.search();self.app.processEvents()
+        self.assertEqual(p.sort_button.width(),60)
+        self.assertGreater(p.breadcrumb.width(),200)
+        self.assertIn('Equipment',p.breadcrumb.path.text())
+        self.assertNotIn('…',p.breadcrumb.path.text())
+        centers=[widget.mapTo(p,widget.rect().center()).y() for widget in (p.back,p.breadcrumb,p.summary,p.sort_button)]
+        self.assertLessEqual(max(centers)-min(centers),1)
+        list_top=p.pages.mapTo(p,p.pages.rect().topLeft()).y()
+        p.sort_menu.popup(p.sort_button.mapToGlobal(p.sort_button.rect().bottomLeft()));self.app.processEvents()
+        self.assertEqual(p.pages.mapTo(p,p.pages.rect().topLeft()).y(),list_top)
+        p.sort_actions['level-desc'].trigger();p.sort_menu.hide();self.app.processEvents()
+        self.assertEqual(p.sort_mode,'level-desc');self.assertTrue(p.sort_actions['level-desc'].isChecked())
+        self.assertEqual(p.query.text(),'Leaf');self.assertEqual(p.scope,(('category','Equipment','Equipment'),))
+        self.assertEqual(p.summary.text(),'1 results')
 
     def test_named_quest_source_and_reward_round_trip_preserves_sources_subpage(self):
         p=self.panel;self.app.setProperty('reduceMotion',True);p.open(('items',1001));p.detail.tabs.setCurrentIndex(1)

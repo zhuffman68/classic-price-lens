@@ -56,10 +56,10 @@ class NavigationTests(unittest.TestCase):
     def test_kind_list_restores_its_sort_and_scroll(self):
         docs=documents();docs['monsters.json'] += [dict(id=100+n,name=f'Monster {n}',level=n) for n in range(90)]
         self.service.store.replace(*generation(docs));allow_fixture(self.service.store);p=self.panel;p.choose_kind('monsters')
-        p.sort_choice.setCurrentIndex(p.sort_choice.findData('level-desc'));self.app.processEvents()
+        p.sort_actions['level-desc'].trigger();self.app.processEvents()
         p.results.verticalScrollBar().setValue(300);before=p.results.verticalScrollBar().value();self.assertGreater(before,0)
         p.choose_kind('items');p.choose_kind('monsters');self.app.processEvents()
-        self.assertEqual(p.sort_choice.currentData(),'level-desc');self.assertEqual(p.results.verticalScrollBar().value(),before)
+        self.assertEqual(p.sort_group.checkedAction().data(),'level-desc');self.assertEqual(p.results.verticalScrollBar().value(),before)
 
 
 class CategoryEvidenceTests(unittest.TestCase):

@@ -109,6 +109,7 @@ class LensWindow(QMainWindow):
         self.catalog_loading = True
         self.catalog_error = ""
         self.capture_error = ""
+        self.overlay_warning = ""
         self.last_diagnostic = ""
         self.setup_notice = ""
         self.first_price_seen = False
@@ -134,6 +135,7 @@ class LensWindow(QMainWindow):
         self.last_identified_at=0.0
         self.ocr_ms = None
         self.overlay = Overlay(root, self)
+        if hasattr(self.overlay,'status'):self.overlay.status.connect(self.on_overlay_status)
         self.screens = sorted(QApplication.screens(), key=lambda screen: (screen.geometry().x(), screen.geometry().y()))
         self.screen_index = None
         self.capture_starting = False
@@ -427,7 +429,7 @@ class LensWindow(QMainWindow):
         self.reference.updated.connect(self.on_reference_data)
         self.tabs.currentChanged.connect(self.on_tab_changed)
         layout.addWidget(self.tabs, 1)
-        self.shortcut_footer = label('', 'color:#a6b1bf;font-size:11px')
+        self.shortcut_footer = label('', 'color:#d8e2ef;font-size:12px;font-weight:650')
         self.shortcut_footer.setMinimumHeight(24)
         self.shortcut_footer.setAccessibleName('Current tab keyboard shortcut')
         layout.addWidget(self.shortcut_footer)
@@ -826,24 +828,28 @@ class LensWindow(QMainWindow):
     def on_translation_copied(self,*_):
         if self.closing:return
         self.write_pending_identity=None
-        self.write_notice.show('Translation copied to clipboard','Paste with Ctrl+V')
+        self.write_notice.show('Copied to clipboard','Ctrl+V to paste the Korean text',identity=self.composer.identity)
         self.draw_labels(time.time(),time.time()-self.last_screen>3)
-        QTimer.singleShot(2600,lambda:self.draw_labels(time.time(),time.time()-self.last_screen>3) if not self.closing else None)
+        QTimer.singleShot(2800,lambda:self.draw_labels(time.time(),time.time()-self.last_screen>3) if not self.closing else None)
         if hasattr(self,'tray') and (self.mode!='live' or self.reader.game_area is None):self.tray.translation_copied()
 
     def on_translation_submitted(self,identity):
+        if self.closing:return
         self.write_pending_identity=identity
-        self.write_notice.show('Translating to Korean…','The result will be copied to your clipboard.',seconds=65)
+        self.write_notice.show('Translating to Korean…','Preparing text for your clipboard',seconds=65,identity=identity,pending=True)
         self.draw_labels(time.time(),time.time()-self.last_screen>3)
 
     def on_writer_changed(self):
-        if self.closing or self.write_pending_identity is None:return
+        if self.closing:return
         composer=self.composer
-        if composer.identity!=self.write_pending_identity:
-            self.write_pending_identity=None;self.write_notice.message=None
+        if self.write_notice.identity is not None and composer.identity!=self.write_notice.identity:
+            self.write_pending_identity=None;self.write_notice.clear()
+        elif self.write_pending_identity is None:return
         elif composer.error:
             self.write_pending_identity=None
-            self.write_notice.show('Translation could not be copied','Open the Korean writer to review the message.',seconds=4,warning=True)
+            self.write_notice.show('Translation could not be copied','Open the writer to review the message',seconds=3,warning=True,identity=composer.identity)
+        elif composer.copy_pending is None:
+            self.write_pending_identity=None;self.write_notice.clear()
         else:return
         self.draw_labels(time.time(),time.time()-self.last_screen>3)
 
@@ -1130,6 +1136,11 @@ class LensWindow(QMainWindow):
         self.hotkey_button.setToolTip(message)
         self.status_label.setText(message)
 
+    def on_overlay_status(self,message):
+        if self.closing or self.overlay_warning==message:return
+        self.overlay_warning=message
+        if hasattr(self,'status_badge'):self.update_capture_controls()
+
     def selected_display(self):
         if self.screen_index is None or self.screen_index >= len(self.screens):
             return "your display"
@@ -1151,6 +1162,9 @@ class LensWindow(QMainWindow):
         display = self.selected_display()
         if self.capture_error:
             return ("Screen reading needs attention", self.capture_error, "amber", "Reconnect display")
+        if self.overlay_warning:
+            return ('Restoring overlays' if self.overlay.recovering else 'Overlay labels need attention',
+                    self.overlay_warning,'amber','' if self.overlay.recovering else 'Retry overlays')
         if self.capture_starting:
             if uses_system_picker():
                 if self.session_available:return ('Resuming reading', 'Reusing the shared display.', 'blue', '')
@@ -1238,6 +1252,9 @@ class LensWindow(QMainWindow):
         self.render()
 
     def recover(self):
+        if self.recovery_button.text() == 'Retry overlays':
+            self.overlay.retry()
+            return
         if self.screen_index is None:
             return
         if self.recovery_button.text() == "Show price labels":
@@ -1558,13 +1575,21 @@ class LensWindow(QMainWindow):
                     found = {**found, "_pointer": list(read_pointer),**({'_association_token':context.token} if context is not None else {})}
             except (KeyError, TypeError, ValueError):
                 found = None
+        # Only this fresh native read may establish circulation. The following
+        # retention step can preserve presentation but is never release proof.
+        self.observe_native_availability(result,image,latest,rows=rows,
+            description=raw_found if found is not None else None,association=context if state=='inventory-primary' else None)
         found=self.tooltip_reference.observe(found,image,pointer,allow=eligible and (not raw_found or not raw_found.get('name') or found is not None))
         self.tooltip_context=context if found and state=='inventory-primary' else None
         previous_description=self.shop_description
         read_point=read_pointer
         if read_point is not None and self.reader.crop:read_point=(read_point[0]-self.reader.crop.x(),read_point[1]-self.reader.crop.y())
+        previous_description_proof=self.shop_description_proof
         self.update_shop_description(shop_tooltip.get('found'),rows,image,latest,pointer,read_point,
                                      allow=bool(hover) and state!='inventory-primary')
+        if (self.shop_description and self.shop_description_proof is not previous_description_proof
+                and isinstance(shop_tooltip.get('found'),dict)):
+            self.observe_native_availability(result,image,latest,description=shop_tooltip['found'])
         changed = bounds_changed or rows != self.rows or found != self.tooltip_result or self.shop_description!=previous_description
         self.tooltip_result = found
         self.rows = rows
@@ -1572,6 +1597,85 @@ class LensWindow(QMainWindow):
         self.update_price_status()
         if changed:
             self.render()
+
+    def observe_native_availability(self,result,image,latest,*,rows=(),description=None,association=None):
+        """Promote fresh, exact native item identities after independent pixel guards."""
+        from .domain import key as identity_key
+        reader=self.reader;now=time.monotonic();stamp=result.get('atMs')
+        if (self.mode!='live' or self.closing or not self.catalog or not getattr(reader,'auto_active',False)
+                or getattr(reader,'live_source',False) is not True or reader.crop is not None
+                or getattr(reader,'paused',False) or type(stamp) is not int or stamp<=0
+                or not 0<=now-stamp/1000<=3 or not 0<=now-getattr(reader,'last_frame',0)<=3
+                or not 0<=now-getattr(reader,'last_locator_check',0)<=3
+                or stamp>reader.last_frame*1000+1 or image.isNull() or latest.isNull() or image.size()!=latest.size()):return False
+        game=getattr(reader,'game_area',None);guards=getattr(reader,'game_guards',())
+        if not isinstance(game,QRect) or game.isEmpty() or not image.rect().contains(game) or not latest.rect().contains(game):return False
+        if not 2<=len(guards)<=12:return False
+        for rect,digest in guards:
+            if (not isinstance(rect,QRect) or not game.contains(rect)
+                    or not reader.guard_matches(image,rect,digest) or not reader.guard_matches(latest,rect,digest)):return False
+        captured_at=time.time()-(now-stamp/1000);exclusions=self.annotation_exclusions();changed=False
+
+        def rectangle(value):
+            if not isinstance(value,dict):return None
+            parts=[value.get(k) for k in ('x','y','width','height')]
+            if any(type(n) is not int for n in parts) or parts[2]<12 or parts[3]<8:return None
+            rect=QRect(*parts)
+            return rect if game.contains(rect) else None
+
+        def observe(native,surface):
+            nonlocal changed
+            if not isinstance(native,dict) or any(native.get(k) for k in ('covered','retained','reference_only','listing_old','presentation_held')):return
+            name=native.get('name')
+            if not isinstance(name,str):return
+            matches=self.catalog.names.get(identity_key(name),[])
+            if len(matches)!=1:return
+            item=matches[0];tier=native.get('tier')
+            # Native row enums are lowercase; descriptions carry the tier in
+            # their full title and have no separate tier field.
+            tiers={value.casefold():value for value in ('Lesser','Intermediate','Greater','Chaos')}
+            if tier is not None:
+                if not isinstance(tier,str) or tier.casefold() not in tiers:return
+                tier=tiers[tier.casefold()]
+            elif item.tier is not None:
+                if not identity_key(name).endswith(':'+item.tier.casefold()):return
+                tier=item.tier
+            if tier!=item.tier:return
+            changed=self.reference.observe_screen(self.catalog,game_id=item.game_id,visible_name=name,tier=tier,
+                surface=surface,captured_at=captured_at,game_verified=True,panel_verified=True,mode=self.mode,notify=False) or changed
+
+        shop=result.get('shop');state=self.shop_rows
+        if (isinstance(shop,dict) and state.active and state._page_proven and state.guards
+                and shop.get('area')==state.area
+                and all(state.guard_matches(frame,rect,proof,exclusions) for frame in (image,latest) for rect,proof in state.guards)):
+            native_rows=shop.get('rows') or []
+            for row in rows:
+                if not isinstance(row,dict) or any(row.get(k) for k in ('covered','retained','reference_only','listing_old','presentation_held')):continue
+                price=row.get('price');rect=rectangle(row.get('area'))
+                if not isinstance(price,dict) or any(type(price.get(k)) is not int or price[k]<=0 for k in ('quantity','mesos')):continue
+                if (rect is None or row.get('shop_page')!=state.page_revision or row.get('shop_slot')!=state.relative_slot(row)
+                        or any(rect.intersects(hidden) for hidden in exclusions) or image.copy(rect)!=latest.copy(rect)):continue
+                native=next((value for value in native_rows if isinstance(value,dict) and value.get('area')==row.get('area')
+                    and value.get('name')==row.get('name') and value.get('price')==price and value.get('tier')==row.get('tier')),None)
+                if native is not None:observe(native,'shop-row')
+
+        if isinstance(description,dict):
+            rect=rectangle(description.get('area'))
+            if (rect is not None and rect.width()>=40 and rect.height()<=32
+                    and not any(rect.intersects(hidden) for hidden in exclusions) and image.copy(rect)==latest.copy(rect)):
+                if association is not None:
+                    proven=bool(association.regions and association.regions[0]==rect and association.matches(latest,reader.pointer))
+                else:
+                    panel=description_bounds(image,description.get('area'),exclusions)
+                    proven=bool(panel is not None and game.contains(panel) and panel.contains(rect) and still_present(latest,panel,exclusions))
+                if proven:observe(description,'item-description')
+        if changed and not getattr(self,'native_availability_refresh_pending',False):
+            self.native_availability_refresh_pending=True
+            def refresh():
+                self.native_availability_refresh_pending=False
+                if not self.closing:self.on_reference_data()
+            QTimer.singleShot(0,refresh)
+        return changed
 
     def clear_shop_description(self):
         changed=self.shop_description is not None
@@ -2139,7 +2243,8 @@ class LensWindow(QMainWindow):
             if area:
                 sx,sy=geometry.width()/image.width(),geometry.height()/image.height()
                 bounds=[round(area.x()*sx),round(area.y()*sy),round(area.width()*sx),round(area.height()*sy)]
-                notice=self.write_notice.row(bounds,bottom_offset=corner_offset(bounds,annotations,writer_rects))
+                notice=self.write_notice.row(bounds,bottom_offset=corner_offset(bounds,annotations,writer_rects),
+                    blocked=self.writer_overlay.presented,placement=self.composer_placement(),origin=[geometry.x(),geometry.y()])
                 if notice:annotations.append(notice)
         self.watch_encounters.apply(annotations, self.watchlist.ids, page=self.shop_rows.page_revision)
         self.overlay.update(list(geometry.getRect()), annotations, hover_enabled=self.prices_enabled and self.labels_enabled and self.mode == "live" and game_visible and screen_matches and not screen_old)

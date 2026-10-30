@@ -1,5 +1,81 @@
 # Verification — 2026-10-30
 
+## Lupin 1.0.0 — source and release preflight
+
+- **794 Python tests pass in 85.012 seconds**, with three platform/offscreen
+  skips. The final run includes the legacy-updater success-notification gate,
+  writer submission/notification motion, outgoing terminology and portal identity.
+  GUI/helper tests use isolated Xvfb/offscreen, software rendering, temporary
+  fixture data and reduced process priority. Nine release-tool tests also pass.
+  The Rust readers, native market helpers, runtime manifests and both bundled
+  models are unchanged from the verified 0.17.10 components.
+- Arch/Manjaro, Debian 12 and Ubuntu 22.04 isolated package checks pass the
+  explicit 0.17.10 upgrade, fresh install and removal paths, offline OCR/overlay
+  startup, native market helper and installed suite: 788 tests with five skips
+  on each platform. The six source-only PowerShell methods are skipped as a
+  class when that optional developer tool is absent; no test files are missing.
+  Final artifact hashes and post-staging checks accompany the release assets.
+- Windows test fixtures explicitly bootstrap their temporary helper package
+  under embedded Python, use the installed resource root and pause automatic
+  animation clocks during manual samples. Fake frames start with defined pixels.
+  These fixes keep test behavior independent of allocator contents and VM speed.
+  The 32 affected Windows checks pass in isolated Wine. Native Windows game
+  focus/fullscreen and updater acceptance remain separate from those checks.
+- Prices return-motion fixtures cover Backspace/X, selected/unselected items,
+  empty results, rapid interruption, existing card identity and reduced motion.
+  The old 12-pixel final-spacing and 26-pixel delayed-count jumps are absent.
+  Compact sorting preserves options, navigation/back state and the existing row.
+- Writer motion checks cover Enter before and during preview updates, frozen
+  geometry and enabled colours, cancellation, reopening, Reduce motion, the
+  copied notice's independent lifetime and actual second-monitor coordinates.
+  The result notice waits for the editor to disappear and uses the same corner.
+- The actual bundled outgoing model was exercised with 40 synthetic messages:
+  38 accepted drafts and two blocked corrupted-name results. The checks cover
+  MapleStory/party-quest terminology, towns, market/trade shorthand, exact item
+  names, numeric roles, questions and negation. Warm model calls ranged up to
+  314 ms with two threads. These are scoped examples, not general translation
+  accuracy or end-to-end latency acceptance. No real drafts or clipboard data
+  were read or written by the audit.
+- Thirty-three independent desktop/startup/overlay tests include real versioned
+  annotation IPC, bounded automatic/manual recovery, no writer replay, strict
+  receipt identity/size/deadlines, FIFO/symlink rejection, fixed diagnostics and
+  a fresh interpreter proving that the installer receipt module imports no Qt.
+- The Windows helper passes six test groups: 19 actual-script scenarios and two
+  deadline cases under cached Linux PowerShell, with native executable actions
+  mocked. These cover successful and failed startup, exact token/version/PID,
+  live-child checks, Unicode/space paths, cancellation, tampering and duplicate
+  prevention. This does not establish native Windows installer/update acceptance;
+  that remains for a built installer and Windows test.
+- Read-only same-user session-manager probing recovers both missing XWayland
+  authentication and the custom GLib schema directory while preserving the
+  display. No running application/session environment was changed by that probe.
+- A private in-memory copy of the current reference generation yields exactly
+  one user confirmation and 14 verified recipe/catalyst proofs: 171 of 208
+  scrolls searchable, with 37 other scrolls still unproven. Ten native-observation
+  UI fixtures exercise fresh shop/inventory/pinned descriptions and conservative
+  rejection of aliases, retained/covered content, screenshots and stale context.
+  Availability evidence does not create market prices. Live data was read-only
+  during these fixture/audit checks.
+- The drinking GIF and Donate artwork appear only in the README footer; no
+  application icon/header or existing demonstration GIF was replaced. GitHub
+  Markdown rendering retains the centered layout and exact PayPal destination.
+  Demo screenshots use temporary state, fresh actual market quotes and realistic
+  recorded-rate examples. They are kept outside the README and packages.
+- At the user's request, a source preview was launched after a coherent backup
+  of settings and application SQLite stores. The installed main process handed
+  off its existing sharing helper, whose PID stayed unchanged. The new source
+  annotation helper runs with both required desktop fields; startup stderr is
+  empty. The user confirmed the Win+F8 writer opens after restoring the stable
+  installed desktop identity for the source preview. The development identity
+  also now repairs only its own generated stale launcher; desktop-file validation
+  and Gio lookup pass without changing custom shortcut assignments. The newest
+  source preview was approved for the 1.0.0 release by the user. No host system
+  package was replaced; installation remains the user's action.
+- The refreshed preview starts its annotation helper successfully and shows the
+  shared footer at 12 pixels with weight 650. The earlier preview and sharing
+  helper had both exited before this refresh, so it was launched idle without
+  requesting a new share. No installer was used.
+
 ## Pending compact Korean writer and repository cleanup — source only
 
 - **671 Python tests pass in 71.694 seconds**, with three platform/offscreen

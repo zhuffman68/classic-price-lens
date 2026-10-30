@@ -23,6 +23,8 @@ def main():
     parser.add_argument("--kde", action="store_true", help="Use the KDE/Spectacle screenshot fallback")
     parser.add_argument("--cache", type=Path, help="Alternate local SQLite cache")
     args = parser.parse_args()
+    from .desktop_environment import restore_desktop_environment
+    restore_desktop_environment()
     from .qt_runtime import configure_qt
     configure_qt()
     if args.self_test:
@@ -47,8 +49,7 @@ def main():
         return 0 if answer else 1
     from PySide6.QtWidgets import QApplication
     from .icons import app_icon
-    from .platform_paths import cache_directory
-    from .ui import LensWindow
+    from .platform_paths import cache_directory,data_directory
     app = QApplication(["classic-price-lens"])
     app.setQuitOnLastWindowClosed(False)
     app.setApplicationName(LEGACY_APP_NAME)
@@ -56,15 +57,27 @@ def main():
     app.setApplicationDisplayName(APP_NAME)
     app.setApplicationVersion(__version__)
     app.setDesktopFileName("io.github.zhuffman68.ClassicPriceLens")
+    root = Path(__file__).resolve().parent.parent
+    from .update_startup import StartupReceipt
+    from .update_startup_ui import StartupMonitor
+    startup=StartupReceipt.take_environment(root,data_directory()/'updates-v1',__version__)
     control = AppControl(app)
     if not control.start():
+        if startup:
+            startup.report(False,'already-running')
+            return 1
         return 0 if request("activate") else 1
-    root = Path(__file__).resolve().parent.parent
     app.setWindowIcon(app_icon(root))
     cache = args.cache or cache_directory() / "prices.sqlite"
     from .kde_window_policy import ensure_kde_window_policy
     ensure_kde_window_policy(app.platformName(), cache_directory())
-    window = LensWindow(root, cache, args.snapshot, args.capture, args.kde)
+    try:
+        from .ui import LensWindow
+        window = LensWindow(root, cache, args.snapshot, args.capture, args.kde)
+    except Exception:
+        if startup:startup.report(False,'app-startup-failed')
+        control.close()
+        raise
     window.closed.connect(app.quit)
     def activate():
         if window.closing:
@@ -85,6 +98,9 @@ def main():
         geometry = screen.availableGeometry()
         window.move(geometry.right() - window.width() - 24, geometry.y() + 48)
     window.show()
+    if startup:
+        window.updates.watch_result(startup.job.name)
+        window.startup_monitor=StartupMonitor(startup,window)
     signal.signal(signal.SIGTERM, lambda signum, frame: window.close())
     signal.signal(signal.SIGINT, lambda signum, frame: window.close())
     if hasattr(signal, "SIGUSR1"):

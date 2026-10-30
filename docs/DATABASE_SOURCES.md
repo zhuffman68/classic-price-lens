@@ -1,6 +1,6 @@
 # Database sources and accuracy
 
-Checked October 28, 2026. Database is specific to **MapleStory Classic World**.
+Availability audit updated October 30, 2026. Database is specific to **MapleStory Classic World**.
 Original MapleStory, Mapleland and private-server balance tables are not fallbacks.
 
 ## Items, monsters, maps and skills
@@ -54,6 +54,36 @@ positive release/circulation evidence.
   an "on sale now" filter. Evidence is bound to ID/name; renamed/reused records
   must be confirmed again. Failed source updates retain saved proofs and never
   make the full raw catalog visible.
+
+An additional October 30 scroll audit found that the sourced release filter
+omitted **Gloves Attack Scroll: Chaos (`2040803`)**, despite a user reporting its
+linked description in a live Classic World super megaphone. Lupin records that
+as **user-confirmed availability**, not a captured observation, drop or sale.
+
+`recipes.json` is an optional eighth payload, verified against the current OSMS
+manifest's exact byte count, SHA-256, record count and generation before use.
+Reachable Arcforge recipes require the already-confirmed base scroll, every
+ingredient and the exact [Scroll Crafting Catalyst](https://meowdb.com/msclassic/item-db/2723).
+The catalyst description permits Intermediate, Greater and Chaos outcomes of
+the same category. The documented current crafting cap is eight; raw skill
+levels nine/ten do not establish availability. Exact family, slot, stat, tier
+and success/destroy values must agree.
+
+This supports 13 previously hidden Chaos outcomes (Hat Accuracy/HP/MP,
+Topwear HP/MP, Bottomwear HP/MP, Shield DEF, Overall Armor DEF, Shoes Jump,
+Cape Weapon DEF/Magic DEF and Earring DEX), plus Bottomwear MP Intermediate.
+Their provenance is **recipe/catalyst mechanics**, not 14 observed live drops.
+In the audited local generation, these plus the user-confirmed glove scroll
+raise searchable scrolls from 156 to 171 of 208; the other 37 remain unproven.
+These counts describe that snapshot, not a promise of complete live coverage.
+
+Fresh native shop rows and accepted item descriptions can also establish
+circulation. The source name, canonical ID and tier must match exactly; current
+game/panel/row pixels and timestamps must remain verified. Manual search,
+screenshots, covered/retained rows, ambiguous names and OCR aliases cannot add
+this evidence. Repeat observations avoid writes; newly confirmed identities
+refresh the shared released search catalog once per batch. Missing market
+prices remain missing regardless of an item's availability.
 
 The checked source-only generation contains 1,742 eligible items (293 cash items)
 and 70 ordinary monsters, with 332 maps and 332 quests. Dated market sales can extend the item collection. This is a conservative

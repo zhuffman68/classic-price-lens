@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (QFrame,QHBoxLayout,QLabel,QListWidget,
 
 from .domain import key, item_words, unclipped_name
 from .ui_components import price_card, text_label
-from .motion import reveal, visibility, fade_away
+from .motion import CardArea, reveal, fade_away
 from .tls import catalog_error_text
 from .watchlist_ui import WatchedItems,WatchButton
 from .search_field import SearchField
@@ -52,25 +52,34 @@ class PriceSearch(QWidget):
         self.result_rows={}
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0,12,0,0)
-        layout.setSpacing(12)
+        layout.setSpacing(0)
         self.query = SearchField("Search an item or scroll…")
         self.query.setAccessibleName("Search Classic World items")
         layout.addWidget(self.query)
         self.market_status=text_label('', 'color:#9eacbf;font-size:11px',True)
+        self.market_status.setContentsMargins(0,12,0,0)
         self.market_status.hide();layout.addWidget(self.market_status)
+        # Count, matches and their spacing leave together. The fixed child
+        # canvas prevents a final layout-gap jump when the section reaches zero.
+        self.results_area=CardArea(self)
+        self.results_area.animation.setDuration(130)
+        result_layout=QVBoxLayout(self.results_area.content)
+        result_layout.setContentsMargins(0,12,0,0);result_layout.setSpacing(12)
+        layout.addWidget(self.results_area)
         self.hint = text_label("Item names are loading…", "color: #9eacbf; font-size: 11px", True)
-        hint_row = QHBoxLayout()
+        self.hint_row=QWidget()
+        hint_row = QHBoxLayout(self.hint_row);hint_row.setContentsMargins(0,0,0,0)
         hint_row.addWidget(self.hint,1)
         self.matches_button = QPushButton("Other matches")
         self.matches_button.setObjectName("quiet")
         self.matches_button.hide()
-        self.matches_button.clicked.connect(lambda:visibility(self.results,self.results.isHidden()))
+        self.matches_button.clicked.connect(lambda:self.set_results_state(self.results.isHidden()))
         hint_row.addWidget(self.matches_button)
-        layout.addLayout(hint_row)
+        result_layout.addWidget(self.hint_row)
         self.retry_button = QPushButton("Retry item list")
         self.retry_button.clicked.connect(self.catalog_retry.emit)
         self.retry_button.hide()
-        layout.addWidget(self.retry_button,0,Qt.AlignmentFlag.AlignLeft)
+        result_layout.addWidget(self.retry_button,0,Qt.AlignmentFlag.AlignLeft)
         self.results = QListWidget()
         self.results.setIconSize(QSize(32,32))
         blank=QPixmap(32,32);blank.fill(Qt.GlobalColor.transparent);self.placeholder_icon=QIcon(blank)
@@ -78,9 +87,10 @@ class PriceSearch(QWidget):
         self.results.setMaximumHeight(210)
         self.results.setStyleSheet("QListWidget { background: #1e2734; border: 1px solid #354255; border-radius: 7px; } QListWidget::item { padding: 9px 10px; border-bottom: 1px solid #2a3647; } QListWidget::item:selected { background: #35455c; color: #f4e7d1; }")
         self.results.currentItemChanged.connect(self.select_result)
-        self.results.itemClicked.connect(lambda *_:visibility(self.results,False) if self.results_current else None)
+        self.results.itemClicked.connect(lambda *_:self.set_results_state(False) if self.results_current else None)
         self.results.hide()
-        layout.addWidget(self.results)
+        result_layout.addWidget(self.results)
+        self.watch_gap=QWidget();self.watch_gap.setFixedHeight(12);self.watch_gap.hide();layout.addWidget(self.watch_gap)
         self.watched_items=WatchedItems(self);self.watched_items.hide()
         self.watched_items.item_selected.connect(self.select_watched)
         self.watched_items.visible_changed.connect(self.thumbnail_timer.start)
@@ -111,13 +121,14 @@ class PriceSearch(QWidget):
         self.query.textChanged.connect(self.schedule_search)
         self.query.returnPressed.connect(self.choose_first)
         self.watched_items.expanded_changed.connect(self.on_watch_expanded)
+        self.set_results_state(False,hint=self.hint.text())
         self.render()
 
     def set_watchlist(self, watches):
         self.watchlist = watches
         self.watch_button.bind(watches)
         watches.changed.connect(self.update_watch_controls)
-        self.watched_items.set_watchlist(watches);self.watched_items.show()
+        self.watched_items.set_watchlist(watches);self.watched_items.show();self.watch_gap.show()
         self.update_watch_controls()
 
     def set_market_status(self,message,error=False):
@@ -178,7 +189,7 @@ class PriceSearch(QWidget):
         if selected:
             current=next((item for item in catalog.items if item.game_id==selected.game_id and key(item.name)==key(selected.name)),None)
             if current:
-                self.selected=current;self.quote=quote;visibility(self.results,False);self.card_key=None;self.render()
+                self.selected=current;self.quote=quote;self.set_results_state(False);self.card_key=None;self.render()
             else:self.clear_selection()
 
     def set_reference(self,service,media,market):
@@ -215,7 +226,7 @@ class PriceSearch(QWidget):
     def select_watched(self,identity):
         if identity is None:
             if self.selection_source=='watch':
-                self.clear_selection();self.hint.setText('');self.hint.hide();self.active_changed.emit()
+                self.clear_selection();self.set_results_state(False,hint='',matches=False);self.active_changed.emit()
             return
         if not self.watched_items.expanded:return
         item=next((item for item in self.catalog.items if item.game_id==identity),None) if self.catalog else None
@@ -225,42 +236,56 @@ class PriceSearch(QWidget):
         self.watch_focus=True
         self.selected,self.quote=item,None;self.pending_identity=None;self.pending_candidates=()
         self.error=self.lookup_state=''
-        visibility(self.results,False);self.matches_button.hide()
-        self.hint.setText('');self.hint.hide()
+        self.set_results_state(False,hint='',matches=False)
         self.item_selected.emit(item);self.render();self.active_changed.emit()
 
     def select_recent(self,item):
         self.watched_items.set_expanded(False);self.watch_focus=False
         self.query.blockSignals(True);self.query.setText(item.name);self.query.blockSignals(False);self.timer.stop()
         self.selected,self.quote=item,None;self.pending_identity=None;self.pending_candidates=();self.selection_source='recent'
-        self.error=self.lookup_state='';self.hint.hide();visibility(self.results,False);self.matches_button.hide()
+        self.error=self.lookup_state='';self.set_results_state(False,hint='',matches=False)
         self.item_selected.emit(item);self.render();self.active_changed.emit()
 
     def on_watch_expanded(self,shown):
         if not shown:self.watch_focus=False
         if shown:
             self.timer.stop();self.query.blockSignals(True);self.query.clear();self.query.blockSignals(False)
-            self.clear_selection();self.hint.setText('');self.hint.hide()
-            visibility(self.results,False);self.matches_button.hide()
+            self.clear_selection();self.set_results_state(False,hint='',matches=False)
         self.active_changed.emit()
 
     def show_catalog_error(self, message, retrying=False):
         self.catalog_error = message
-        self.hint.setText("Retrying the item connection once…" if retrying else catalog_error_text(message))
         self.retry_button.setVisible(not retrying)
+        self.set_results_state(False,hint="Retrying the item connection once…" if retrying else catalog_error_text(message))
+
+    def set_results_state(self,shown,*,hint=None,matches=None):
+        """Retarget one clipped section, including its count and layout gaps."""
+        text=self.hint.text() if hint is None else hint
+        other=not self.matches_button.isHidden() if matches is None else matches
+        target=(bool(shown),bool(text),bool(other),not self.retry_button.isHidden())
+        if target!=getattr(self,'results_target',None) and self.results_area.before is None:self.results_area.begin()
+        self.results_target=target
+        self.results.setVisible(shown)
+        self.hint.setText(text);self.hint.setVisible(bool(text))
+        self.matches_button.setVisible(other)
+        self.hint_row.setVisible(bool(text or other))
+        self.results_area.complete()
 
     def schedule_search(self):
         if self.query.text().strip():self.watched_items.set_expanded(False)
         # Stop demand for the previous result immediately. Typing searches the
         # local catalog only; no suggestions trigger remote price requests.
-        if not self.query.text().strip():
-            visibility(self.results,False)
         self.clear_selection()
         # Keep the normal icon palette during debounce. The selection handler
         # gates demand so stale rows cannot start a price request.
         self.results_current = False
-        self.matches_button.hide()
-        self.timer.start()
+        if not self.query.text().strip():
+            # Empty text needs no catalog debounce. A delayed count removal
+            # used to move the returned shop/card a second time at 180 ms.
+            self.timer.stop();self.find_items()
+        else:
+            self.set_results_state(not self.results.isHidden(),matches=False)
+            self.timer.start()
         self.active_changed.emit()
 
     def clear_selection(self):
@@ -284,11 +309,16 @@ class PriceSearch(QWidget):
             for item in found:groups.setdefault(key(item.name),[]).append(item)
             found = list(groups.values())
         was_hidden=self.results.isHidden()
+        tokens=tuple(tuple(item.game_id for item in candidates) for candidates in found[:40])
+        if tokens!=tuple(self.result_rows) or bool(found)!=(not was_hidden):
+            # Snapshot before removing any rows, so clearing/replacing keeps
+            # the outgoing names and thumbnails through the clipped motion.
+            self.results_area.begin()
         previous=self.result_rows;current={}
         self.results.blockSignals(True);self.results.setUpdatesEnabled(False)
         try:
             self.results.setCurrentItem(None)
-            tokens={tuple(item.game_id for item in candidates) for candidates in found[:40]}
+            tokens=set(tokens)
             for token,row in previous.items():
                 if token not in tokens:self.results.takeItem(self.results.row(row))
             for index,candidates in enumerate(found[:40]):
@@ -311,15 +341,14 @@ class PriceSearch(QWidget):
         finally:
             self.results.setUpdatesEnabled(True);self.results.blockSignals(False)
         self.results_current = True
-        visibility(self.results,bool(found))
-        if found and was_hidden:reveal(self.results)
-        self.thumbnail_timer.start()
-        self.hint.setText("Item names are unavailable. Check your connection and retry." if self.catalog_error else
+        message=("Item names are unavailable. Check your connection and retry." if self.catalog_error else
                           "Item names are loading…" if not self.catalog else
                           "" if len(query)<2 else
                           "No matching Classic World items." if not found else
                           f"{len(found):,} matches"+(" · showing the first 40" if len(found)>40 else "")+" · select an item for its price")
-        self.hint.setVisible(bool(self.hint.text()))
+        self.set_results_state(bool(found),hint=message,matches=False)
+        if found and was_hidden:reveal(self.results)
+        self.thumbnail_timer.start()
 
     def choose_first(self):
         self.timer.stop()
@@ -336,8 +365,7 @@ class PriceSearch(QWidget):
             self.pending_candidates = candidates
             self.selected = self.quote = None
             self.error = self.identity_errors.get(self.pending_identity, "")
-            visibility(self.results,False)
-            self.matches_button.show()
+            self.set_results_state(False,matches=True)
             self.identity_selected.emit(self.pending_identity,candidates)
             self.render()
             return
@@ -348,8 +376,7 @@ class PriceSearch(QWidget):
         self.pending_candidates = ()
         self.error = self.lookup_state = ""
         if item:
-            visibility(self.results,False)
-            self.matches_button.show()
+            self.set_results_state(False,matches=True)
         self.item_selected.emit(item)
         self.render()
 

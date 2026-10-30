@@ -118,6 +118,67 @@ class WriterBridgeTests(unittest.TestCase):
         self.assertFalse(w.windowFlags() & Qt.WindowType.WindowTransparentForInput)
         self.assertFalse(w.windowFlags() & Qt.WindowType.WindowDoesNotAcceptFocus)
         self.assertFalse(w.windowFlags() & Qt.WindowType.X11BypassWindowManagerHint)
+
+    def test_enter_freezes_the_editor_before_a_fast_result_then_fades_without_reflow(self):
+        host=self.connect_host();self.control.open(self.placement,'Super+F8',False)
+        w=host.window;self.app.processEvents();w.motion.setCurrentTime(w.motion.duration())
+        w.input.setText('ty');self.c.timer.stop();w.size_motion.setCurrentTime(w.size_motion.duration())
+        height=w.height();target=w.geometry();preview=w.preview.text();button=w.copy.text()
+        w.input.returnPressed.emit()
+        self.assertTrue(w.closing);self.assertTrue(w.isVisible());self.assertTrue(w.input.isReadOnly())
+        self.assertTrue(w.panel.isEnabled());self.assertEqual(w.motion.duration(),180)
+        self.assertEqual(w.height(),height);self.assertEqual(w.preview.text(),preview);self.assertEqual(w.copy.text(),button)
+        self.clipboard.setText.assert_called_once_with('감사합니다.')
+        w.motion.setCurrentTime(90)
+        self.assertAlmostEqual(w.level,.5,places=2);self.assertEqual(w.height(),height)
+        self.assertLessEqual(abs(w.y()-target.y()),6)
+        w.motion.setCurrentTime(180)
+        self.assertFalse(w.isVisible());self.assertFalse(self.control.presented)
+
+    def test_late_state_does_not_resize_exit_and_escape_does_not_restart_the_fade(self):
+        host=self.connect_host();self.control.open(self.placement,'Super+F8',False)
+        w=host.window;self.app.processEvents();w.motion.setCurrentTime(140)
+        w.input.setText('Please wait here');self.c.timer.stop()
+        with patch.object(self.c,'preview'):w.input.returnPressed.emit()
+        w.motion.setCurrentTime(80);geometry=w.geometry();target=QRect(w.target);button=w.copy.text()
+        self.c.result='긴 문장입니다. '*100;self.c.note='Long model warning. '*50;self.c.changed.emit()
+        self.assertEqual(w.geometry(),geometry);self.assertEqual(w.target,target);self.assertEqual(w.copy.text(),button)
+        w.reject();self.assertIsNone(self.c.copy_pending)
+        self.assertEqual(w.motion.currentTime(),80);self.assertEqual(w.motion.duration(),180)
+        self.clipboard.setText.assert_not_called()
+
+    def test_repeated_enter_during_fast_copy_exit_does_not_submit_again(self):
+        host=self.connect_host();self.control.open(self.placement,'Super+F8',False)
+        w=host.window;w.motion.setCurrentTime(140);w.input.setText('ty');self.c.timer.stop()
+        w.input.returnPressed.emit();sequence=host.composer.sequence
+        w.input.returnPressed.emit();w.copy.click()
+        self.assertEqual(host.composer.sequence,sequence);self.clipboard.setText.assert_called_once()
+
+    def test_reduce_motion_during_submit_exit_hides_without_cancelling_copy(self):
+        host=self.connect_host();self.control.open(self.placement,'Super+F8',False)
+        w=host.window;w.motion.setCurrentTime(140);w.input.setText('Please wait here');self.c.timer.stop()
+        with patch.object(self.c,'preview'):w.input.returnPressed.emit()
+        authorized=self.c.copy_pending;self.assertIsNotNone(authorized)
+        self.control.context(self.placement,reduced=True)
+        self.assertFalse(w.isVisible());self.assertFalse(self.control.presented)
+        self.assertEqual(self.c.copy_pending,authorized);self.clipboard.setText.assert_not_called()
+
+    def test_editing_the_main_draft_during_exit_revokes_the_old_copy(self):
+        host=self.connect_host();self.control.open(self.placement,'Super+F8',False)
+        w=host.window;w.motion.setCurrentTime(140);w.input.setText('Please wait here');self.c.timer.stop()
+        with patch.object(self.c,'preview'):w.input.returnPressed.emit()
+        submitted=self.c.identity;self.assertEqual(self.c.copy_pending,submitted)
+        self.c.set_text('Please come here');self.c.timer.stop();self.assertIsNone(self.c.copy_pending)
+        self.c.accept(submitted,'여기에서 기다려 주세요.','Old response')
+        self.clipboard.setText.assert_not_called();self.assertTrue(w.closing)
+
+    def test_new_opening_interrupts_exit_and_restores_editing(self):
+        host=self.connect_host();self.control.open(self.placement,'Super+F8',False)
+        w=host.window;w.motion.setCurrentTime(140);w.input.setText('ty');self.c.timer.stop();w.input.returnPressed.emit()
+        w.motion.setCurrentTime(80);self.control.open(self.placement,'Super+F8',True)
+        self.assertTrue(w.isVisible());self.assertFalse(w.closing);self.assertFalse(w.input.isReadOnly())
+        self.assertFalse(w.panel.testAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents))
+        self.assertFalse(host.composer.submitted);self.assertTrue(self.control.active)
     def test_escape_during_exit_still_cancels_authorized_late_copy(self):
         host=self.connect_host();self.control.open(self.placement,'Super+F8',False)
         w=host.window;self.app.processEvents()

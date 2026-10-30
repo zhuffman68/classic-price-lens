@@ -47,7 +47,7 @@ class KoreanComposer(QObject):
 
     def preview(self):
         if not self.text:return
-        self.expanded=expand(self.text);self.error=''
+        self.expanded=expand(self.text,self.names);self.error=''
         cached=self.cache.get(self.expanded)
         if cached is not None:
             self.cache.move_to_end(self.expanded);self.accept(self.identity,*cached);return
@@ -72,7 +72,7 @@ class KoreanComposer(QObject):
 
     def accept(self,identity,text,note):
         if identity!=self.identity:return
-        try:self.result=validate(self.expanded,text)
+        try:self.result=validate(self.expanded,text,self.names)
         except ValueError as error:
             self.result='';self.result_id=None;self.error=str(error);self.copy_pending=None
         else:

@@ -66,3 +66,13 @@ Choose the game's display and click **Start reading**, approving screen sharing 
 Use **Settings** and **Hotkeys…** to customize overlays, shortcuts, and updates. Lupin can stay in the system tray while you play.
 
 [Windows help](README-WINDOWS.md) · [Translation guide](docs/KOREAN_CHAT.md) · [Database sources](docs/DATABASE_SOURCES.md) · [Technical documentation](docs/TECHNICAL.md) · [Credits](THIRD_PARTY.md)
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/zhuffman68/lupin/main/docs/media/donate-heading.svg" width="280" alt="Buy monkey a beer">
+</p>
+<p align="center">
+  <img src="https://raw.githubusercontent.com/zhuffman68/lupin/main/docs/media/lupin-beer.gif" width="96" align="middle" alt="Lupin drinking a beer">
+  <a href="https://www.paypal.me/zhuffman68">
+    <img src="https://raw.githubusercontent.com/zhuffman68/lupin/main/docs/media/donate.png" width="190" align="middle" alt="Donate with PayPal">
+  </a>
+</p>

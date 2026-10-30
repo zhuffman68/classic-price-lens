@@ -2,6 +2,7 @@
 from concurrent.futures import ThreadPoolExecutor
 import json
 import os
+import secrets
 from pathlib import Path
 import shutil
 import subprocess
@@ -15,6 +16,7 @@ from PySide6.QtCore import QObject,QTimer,Signal,Qt
 
 from . import __version__
 from .updates import ReleaseClient,Cancelled,read_json,atomic_json,target_for
+from .desktop_environment import recovered_environment
 
 
 class UpdateService(QObject):
@@ -38,6 +40,9 @@ class UpdateService(QObject):
         self.auth_timer=QTimer(self);self.auth_timer.setSingleShot(True);self.auth_timer.setInterval(120000);self.auth_timer.timeout.connect(self.cancel)
         self.completed.connect(self.finish,Qt.ConnectionType.QueuedConnection)
         self.transfer.connect(self.on_progress,Qt.ConnectionType.QueuedConnection)
+        self.result_timer=QTimer(self);self.result_timer.setInterval(250);self.result_timer.timeout.connect(self.poll_result)
+        self.ready_notice_timer=QTimer(self);self.ready_notice_timer.setInterval(100);self.ready_notice_timer.timeout.connect(self.poll_ready_notice)
+        self.pending_result_notice=None
         self.state='idle';self.offer=None;self.error='';self.progress=(0,0);self.closed=False
         self.cancelled=threading.Event();self.helper=None;self.committed=False;self.downloaded=None
         self.last_checked=float(settings.value('update-last-check',0,type=float))
@@ -49,7 +54,7 @@ class UpdateService(QObject):
             path=self.cache/'last-result.json' if self.target.name.startswith('windows-') else Path(f'/var/cache/lupin-updates/last-result-{os.getuid()}.json')
             try:
                 with path.open('rb') as stream:result=read_json(stream.read(8193))
-                if isinstance(result,dict) and type(result.get('ok')) is bool:
+                if isinstance(result,dict) and type(result.get('ok')) is bool and result.get('status')!='starting':
                     self.previous_result=result
                     if not result['ok']:self.error='The previous update did not finish. Lupin has reopened.'
             except (OSError,ValueError):pass
@@ -65,15 +70,57 @@ class UpdateService(QObject):
     def start(self):
         self.configure()
         self.changed.emit()
-        if self.previous_result:
-            result=self.previous_result;identity=str(result.get('attempt',''))+str(result.get('version',''))+str(result['ok'])
-            if self.settings.value('update-result-notified','')!=identity:
-                self.settings.setValue('update-result-notified',identity)
-                QTimer.singleShot(0,lambda:self.notice.emit('Lupin updated' if result['ok'] else 'Lupin update did not finish',
-                    'The updated app is ready.' if result['ok'] else 'Lupin has reopened. Open Settings to retry.') if not self.closed else None)
+        if self.previous_result:self.announce_result(self.previous_result)
         if self.target.installable and self.settings.value('update-on-launch',True,type=bool):
             delay=max(1500,min(604800000,round((max(self.last_checked+60,self.not_before)-self.clock())*1000)))
             QTimer.singleShot(delay,self.check)
+
+    def announce_result(self,result):
+        identity=str(result.get('attempt',''))+str(result.get('version',''))+str(result['ok'])
+        if self.settings.value('update-result-notified','')==identity:return
+        # Older installed helpers can only report transaction success. Even
+        # that first upgrade must not announce GUI readiness before our helper
+        # has answered from the new app's event loop.
+        if result['ok'] and not self.startup_health():
+            if self.pending_result_notice is None:self.ready_notice_deadline=time.monotonic()+15
+            self.pending_result_notice=result;self.ready_notice_timer.start();return
+        self.settings.setValue('update-result-notified',identity)
+        message=('The updated app is ready.' if result['ok'] else
+                 'Lupin installed, but its overlay could not start. Restart Lupin from the application launcher.'
+                 if result.get('reason')=='startup' else 'Lupin has reopened. Open Settings to retry.')
+        QTimer.singleShot(0,lambda:self.notice.emit('Lupin updated' if result['ok'] else 'Lupin update needs attention',message) if not self.closed else None)
+
+    def startup_health(self):
+        parent=self.parent()
+        return parent is None or not hasattr(parent,'overlay') or bool(getattr(parent.overlay,'ready',False))
+
+    def poll_ready_notice(self):
+        result=self.pending_result_notice
+        if self.closed or result is None:self.ready_notice_timer.stop();return
+        if not self.startup_health() and time.monotonic()<self.ready_notice_deadline:return
+        self.ready_notice_timer.stop();self.pending_result_notice=None
+        if self.startup_health():self.announce_result(result);return
+        self.error='The update installed, but the overlay could not start.'
+        self.announce_result({**result,'ok':False,'reason':'startup'})
+        # Acknowledge the original legacy record after health is known, so it
+        # cannot produce a false success message on a later normal launch.
+        identity=str(result.get('attempt',''))+str(result.get('version',''))+str(result['ok'])
+        self.settings.setValue('update-result-notified',identity);self.changed.emit()
+
+    def watch_result(self,attempt):
+        self.result_attempt=attempt;self.result_deadline=time.monotonic()+25;self.result_timer.start()
+
+    def poll_result(self):
+        if self.closed or time.monotonic()>self.result_deadline:self.result_timer.stop();return
+        path=self.cache/'last-result.json' if self.target.name.startswith('windows-') else Path(f'/var/cache/lupin-updates/last-result-{os.getuid()}.json')
+        try:
+            with path.open('rb') as stream:result=read_json(stream.read(8193))
+        except (OSError,ValueError):return
+        if (not isinstance(result,dict) or result.get('attempt')!=self.result_attempt
+                or result.get('status')=='starting' or type(result.get('ok')) is not bool):return
+        self.result_timer.stop();self.previous_result=result
+        self.error='' if result['ok'] else ('The update installed, but the overlay could not start.' if result.get('reason')=='startup' else 'The previous update did not finish. Lupin has reopened.')
+        self.announce_result(result);self.changed.emit()
 
     def submit(self,kind,work):
         self.cancelled=threading.Event();cancel=self.cancelled
@@ -112,15 +159,14 @@ class UpdateService(QObject):
     def prepare_install(self,cancel):
         if cancel.is_set():raise Cancelled()
         folder=Path(tempfile.mkdtemp(prefix='job-',dir=self.cache));folder.chmod(0o700)
-        env_keys=('DISPLAY','WAYLAND_DISPLAY','XDG_RUNTIME_DIR','DBUS_SESSION_BUS_ADDRESS','XDG_SESSION_TYPE','XDG_CURRENT_DESKTOP','LANG')
         plan=dict(schema=1,offer=self.offer,target=self.target.name,root=str(self.root.resolve()),
-                  package_path=str(self.downloaded.resolve()),relaunch_env={key:os.environ[key] for key in env_keys if key in os.environ})
+                  package_path=str(self.downloaded.resolve()),relaunch_env=recovered_environment(),startup_token=secrets.token_hex(32))
         request=folder/'request.json';atomic_json(request,plan);request.chmod(0o600)
         if sys.platform=='win32':
             script=folder/'install.ps1';shutil.copyfile(self.root/'price_lens/resources/update-windows.ps1',script)
             command=['powershell.exe','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',str(script),'-Plan',str(request)]
         else:command=['pkexec','--disable-internal-agent','/usr/lib/lupin/lupin-update','--request',str(request)]
-        options=dict(stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+        options=dict(stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,cwd=str(folder.resolve()))
         if sys.platform=='win32':options['creationflags']=subprocess.CREATE_NO_WINDOW
         self.helper=subprocess.Popen(command,**options)
         if cancel.is_set():self.release_helper();raise Cancelled()
@@ -194,6 +240,6 @@ class UpdateService(QObject):
         self.cancelled.set();self.release_helper();self.state='cancelling';self.changed.emit()
 
     def close(self):
-        self.closed=True;self.timer.stop();self.auth_timer.stop()
+        self.closed=True;self.timer.stop();self.auth_timer.stop();self.result_timer.stop();self.ready_notice_timer.stop()
         if not self.committed:self.cancelled.set();self.release_helper()
         self.pool.shutdown(wait=False,cancel_futures=True)
