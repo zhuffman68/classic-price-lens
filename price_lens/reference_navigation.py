@@ -11,9 +11,9 @@ class Breadcrumb(QWidget):
         self.setMinimumWidth(0);self.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Fixed)
         layout=QHBoxLayout(self);layout.setContentsMargins(0,0,0,0);layout.setSpacing(2)
         self.root=QToolButton();self.root.clicked.connect(lambda:self.chosen.emit(0));layout.addWidget(self.root)
-        self.path=QToolButton();self.path.setMinimumWidth(0);self.path.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Fixed)
+        self.path=QToolButton();self.path.setMinimumWidth(0);self.path.setSizePolicy(QSizePolicy.Policy.Fixed,QSizePolicy.Policy.Fixed)
         self.path.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup);self.menu=QMenu(self.path);self.path.setMenu(self.menu)
-        layout.addWidget(self.path,1)
+        layout.addWidget(self.path)
         self.empty=QWidget();layout.addWidget(self.empty,1)
         self.setStyleSheet('QToolButton{color:#b9c8dc;background:transparent;border:0;border-radius:5px;padding:5px 3px;font-size:11px;} QToolButton:hover{background:#2b394d;color:#f0d5a8;} QToolButton::menu-indicator{image:none;}')
 
@@ -28,7 +28,7 @@ class Breadcrumb(QWidget):
             action=self.menu.addAction(label.replace('&','&&'))
             if depth>len(scope):action.setEnabled(False)
             else:action.triggered.connect(lambda checked=False,depth=depth:self.chosen.emit(depth))
-        self.path.setVisible(len(parts)>1);self.empty.setVisible(len(parts)==1);self.path.setToolTip(self.full_text);self.path.setAccessibleName(self.full_text)
+        self.path.setVisible(len(parts)>1);self.path.setToolTip(self.full_text);self.path.setAccessibleName(self.full_text)
         self.fit()
 
     def text(self):return self.full_text
@@ -36,7 +36,11 @@ class Breadcrumb(QWidget):
     def fit(self):
         if not self.parts:return
         width=max(0,self.width()-self.root.sizeHint().width()-4)
-        text=' › '.join(self.parts[1:])
-        self.path.setText(self.path.fontMetrics().elidedText('› '+text+' ▾',Qt.TextElideMode.ElideMiddle,width).replace('&','&&'))
+        text='› '+' › '.join(self.parts[1:])+' ▾';metrics=self.path.fontMetrics()
+        self.path.setText(text.replace('&','&&'))
+        padding=max(6,self.path.sizeHint().width()-metrics.horizontalAdvance(text))
+        if self.path.sizeHint().width()>width:
+            self.path.setText(metrics.elidedText(text,Qt.TextElideMode.ElideMiddle,max(0,width-padding)).replace('&','&&'))
+        self.path.setFixedWidth(min(width,self.path.sizeHint().width()))
 
     def resizeEvent(self,event):super().resizeEvent(event);self.fit()

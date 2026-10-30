@@ -8,6 +8,9 @@
   locations, quest-category retention and artwork selection, cropped minimap
   projection, recorded recruitment phrases, unknown-clause rejection, changed
   text priority, bounded scan cadence and translation-history scroll anchors.
+- The follow-up breadcrumb spacing correction passes all eight navigation
+  checks. Refreshed compact previews confirm that root/category links stay
+  together on the left and long paths retain their ancestor menu and elision.
 - Private offline previews use the current 432-pixel Database content width
   within a 464-pixel frame, copied reference data and clearly marked sample
   prices. The redesigned selected-item card is shared with Prices. No live
