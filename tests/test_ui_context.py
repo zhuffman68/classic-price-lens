@@ -625,6 +625,10 @@ class ContextUiTests(unittest.TestCase):
         self.tray_show.start()
         self.reference_start_patch=patch('price_lens.ui.ReferenceService.start');self.reference_start_patch.start()
         self.addCleanup(self.reference_start_patch.stop)
+        # Installed roots qualify for real automatic update checks. These UI
+        # fixtures must stay offline; UpdateService has separate fake-feed tests.
+        self.updater_start_patch=patch('price_lens.ui.UpdateService.start');self.updater_start_patch.start()
+        self.addCleanup(self.updater_start_patch.stop)
         media_patch=patch('price_lens.reference_ui.ReferenceMedia.observe');media_patch.start();self.addCleanup(media_patch.stop)
         self.window = LensWindow(Path.cwd(), Path("unused-cache"))
         from test_reference import documents,generation,allow_fixture

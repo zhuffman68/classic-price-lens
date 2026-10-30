@@ -52,10 +52,11 @@ current packaging. See [update details](UPDATES.md).
   QA runs on distinct virtual displays with Wayland unset, protecting the desktop.
 - Offscreen layout screenshots use fake items/prices and no OS capture. Native
   readers, capture code, vendor revision and both model bundles are unchanged.
-- No 0.17.7 installer/package build, host installation, live app reload, source
-  push, publication or repository visibility change has been performed. Native
-  updater transactions and a signed public-feed check remain release checks for
-  the eventual packages. Existing 0.17.6 artifacts are unchanged.
+- Installer/package checks are separate from source tests. Final sizes, hashes
+  and transaction results are supplied beside the builds. No host installation,
+  live app reload, source push, publication or repository visibility change is
+  performed. Native updater transactions and a signed public-feed check remain
+  distinct acceptance checks. The 0.17.6 release is archived before new staging.
 
 ## GIF
 
