@@ -1,18 +1,19 @@
 """Async updater behavior with fake releases/helpers; never installs anything."""
 import io
+from copy import deepcopy
 import os
 from pathlib import Path
 import tempfile
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock,patch
 
 from PySide6.QtCore import QCoreApplication,QEvent
 from PySide6.QtWidgets import QApplication
 from PySide6.QtTest import QTest
 
 from price_lens.update_service import UpdateService
-from price_lens.update_ui import UpdatePanel
+from price_lens.update_ui import UpdateDialog,UpdatePanel,release_summary
 from price_lens.updates import Target,read_json,validate_portable
 from price_lens.update_install import validate_plan,verify_native_identity
 from test_ui_context import FakeSettings
@@ -51,6 +52,15 @@ class UpdateServiceTests(unittest.TestCase):
         deadline=time.monotonic()+3
         while self.service.busy and time.monotonic()<deadline:QTest.qWait(5)
         self.assertFalse(self.service.busy)
+
+    def until(self,condition):
+        deadline=time.monotonic()+2
+        while not condition() and time.monotonic()<deadline:QTest.qWait(5)
+        self.assertTrue(condition())
+
+    def advancing_clock(self):
+        started=time.monotonic()
+        self.service.clock=lambda:self.now+time.monotonic()-started
 
     def test_launch_and_configurable_timer_avoid_duplicate_checks_and_notifications(self):
         s=self.service;notices=[];s.available.connect(notices.append)
@@ -103,6 +113,131 @@ class UpdateServiceTests(unittest.TestCase):
             self.assertNotIn('cache-ttl',self.settings.values)
             self.assertFalse(panel.interval.isEnabled())
         finally:panel.deleteLater()
+
+    def test_periodic_checks_are_driven_by_real_qt_timeouts_and_notify_once(self):
+        s=self.service;self.advancing_clock();notices=[];s.available.connect(notices.append)
+        self.settings.setValue('update-on-launch',False)
+        self.settings.setValue('update-interval-minutes',15)
+        s.last_checked=s.clock()-900+.025
+        s.start()
+        self.assertTrue(s.timer.isSingleShot());self.assertTrue(s.timer.isActive())
+        self.assertLessEqual(s.timer.interval(),25)
+        self.until(lambda:self.client.checks==1 and not s.busy)
+        self.assertEqual(notices,['0.18.0'])
+        self.assertTrue(s.timer.isActive());self.assertGreater(s.timer.interval(),899000)
+        self.now+=899.98;s.configure()
+        self.until(lambda:self.client.checks==2 and not s.busy)
+        self.assertEqual(notices,['0.18.0'])
+
+    def test_periodic_disable_stops_a_pending_timeout_and_invalid_intervals_stay_off(self):
+        s=self.service;self.settings.setValue('update-on-launch',False)
+        self.settings.setValue('update-interval-minutes',15);s.start();s.timer.start(20)
+        self.settings.setValue('update-interval-minutes',0);s.configure();QTest.qWait(40)
+        self.assertEqual(self.client.checks,0);self.assertFalse(s.timer.isActive())
+        for value in (True,14,10081,'15'):
+            self.settings.setValue('update-interval-minutes',value);s.configure()
+            self.assertFalse(s.timer.isActive())
+        self.settings.setValue('update-interval-minutes',15);s.configure()
+        self.assertTrue(s.timer.isActive());self.assertEqual(s.timer.interval(),900000)
+
+    def test_busy_periodic_timeout_defers_without_starting_a_duplicate_job(self):
+        s=self.service;self.settings.setValue('update-on-launch',False);s.start()
+        s.state='downloading';s.timer.start(15);QTest.qWait(35)
+        self.assertEqual(self.client.checks,0);self.assertTrue(s.timer.isActive())
+        self.assertEqual(s.timer.interval(),1000)
+        s.state='idle';s.timer.start(15)
+        self.until(lambda:self.client.checks==1 and not s.busy)
+        self.assertTrue(s.timer.isActive())
+
+    def test_periodic_timeout_obeys_cooldown_and_checks_after_its_deadline(self):
+        s=self.service;self.advancing_clock();self.settings.setValue('update-on-launch',False)
+        s.last_checked=s.clock();s.not_before=s.last_checked+60.05;s.start()
+        s.timer.start(10);QTest.qWait(25)
+        self.assertEqual(self.client.checks,0);self.assertTrue(s.timer.isActive())
+        self.now+=60.04;s.schedule()
+        self.until(lambda:self.client.checks==1 and not s.busy)
+
+    def test_rate_limit_deadline_rearms_the_real_timer_instead_of_waiting_another_six_hours(self):
+        from urllib.error import HTTPError
+        s=self.service;self.advancing_clock();self.settings.setValue('update-on-launch',False)
+        error=HTTPError('https://api.github.com',429,'limited',{'X-RateLimit-Reset':'2000'},None)
+        self.addCleanup(error.close);s.finish('check',None,error)
+        self.assertEqual(s.not_before,2000);self.assertTrue(s.timer.isActive())
+        self.assertLessEqual(s.timer.interval(),1000000)
+        self.now=1999.98;s.schedule()
+        self.until(lambda:self.client.checks==1 and not s.busy)
+        self.assertEqual(s.not_before,0);self.assertGreater(s.timer.interval(),21599000)
+
+    def test_nonfinite_rate_headers_are_ignored_and_long_deadlines_fit_qt(self):
+        from urllib.error import HTTPError
+        for headers,expected in (({'X-RateLimit-Reset':'inf','Retry-After':'nan'},1900), ({'X-RateLimit-Reset':'1e100'},1e100)):
+            error=HTTPError('https://api.github.com',403,'limited',headers,None);self.addCleanup(error.close)
+            self.service.finish('check',None,error)
+            self.assertEqual(self.service.not_before,expected)
+        self.assertEqual(self.service.not_before,1e100)
+        self.assertEqual(self.service.timer.interval(),604800000)
+
+    def test_launch_check_is_owned_cancelled_by_settings_and_stopped_on_close(self):
+        s=self.service;s.start();self.assertTrue(s.launch_timer.isActive())
+        panel=UpdatePanel(s,settings=True)
+        try:
+            panel.launch.setChecked(False)
+            self.assertFalse(s.launch_timer.isActive())
+            s.launch_timer.start(10);s.close();QTest.qWait(30)
+            self.assertFalse(s.launch_timer.isActive());self.assertFalse(s.timer.isActive())
+            self.assertEqual(self.client.checks,0)
+        finally:panel.deleteLater()
+
+    def test_source_checkout_never_arms_automatic_checks_but_can_check_manually(self):
+        s=self.service;s.target=Target('linux-arch-x64',False,self.root)
+        self.settings.setValue('update-on-launch',True);self.settings.setValue('update-interval-minutes',15)
+        s.start();QTest.qWait(30)
+        self.assertFalse(s.timer.isActive());self.assertFalse(s.launch_timer.isActive())
+        self.assertEqual(self.client.checks,0)
+        s.check();self.settle();self.assertEqual(self.client.checks,1)
+        self.assertFalse(s.timer.isActive());self.assertFalse(s.launch_timer.isActive())
+
+    def test_version_notification_remains_once_per_version_across_service_instances(self):
+        s=self.service;notices=[];s.available.connect(notices.append)
+        s.check();self.settle();self.assertEqual(notices,['0.18.0'])
+        self.now+=61
+        other=UpdateService(self.root,self.root,self.settings,client=self.client,target=s.target,clock=lambda:self.now)
+        try:
+            other.available.connect(notices.append);other.check()
+            self.until(lambda:not other.busy)
+            self.assertEqual(notices,['0.18.0'])
+            self.client.selected=deepcopy(self.client.selected)
+            self.client.selected['manifest']['version']='1.0.2'
+            self.now+=61;other.check();self.until(lambda:not other.busy)
+            self.assertEqual(notices,['0.18.0','1.0.2'])
+        finally:other.close();other.pool.shutdown(wait=True);other.deleteLater()
+
+    def test_native_notification_click_only_opens_the_review_sheet(self):
+        from types import SimpleNamespace
+        from price_lens.tray import TrayController
+        tray=SimpleNamespace(update_notice_version='',message_kind='',icon=Mock(),window=Mock())
+        TrayController.update_available(tray,'1.0.1');TrayController.update_available(tray,'1.0.1')
+        self.assertEqual(tray.icon.showMessage.call_count,1)
+        self.assertIn('review',tray.icon.showMessage.call_args.args[1])
+        TrayController.message_clicked(tray)
+        tray.window.open_updates.assert_called_once_with()
+        tray.window.updates.download_install.assert_not_called()
+
+    def test_review_sheet_uses_bounded_plain_release_notes_and_later_does_not_download(self):
+        from PySide6.QtCore import Qt
+        s=self.service;s.offer=deepcopy(self.client.selected)
+        s.offer['release']['body']='# Changes\n- More reliable pickup tracking\n- [Release guide](https://example.org)\n'+'x'*500
+        dialog=UpdateDialog(s)
+        try:
+            dialog.show();self.app.processEvents()
+            self.assertLessEqual(len(release_summary(s.offer)),360)
+            self.assertEqual(dialog.panel.summary.textFormat(),Qt.TextFormat.PlainText)
+            self.assertIn('More reliable pickup tracking',dialog.panel.summary.text())
+            self.assertEqual(dialog.later.parentWidget(),dialog.panel)
+            dialog.later.click();self.assertFalse(dialog.isVisible())
+            self.assertEqual((self.client.downloads,self.client.checks),(0,0))
+            self.assertIsNone(s.helper);self.assertFalse(s.committed)
+        finally:dialog.close();dialog.deleteLater()
 
     def test_rate_limit_backoff_keeps_a_long_reset_even_with_a_bad_retry_header(self):
         from urllib.error import HTTPError

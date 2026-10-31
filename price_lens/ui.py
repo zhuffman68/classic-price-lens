@@ -353,6 +353,8 @@ class LensWindow(QMainWindow):
         self.cards_stack.addStretch()
         self.scroll.setWidget(self.cards)
         self.exp_panel = ExperiencePanel(data_directory()/"exp-sessions.sqlite",parent=self)
+        self.exp_panel.tracking_epoch_changed.connect(lambda epoch:setattr(self.reader,'tracking_epoch',epoch))
+        self.reader.tracking_epoch=self.exp_panel.tracking_epoch
         self.exp_panel.enabled_changed.connect(self.set_exp_enabled)
         self.exp_panel.changed.connect(self.on_experience_changed)
         self.exp_panel.overlay_changed.connect(self.set_exp_overlay)
@@ -747,8 +749,8 @@ class LensWindow(QMainWindow):
                 self.tabs.setCurrentIndex(self.exp_tab_index)
                 if hasattr(self,'tray'):self.tray.restore()
             return
-        self.exp_panel.set_connected(time.time()-self.last_screen<3 and
-                                    (not self.reader.auto_active or self.reader.game_area is not None))
+        self.pending_exp_start=False
+        self.sync_tracking_context()
         if not self.exp_panel.connected:
             self.pending_exp_start=True;return
         if self.exp_panel.requested:self.exp_panel.toggle_pause()
@@ -923,7 +925,29 @@ class LensWindow(QMainWindow):
         self.exp_enabled = enabled
         self.reader.experience_enabled = enabled
         self.reader.last_experience = 0
+        self.sync_tracking_reader()
         self.render()
+
+    def sync_tracking_reader(self):
+        panel=self.exp_panel
+        self.reader.tracking_epoch=panel.tracking_epoch
+        self.reader.pickups_enabled=bool(panel.requested and panel.connected
+            and not panel.user_paused and not panel.recognition_held)
+
+    def sync_tracking_context(self, *, refresh=True):
+        # Verified anchors apply equally to automatic detection and a manual
+        # reading area. A live desktop alone does not establish game coverage.
+        ready=getattr(self.reader,'tracking_ready',None)
+        if ready is None:
+            # Legacy reader doubles have no verification interface.
+            ready=(time.time()-self.last_screen<1.5 and not getattr(self.reader,'paused',False)
+                   and (self.reader.game_area is not None if self.reader.auto_active else self.reader.crop is not None))
+        self.exp_panel.set_connected(self.mode=='live' and bool(ready),
+            frame_at=getattr(self.reader,'tracking_frame_at',None),refresh=refresh)
+        self.sync_tracking_reader()
+        if self.exp_panel.connected and self.pending_exp_start:
+            self.pending_exp_start=False
+            self.exp_panel.start()
 
     def on_tab_changed(self, index):
         if hasattr(self,'database_panel'):self.database_panel.set_active(index==self.database_tab_index)
@@ -1010,11 +1034,11 @@ class LensWindow(QMainWindow):
 
     def on_experience(self, result):
         if self.mode == "live" and self.exp_enabled:
-            self.exp_panel.set_connected(time.time()-self.last_screen<3 and
-                                         (not self.reader.auto_active or self.reader.game_area is not None))
+            self.sync_tracking_context()
             self.exp_panel.feed(result)
 
     def on_experience_changed(self):
+        self.sync_tracking_reader()
         self.draw_labels(time.time(), time.time()-self.last_screen > 3)
 
     def set_exp_display(self, mode):
@@ -1048,12 +1072,10 @@ class LensWindow(QMainWindow):
         if self.reader.game_area is not None:self.last_identified_at=time.monotonic()
         if hasattr(self, "exp_panel"):
             self.exp_panel.interrupt_context()
-            self.exp_panel.set_connected(False)
+            self.sync_tracking_context()
         if self.reader.auto_active and self.reader.game_area is None:
             self.rows = []
             self.tooltip_result = None
-        elif self.pending_exp_start:
-            self.pending_exp_start=False;self.exp_panel.set_connected(True);self.exp_panel.start()
         self.render()
 
     def changeEvent(self, event):
@@ -1397,7 +1419,7 @@ class LensWindow(QMainWindow):
         self.render()
 
     def pause(self):
-        self.exp_panel.set_connected(False)
+        self.exp_panel.set_connected(False,frame_at=getattr(self.reader,'tracking_frame_at',None))
         if self.capture_starting:
             self.cancel_capture_setup()
             return
@@ -1464,6 +1486,7 @@ class LensWindow(QMainWindow):
         self.session_available = self.mode == "live"
         self.capture_error = ""
         self.last_screen = time.time() - max(0, time.monotonic() - self.reader.last_frame)
+        self.sync_tracking_context(refresh=False)
         cleared_tooltip=False
         if self.tooltip_result and self.tooltip_context:
             pixels=image.copy(self.reader.crop) if self.reader.crop else image
@@ -1891,8 +1914,7 @@ class LensWindow(QMainWindow):
 
     def tick(self):
         self.update_price_status()
-        self.exp_panel.set_connected(self.mode == "live" and time.time()-self.last_screen < 3
-                                     and (not self.reader.auto_active or self.reader.game_area is not None))
+        self.sync_tracking_context()
         self.render()
         if self.tabs.currentIndex() == self.search_tab_index:
             self.search_panel.render()
@@ -2222,14 +2244,15 @@ class LensWindow(QMainWindow):
                     annotations[-1].pop('follow_pointer');annotations[-1].pop('pointer_region')
                     annotations[-1]['bounds']=[round(region.x()*sx),round(region.y()*sy),
                                                 round(region.width()*sx),round(region.height()*sy)]
-        if self.exp_enabled and (self.exp_overlay or self.meso_overlay) and self.mode == "live" and game_visible and screen_matches and not screen_old:
+        if self.exp_enabled and self.exp_panel.connected and (self.exp_overlay or self.meso_overlay) and self.mode == "live" and game_visible and screen_matches and not screen_old:
             rows=[row for row in self.exp_panel.overlay_rows()
                   if self.exp_overlay and row['key']=='experience' or self.meso_overlay and row['key']=='meso-gain']
-            area = self.reader.game_area if self.reader.auto_active else self.reader.crop
+            area = getattr(self.reader,'tracking_area',None) or (self.reader.game_area if self.reader.auto_active else self.reader.crop)
             if area:
                 sx,sy=geometry.width()/image.width(),geometry.height()/image.height()
                 bounds=[round(area.x()*sx),round(area.y()*sy),round(area.width()*sx),round(area.height()*sy)]
-                guards=[rect for rect,_ in getattr(self.reader,'game_guards',[])]
+                guard_name='game_guards' if self.reader.auto_active else 'manual_game_guards'
+                guards=[rect for rect,_ in getattr(self.reader,guard_name,[])]
                 annotations=tracking_rows(rows,bounds,guards,scale_x=sx,scale_y=sy)+annotations
         if self.chat_enabled and self.mode=="live" and game_visible and screen_matches and not screen_old:
             area=self.reader.game_area if self.reader.auto_active else self.reader.crop

@@ -5,6 +5,23 @@ source for published downloads. A local version note or successful build does no
 mean that version has been published. Current test results and platform limits
 remain in [VERIFICATION.md](../VERIFICATION.md).
 
+## 1.0.1
+
+- Tracking automatically holds when Classic World can no longer be recognized,
+  including manually selected capture areas. Timers, gains and pace are preserved,
+  and returning to another character cannot silently replace the current run.
+- Meso tracking follows pickup lines through scrolling and fading, recognizes
+  EXP, party and item messages as scrolling evidence, and preserves uncertain
+  reads without treating them as an empty log. Pickup reading has its own bounded
+  worker so shop OCR cannot delay it.
+- Market refreshes follow the actual snapshot expiry, removing the gap between
+  expired prices and the next scheduled fetch. Old source data uses bounded
+  retries; refreshed shop labels update without hovering or rereading the shop.
+- Periodic update checks catch up after a busy reader, cooldown or server retry
+  deadline. Disabling launch checks cancels a pending launch request. Native
+  notifications open a compact review with release notes, Later and Download &
+  install; the same version is announced only once.
+
 ## 1.0.0
 
 The first stable release brings together Prices, EXP/Meso Tracking, Translation

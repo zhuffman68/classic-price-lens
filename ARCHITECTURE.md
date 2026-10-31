@@ -1,6 +1,6 @@
 # Lupin architecture
 
-Lupin v0.17.9 provides market references, EXP/meso tracking, local Korean translation and a searchable Classic World database for MapleStory Classic World.
+Lupin provides market references, EXP/meso tracking, local Korean translation and a searchable Classic World database for MapleStory Classic World.
 
 ## Observation boundary
 
@@ -21,6 +21,8 @@ flowchart LR
     Search[Search and watched items] --> Cache
     Images[Exact-ID item images] --> Search
     Reader --> Tracking[EXP and pickup ledger]
+    Stream --> Pickups[Crop-only pickup reader]
+    Pickups --> Tracking
     Tracking --> UI
     Stream --> Translate[Local Korean OCR and translation]
     Translate --> UI
@@ -48,7 +50,7 @@ An empty detected blue table is not sufficient to suppress generic inventory too
 
 `PriceService` loads the Classic World regular/cash catalog and manages a single `SnapshotStore`/`SnapshotUpdater`. There is no individual-price provider, per-item HTTP queue or provider-ID index.
 
-On every launch, saved data loads immediately and one asynchronous full-market download starts. Later downloads follow the selected 5/15/30/60-minute interval. Changing the interval reschedules from the last successful check. Overlapping refreshes coalesce. Overlay, search and watched-item prices are local snapshot reads; typing, selecting, hovering and watching never initiate individual price requests.
+On every launch, saved data loads immediately and one asynchronous full-market download starts. Later downloads use the earlier of the selected 5/15/30/60-minute interval and the source publication's one-hour expiry. Changing the interval uses that same deadline. Overlapping refreshes coalesce. Overlay, search and watched-item prices are local snapshot reads; typing, selecting, hovering and watching never initiate individual price requests.
 
 A short-lived native `lupin-market-fetch` helper reads the ordinary public market page using system web views: WebKitGTK on Linux and the shared production WebView2 runtime on Windows. It uses an offscreen/invisible window owned by the helper, never a game window. Linux uses an ephemeral context; Windows uses an app-owned data directory and disables OS-account single sign-on. Website permission requests and new windows are denied. No personal browser, installed browser discovery, DevTools socket or resident service is involved. Well-formed source rows with different listing/catalog IDs are excluded as unverified aliases; they never map prices to either ID. Malformed identities, duplicates, wrong worlds and empty exact generations still reject the update.
 
@@ -56,7 +58,7 @@ A short-lived native `lupin-market-fetch` helper reads the ordinary public marke
 
 A complete generation is validated before an atomic SQLite replacement. Checks require Classic World, live list schema, exact IDs/names, clean equipment and item/set units. Failed/invalid refreshes retain the last-good data and its original ages. A transient startup failure gets one retry after 15 seconds, then uses bounded 5/15/60-minute backoff. Missing runtimes and invalid documents do not trigger the startup retry. Successful refreshes never inherit a failure cooldown. `market-last-error.json` retains only the failure kind, exit code, time and up to twelve fixed helper stage/error-code pairs, never page bodies or user text. Connection details shows the current process's retained failure.
 
-Check time, publication time and latest observed-sale time are distinct. Validity ends at the earlier of check time plus the selected interval and publication time plus one hour. Old/missing observations, thin samples and uncertain units cannot earn deal colors. Rechecking an unchanged publication cannot make its publication or observed sales newer. Missing items stay unpriced.
+Check time, publication time and latest observed-sale time are distinct. Validity ends at the earlier of check time plus the selected interval and publication time plus one hour. An expired publication returned successfully uses a separate bounded 60/300/900-second retry sequence, capped at the selected interval; it cannot trigger a fetch loop or acquire a false publication age. Old/missing observations, thin samples and uncertain units cannot earn deal colors. Rechecking an unchanged publication cannot make its publication or observed sales newer. Missing items stay unpriced. Fresh-generation signals update existing rows even when their numeric price is unchanged, without new OCR, pointer movement or structural animation.
 
 Overlay annotations show the source's latest observed-sale age rather than repeating the snapshot check age. Stale/refresh warnings remain explicit. The larger item panel shows the source's latest observed-sale time. The full list does not supply a verified individual transaction amount; the market median is never presented as the latest sale price.
 
@@ -80,7 +82,13 @@ Thumbnail downloads share a two-request queue, bounded memory/disk caches and ne
 
 ## Tracking and translation
 
-Tracking starts stopped. Explicit Start enables EXP sampling once a second and a bounded bottom-right pickup-log crop at up to five samples a second, in the existing OCR process. The old wallet reader is removed. The pickup reader recognizes complete system messages, caches up to 128 line masks and never saves frames or chat. A bounded arrival ledger confirms lines in independent captures, aligns scrolling suffixes/prefixes, distinguishes repeated amounts, seeds existing messages on Start/Resume and after coverage gaps, and holds when known windows cover the log. It records gross visible pickups, not profit or wallet changes. Missed/ambiguous bursts can undercount. Legacy saved runs retain their wallet basis; new history/CSV records use pickups and record coverage gaps.
+Tracking starts stopped. Explicit Start enables EXP sampling once a second and a bounded bottom-right pickup-log crop at up to five samples a second. Pickup OCR uses a separate invocation of the same native binary, restricted to one thread and one in-flight crop; it shares the approved capture and cannot queue a backlog behind shop OCR. Stop releases that worker even when display reading is paused. Timed-out, superseded, covered and wrong-generation replies are discarded.
+
+The pickup reader supplies per-line geometry, kind and normalized visual evidence. Actual EXP, party-bonus and item-receipt messages anchor scrolling without adding currency. White glyphs fading over colored scenery use local blue-channel contrast; yellow EXP text is handled separately. Up to 256 normalized patterns are cached. Unreadable or partially recognized text is distinct from a proven empty log, and exhausting the OCR budget retains recognized rows.
+
+A bounded arrival ledger follows individual lines through upward scrolling, preserves short-lived pending arrivals, distinguishes repeated equal amounts and never confirms a new currency amount from unknown visual evidence alone. A changed, independently recognized bottom slot can prove a replacement burst; this proof cannot promote recovered historical lines above shared anchors. Existing lines are seeded on Start/Resume, after actual coverage loss and after known obstruction. There are at most 96 active records and 301 recent-rate buckets. Frames and chat are not persisted in normal operation. Totals describe confirmed visible pickups, not profit or wallet changes; genuinely unseen or unresolved arrivals can still be missed. Legacy saved runs retain their wallet basis; new history/CSV records use pickups and record coverage gaps.
+
+One recognition gate applies to automatic and manual capture regions, job submission and result acceptance. Losing verified game bounds creates an automatic hold separate from manual Pause. The active clock is capped at the last verified frame, so a stopped stream does not accrue time while a timeout is detected. Capture-generation and tracking-epoch checks discard late work. Fresh same-frame name proofs also bind pickup-only jobs to an established character without additional OCR. Two fresh matching readings confirm the original character before an automatic return; another client cannot reset the held run. Hidden activity is excluded by rebaselining EXP and seeding the returned pickup log. Numerical EXP failures alone do not remove valid game recognition, and map-history changes preserve totals and pace.
 
 EXP pace needs 30 seconds of accepted readings; pickup rates need 10 seconds. Covered/rejected intervals can extend the warmup beyond wall-clock time. A bounded four-reading numerical recovery buffer prevents a bad initial total from rejecting correct readings indefinitely. Replacement requires at least three distinct increasing EXP values, two percentages, compatible inferred totals and two seconds of fresh captures for the same identity/level. Unchanged or repeated-time observations cannot vote a different total into place. Reanchoring retains the session and confirmed gains but excludes the untrusted interval. Pause, capture loss, invalid figures and identity/level changes clear the evidence. The UI distinguishes unreadable pixels, unreadable identity, inconsistent values and an unconfirmed level/change.
 

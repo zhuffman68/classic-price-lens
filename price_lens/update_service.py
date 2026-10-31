@@ -1,6 +1,7 @@
 """One asynchronous update job and configurable checks while Lupin is open."""
 from concurrent.futures import ThreadPoolExecutor
 import json
+from math import ceil,isfinite
 import os
 import secrets
 from pathlib import Path
@@ -36,7 +37,10 @@ class UpdateService(QObject):
             except (OSError,ValueError):keys={}
             client=ReleaseClient(self.cache,keys)
         self.client=client;self.pool=ThreadPoolExecutor(max_workers=1,thread_name_prefix='lupin-updates')
-        self.timer=QTimer(self);self.timer.timeout.connect(self.check)
+        self.timer=QTimer(self);self.timer.setSingleShot(True);self.timer.setTimerType(Qt.TimerType.PreciseTimer)
+        self.timer.timeout.connect(self.periodic_check)
+        self.launch_timer=QTimer(self);self.launch_timer.setSingleShot(True);self.launch_timer.setTimerType(Qt.TimerType.PreciseTimer)
+        self.launch_timer.timeout.connect(self.launch_check)
         self.auth_timer=QTimer(self);self.auth_timer.setSingleShot(True);self.auth_timer.setInterval(120000);self.auth_timer.timeout.connect(self.cancel)
         self.completed.connect(self.finish,Qt.ConnectionType.QueuedConnection)
         self.transfer.connect(self.on_progress,Qt.ConnectionType.QueuedConnection)
@@ -45,8 +49,10 @@ class UpdateService(QObject):
         self.pending_result_notice=None
         self.state='idle';self.offer=None;self.error='';self.progress=(0,0);self.closed=False
         self.cancelled=threading.Event();self.helper=None;self.committed=False;self.downloaded=None
-        self.last_checked=float(settings.value('update-last-check',0,type=float))
-        self.not_before=float(settings.value('update-retry-after',0,type=float))
+        for field,key in (('last_checked','update-last-check'),('not_before','update-retry-after')):
+            try:value=float(settings.value(key,0,type=float))
+            except (TypeError,ValueError):value=0
+            setattr(self,field,value if isfinite(value) and value>=0 else 0)
         try:self.offer=client.cached_offer(__version__,self.target.name)
         except Exception:pass  # Optional cache never blocks startup or authorizes an unverified file.
         self.previous_result=None
@@ -63,17 +69,48 @@ class UpdateService(QObject):
     def busy(self):return self.state in ('checking','downloading','preparing','cancelling')
 
     def configure(self):
-        self.timer.stop()
+        if not self.settings.value('update-on-launch',True,type=bool):self.launch_timer.stop()
+        self.schedule()
+
+    def periodic_interval(self):
         minutes=self.settings.value('update-interval-minutes',360,type=int)
-        if self.target.installable and type(minutes) is int and 15<=minutes<=10080:self.timer.start(minutes*60000)
+        return minutes*60 if self.target.installable and type(minutes) is int and 15<=minutes<=10080 else None
+
+    @staticmethod
+    def delay_ms(seconds):
+        # Keep long server deadlines intact; one Qt timer wait is at most a week.
+        return max(1,ceil(min(604800,max(0,seconds))*1000))
+
+    def schedule(self):
+        self.timer.stop()
+        interval=self.periodic_interval()
+        if self.closed or self.committed or interval is None:return
+        now=self.clock()
+        due=self.last_checked+interval if self.last_checked else now+interval
+        if self.not_before:due=self.not_before
+        due=max(due,self.last_checked+60,self.not_before)
+        self.timer.start(self.delay_ms(max(1 if self.busy else 0,due-now)))
+
+    def periodic_check(self):
+        if self.closed or self.committed or self.periodic_interval() is None:return
+        if self.busy:self.timer.start(1000);return
+        if not self.check():self.schedule()
+
+    def launch_check(self):
+        if self.closed or self.committed or not self.target.installable or not self.settings.value('update-on-launch',True,type=bool):return
+        remaining=max(self.last_checked+60,self.not_before)-self.clock()
+        if self.busy or remaining>0:
+            self.launch_timer.start(self.delay_ms(max(1 if self.busy else 0,remaining)));return
+        self.check()
 
     def start(self):
+        if self.closed:return
         self.configure()
         self.changed.emit()
         if self.previous_result:self.announce_result(self.previous_result)
         if self.target.installable and self.settings.value('update-on-launch',True,type=bool):
-            delay=max(1500,min(604800000,round((max(self.last_checked+60,self.not_before)-self.clock())*1000)))
-            QTimer.singleShot(delay,self.check)
+            delay=max(1500,self.delay_ms(max(self.last_checked+60,self.not_before)-self.clock()))
+            self.launch_timer.start(delay)
 
     def announce_result(self,result):
         identity=str(result.get('attempt',''))+str(result.get('version',''))+str(result['ok'])
@@ -134,11 +171,13 @@ class UpdateService(QObject):
         self.pool.submit(run)
 
     def check(self):
-        if self.closed or self.busy or self.committed:return
-        if self.clock()<max(self.last_checked+60,self.not_before):return
-        if not self.target.name:self.error='Updates are not available for this platform';self.changed.emit();return
+        if self.closed or self.busy or self.committed:return False
+        if self.clock()<max(self.last_checked+60,self.not_before):return False
+        if not self.target.name:self.error='Updates are not available for this platform';self.changed.emit();return False
+        self.timer.stop();self.launch_timer.stop()
         self.state='checking';self.error='';self.changed.emit()
         self.submit('check',lambda cancel:self.client.check(__version__,self.target.name,cancel))
+        return True
 
     def download_install(self):
         if self.closed or self.busy or not self.offer or not self.target.installable or self.committed:return
@@ -183,33 +222,40 @@ class UpdateService(QObject):
         if kind=='check':self.last_checked=self.clock();self.settings.setValue('update-last-check',self.last_checked)
         if kind=='prepare':self.auth_timer.stop()
         if self.cancelled.is_set() or isinstance(error,Cancelled):
-            self.release_helper();self.state='available' if self.offer else 'idle';self.error='';self.changed.emit();return
+            self.release_helper();self.state='available' if self.offer else 'idle';self.error=''
+            if kind=='check':self.schedule()
+            self.changed.emit();return
         if error is not None:
             self.release_helper();self.state='available' if self.offer else 'idle'
             if isinstance(error,HTTPError):
                 if error.code in (403,429):
                     deadlines=[self.clock()+900]
                     for header,relative in (('X-RateLimit-Reset',False),('Retry-After',True)):
-                        value=error.headers.get(header)
+                        value=(error.headers or {}).get(header)
                         if value is None:continue
-                        try:deadlines.append(float(value)+(self.clock() if relative else 0))
+                        try:
+                            deadline=float(value)+(self.clock() if relative else 0)
+                            if isfinite(deadline):deadlines.append(deadline)
                         except (ValueError,TypeError):
                             if relative:
                                 try:
                                     from email.utils import parsedate_to_datetime
-                                    deadlines.append(parsedate_to_datetime(value).timestamp())
+                                    deadline=parsedate_to_datetime(value).timestamp()
+                                    if isfinite(deadline):deadlines.append(deadline)
                                 except (ValueError,TypeError,OverflowError):pass
                     self.not_before=max(deadlines)
                     self.settings.setValue('update-retry-after',self.not_before)
                 self.error='Release feed unavailable' if error.code==404 else 'Update connection unavailable'
             elif isinstance(error,(ValueError,OSError,TimeoutError)):self.error=str(error)[:200]
             else:self.error='The update could not be completed'
+            if kind=='check':self.schedule()
             self.changed.emit();return
         if kind=='check':
             self.not_before=0;self.settings.setValue('update-retry-after',0)
             self.offer=result;self.state='available' if result else 'idle'
             if result and self.settings.value('update-notified-version','')!=result['manifest']['version']:
                 value=result['manifest']['version'];self.settings.setValue('update-notified-version',value);self.available.emit(value)
+            self.schedule()
         elif kind=='download':
             self.downloaded=Path(result);self.state='preparing';self.auth_timer.start()
             self.submit('prepare',self.prepare_install)
@@ -240,6 +286,6 @@ class UpdateService(QObject):
         self.cancelled.set();self.release_helper();self.state='cancelling';self.changed.emit()
 
     def close(self):
-        self.closed=True;self.timer.stop();self.auth_timer.stop();self.result_timer.stop();self.ready_notice_timer.stop()
+        self.closed=True;self.timer.stop();self.launch_timer.stop();self.auth_timer.stop();self.result_timer.stop();self.ready_notice_timer.stop()
         if not self.committed:self.cancelled.set();self.release_helper()
         self.pool.shutdown(wait=False,cancel_futures=True)

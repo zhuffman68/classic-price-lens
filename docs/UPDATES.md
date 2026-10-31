@@ -5,11 +5,21 @@ tray. Settings provides a launch toggle, a 15-minute to seven-day interval,
 periodic checks off, and Check now. Checks share a one-minute cooldown and obey
 GitHub rate-limit backoff. Source checkouts can check manually but do not install.
 
+Launch and periodic checks have separately owned timers. Disabling launch checks
+cancels a delayed launch request; disabling periodic checks stops its timer. A
+busy job, the one-minute cooldown or a server retry deadline defers the due check
+instead of silently postponing it by another full interval. Successful and failed
+checks reschedule from completion, and only one network job can run at a time.
+
 An available release adds a Settings badge and tray action without moving the
 Prices layout. The desktop notification opens a compact update sheet. Download &
 install authorizes downloading, verification, installation and restart. Later
 leaves the badge; the same version is not announced on every check. Cancelling a
 download or system authentication leaves the current application running.
+
+The review sheet shows the new and installed versions, a short plain-text release
+summary, download information and Later / Download & install actions. A desktop
+notification itself never downloads or installs anything.
 
 The updater reads the public `zhuffman68/lupin` GitHub release feed without a token
 or browser. Only published stable releases and newer numeric versions qualify.

@@ -49,7 +49,9 @@ artificial consent timeout.
 
 The Classic World regular/cash catalog comes from OSMS Data Explorer. Prices use
 one validated MesoWatch full-market snapshot, refreshed asynchronously on launch
-and at the selected 5/15/30/60-minute interval. Item views, searches, watches and
+and before the earlier of the selected 5/15/30/60-minute interval and the source
+publication's one-hour expiry. An old publication uses bounded retries rather
+than a rapid refetch loop. Item views, searches, watches and
 OCR frames do not make individual price requests.
 
 A short-lived native helper loads the public market page through WebKitGTK on
@@ -100,11 +102,23 @@ minimum. Timers tick each second, while gains, rates and ETA use two-second
 snapshots. Pause and context changes appear immediately. A paused session does not
 switch to another visible character. Identity must be reconfirmed before Resume.
 
+Losing visual recognition automatically holds the session, independently of
+manual Pause. Timers stop at the last verified frame; the original character
+must be confirmed before automatic resumption. A manually selected rectangle
+also needs game anchors. Switching desktop focus alone does not pause a readable
+game, and unreadable EXP digits alone do not interrupt meso reading.
+
 Meso tracking counts confirmed visible pickup-log arrivals. It does not read the
 wallet, subtract potion costs, count trades or estimate profit. Start/Resume and
 coverage gaps seed existing messages so an old line is not counted again. Equal
 amounts in distinct arrivals can count separately. Fast or hidden arrivals may be
 missed; missing coverage is not treated as zero gain.
+
+A separate lightweight worker reads only the pickup crop, so shop OCR cannot
+hold up its queue. Per-line position and visual evidence follow scrolling and
+fading; EXP, party and item receipts provide non-currency anchors. Unknown or
+partly faded text does not clear the log or create a guessed amount. Both the
+work queue and arrival history are bounded, and Stop releases the worker.
 
 EXP and MESO have separate visibility checkboxes. Their compact overlays stack
 beside the bottom-left HUD, narrowing before using the above-HUD fallback. Native

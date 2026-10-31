@@ -5,11 +5,12 @@ import time
 import unittest
 
 from PySide6.QtCore import QCoreApplication, QEvent, QRect
-from PySide6.QtGui import QColor, QImage, QPainter
+from PySide6.QtGui import QImage, QPainter
 from PySide6.QtWidgets import QApplication
 
 from price_lens.capture import PixelReader
 from price_lens.tracking_identity import proof_pixels
+from test_game_area import game_frame
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -36,8 +37,7 @@ class ExperienceCaptureTests(unittest.TestCase):
         shops, exp = [], []
         reader.reading.connect(shops.append)
         reader.experience.connect(lambda result:exp.append(result) if 'experience' in result else None)
-        frame = QImage(1366,768,QImage.Format.Format_RGBA8888)
-        frame.fill(QColor("#373f45"))
+        frame = game_frame(x=0,y=0,width=1366,height=768,desktop=(1366,768))
         painter = QPainter(frame)
         painter.drawImage(0,640,QImage(str(ROOT/"vendor/minerva/samples/exp-bar/100300__64.49--ideal-ratio-1366x768-strip.png")))
         painter.drawImage(340,120,QImage(str(ROOT/"vendor/minerva/samples/player-shop/gems-and-ores.png")))
@@ -45,6 +45,8 @@ class ExperienceCaptureTests(unittest.TestCase):
         try:
             self.wait(lambda:reader.process.state() == reader.process.ProcessState.Running)
             pid = reader.process.processId()
+            reader.on_stream_frame(frame,time.monotonic())
+            self.wait(lambda:reader.manual_game_area is not None)
             reader.on_stream_frame(frame,time.monotonic())
             self.wait(lambda:bool(shops) and bool(exp))
             self.assertEqual(exp[-1]["experience"]["bar"]["exp"],100300)

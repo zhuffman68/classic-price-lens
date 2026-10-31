@@ -1,5 +1,44 @@
 # Verification — 2026-10-30
 
+## 1.0.1 regression coverage
+
+- The configured source environment passes **863 Python tests**, with three
+  platform/offscreen skips, in 86.301 seconds. Nine release-tool tests pass.
+  New cases exercise lost recognition, manual-crop validation, source-frame
+  clocks, original-character reacquisition, epoch rejection, independent pickup
+  work, covered/late results, snapshot expiry and real update-timer delivery.
+- Six real-OCR Python checks and four Rust pickup checks cover system-message
+  parsing and fade normalization. Private replay of 205 captured crops recovers
+  the complete annotated eight-arrival burst: 165 mesos, including the previously
+  identified 137 and a further visible pickup of 28. The initial old pickup is
+  seeded, not counted. The checked-in trace has no screenshots, user names,
+  private text, absolute timestamps or original visual hashes.
+- Structured ledger tests cover repeated equal amounts, partial/unknown reads,
+  recovered old prefixes, known coverage loss, invalid geometry, duplicate and
+  out-of-order delivery, 1,800 distinct arrivals, and bounded records/buckets.
+  Unknown-only evidence cannot confirm a new currency amount.
+- The stale-to-fresh integration keeps the shop, cursor and numeric price fixed.
+  Production queued signals update the real annotation receiver without another
+  OCR pass or changing the row object/key/content identity.
+- Update checks are exercised through real Qt timer events, including two
+  periodic checks, cooldown/busy/rate-deadline deferral, interval changes,
+  disabling a pending launch check, and persistent once-per-version notices.
+  An isolated styled preview verifies the compact review sheet; native desktop
+  notifications are mocked rather than displayed over the user's session.
+- Linux musl and Windows gnullvm readers were rebuilt with pinned Rust 1.98.1.
+  Linux is static PIE without dynamic dependencies; Windows retains the prior
+  DLL import set and existing unmodified libunwind dependency.
+- A separate 30-second candidate check reused the approved sharing session in
+  the Free Market without restarting the installed app. It kept approximately
+  five crop samples per second and added no false income in the absence of
+  pickups. This is idle live coverage evidence, not an active-training accuracy
+  or loaded-memory measurement; the counted training evidence is the replay.
+- Native Windows acceptance remains unavailable: the dedicated saved QA clone
+  resumed headless but supplied neither a usable framebuffer nor GuestControl.
+  It was cleanly saved again without OS reconfiguration or game interaction.
+  Package transactions, final hashes and publication checks are recorded in
+  the release's accompanying `VERIFICATION-1.0.1.md`.
+
 ## Published 1.0.0 distribution
 
 - The public stable release contains three native packages, checksums, signed

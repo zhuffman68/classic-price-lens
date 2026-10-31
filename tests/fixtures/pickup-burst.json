@@ -1,0 +1,1590 @@
+{
+  "schema": 1,
+  "description": "Anonymized screen-log regression: initial visible18 is seeded; eight new arrivals total165. No screenshots, names, chat, absolute times or original glyph hashes.",
+  "expected_gain": 165,
+  "arrivals": [
+    28,
+    9,
+    19,
+    18,
+    20,
+    21,
+    30,
+    20
+  ],
+  "frames": [
+    {
+      "atMs": 0,
+      "pickups": {
+        "lines": [
+          {
+            "key": "mesos:18",
+            "kind": "meso",
+            "mesos": 18,
+            "rect": {
+              "height": 11,
+              "width": 163,
+              "x": 471,
+              "y": 156
+            },
+            "visualKey": "shape-001"
+          }
+        ],
+        "partial": false,
+        "state": "readable",
+        "valid": true
+      },
+      "pickupsRead": true
+    },
+    {
+      "atMs": 600,
+      "pickups": {
+        "lines": [],
+        "partial": false,
+        "state": "empty",
+        "valid": true
+      },
+      "pickupsRead": true
+    },
+    {
+      "atMs": 805,
+      "pickups": {
+        "lines": [],
+        "partial": false,
+        "state": "empty",
+        "valid": true
+      },
+      "pickupsRead": true
+    },
+    {
+      "atMs": 1000,
+      "pickups": {
+        "lines": [],
+        "partial": false,
+        "state": "empty",
+        "valid": true
+      },
+      "pickupsRead": true
+    },
+    {
+      "atMs": 1201,
+      "pickups": {
+        "lines": [],
+        "partial": false,
+        "state": "empty",
+        "valid": true
+      },
+      "pickupsRead": true
+    },
+    {
+      "atMs": 1400,
+      "pickups": {
+        "lines": [],
+        "partial": false,
+        "state": "empty",
+        "valid": true
+      },
+      "pickupsRead": true
+    },
+    {
+      "atMs": 1601,
+      "pickups": {
+        "lines": [
+          {
+            "key": "exp:7",
+            "kind": "exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 119,
+              "x": 515,
+              "y": 128
+            },
+            "visualKey": "shape-002"
+          },
+          {
+            "key": "party_exp:1",
+            "kind": "party_exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 143,
+              "x": 491,
+              "y": 142
+            },
+            "visualKey": "shape-003"
+          },
+          {
+            "key": "item:receipt-001",
+            "kind": "item",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 167,
+              "x": 467,
+              "y": 156
+            },
+            "visualKey": "shape-004"
+          }
+        ],
+        "partial": false,
+        "state": "readable",
+        "valid": true
+      },
+      "pickupsRead": true
+    },
+    {
+      "atMs": 2101,
+      "pickups": {
+        "lines": [
+          {
+            "key": "exp:7",
+            "kind": "exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 119,
+              "x": 515,
+              "y": 100
+            },
+            "visualKey": "shape-002"
+          },
+          {
+            "key": "party_exp:1",
+            "kind": "party_exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 143,
+              "x": 491,
+              "y": 114
+            },
+            "visualKey": "shape-003"
+          },
+          {
+            "key": "item:receipt-001",
+            "kind": "item",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 167,
+              "x": 467,
+              "y": 128
+            },
+            "visualKey": "shape-004"
+          },
+          {
+            "key": "item:receipt-002",
+            "kind": "item",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 191,
+              "x": 443,
+              "y": 142
+            },
+            "visualKey": "shape-005"
+          },
+          {
+            "key": "mesos:28",
+            "kind": "meso",
+            "mesos": 28,
+            "rect": {
+              "height": 11,
+              "width": 163,
+              "x": 471,
+              "y": 156
+            },
+            "visualKey": "shape-006"
+          }
+        ],
+        "partial": false,
+        "state": "readable",
+        "valid": true
+      },
+      "pickupsRead": true
+    },
+    {
+      "atMs": 3001,
+      "pickups": {
+        "lines": [
+          {
+            "key": "item:receipt-002",
+            "kind": "item",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 191,
+              "x": 443,
+              "y": 86
+            },
+            "visualKey": "shape-005"
+          },
+          {
+            "key": "mesos:28",
+            "kind": "meso",
+            "mesos": 28,
+            "rect": {
+              "height": 11,
+              "width": 163,
+              "x": 471,
+              "y": 100
+            },
+            "visualKey": "shape-006"
+          },
+          {
+            "key": "exp:23",
+            "kind": "exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 126,
+              "x": 508,
+              "y": 114
+            },
+            "visualKey": "shape-007"
+          },
+          {
+            "key": "party_exp:2",
+            "kind": "party_exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 143,
+              "x": 491,
+              "y": 128
+            },
+            "visualKey": "shape-008"
+          },
+          {
+            "key": "exp:23",
+            "kind": "exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 126,
+              "x": 508,
+              "y": 142
+            },
+            "visualKey": "shape-007"
+          },
+          {
+            "key": "party_exp:2",
+            "kind": "party_exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 143,
+              "x": 491,
+              "y": 156
+            },
+            "visualKey": "shape-008"
+          }
+        ],
+        "partial": false,
+        "state": "readable",
+        "valid": true
+      },
+      "pickupsRead": true
+    },
+    {
+      "atMs": 3203,
+      "pickups": {
+        "lines": [
+          {
+            "key": "exp:23",
+            "kind": "exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 126,
+              "x": 508,
+              "y": 86
+            },
+            "visualKey": "shape-007"
+          },
+          {
+            "key": "party_exp:2",
+            "kind": "party_exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 143,
+              "x": 491,
+              "y": 100
+            },
+            "visualKey": "shape-008"
+          },
+          {
+            "key": "exp:23",
+            "kind": "exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 126,
+              "x": 508,
+              "y": 114
+            },
+            "visualKey": "shape-007"
+          },
+          {
+            "key": "party_exp:2",
+            "kind": "party_exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 143,
+              "x": 491,
+              "y": 128
+            },
+            "visualKey": "shape-008"
+          },
+          {
+            "key": "exp:15",
+            "kind": "exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 126,
+              "x": 508,
+              "y": 142
+            },
+            "visualKey": "shape-009"
+          },
+          {
+            "key": "party_exp:2",
+            "kind": "party_exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 143,
+              "x": 491,
+              "y": 156
+            },
+            "visualKey": "shape-008"
+          }
+        ],
+        "partial": false,
+        "state": "readable",
+        "valid": true
+      },
+      "pickupsRead": true
+    },
+    {
+      "atMs": 3500,
+      "pickups": {
+        "lines": [
+          {
+            "key": "party_exp:2",
+            "kind": "party_exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 143,
+              "x": 491,
+              "y": 86
+            },
+            "visualKey": "shape-008"
+          },
+          {
+            "key": "exp:23",
+            "kind": "exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 126,
+              "x": 508,
+              "y": 100
+            },
+            "visualKey": "shape-007"
+          },
+          {
+            "key": "party_exp:2",
+            "kind": "party_exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 143,
+              "x": 491,
+              "y": 114
+            },
+            "visualKey": "shape-008"
+          },
+          {
+            "key": "exp:15",
+            "kind": "exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 126,
+              "x": 508,
+              "y": 128
+            },
+            "visualKey": "shape-009"
+          },
+          {
+            "key": "party_exp:2",
+            "kind": "party_exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 143,
+              "x": 491,
+              "y": 142
+            },
+            "visualKey": "shape-008"
+          },
+          {
+            "key": "mesos:9",
+            "kind": "meso",
+            "mesos": 9,
+            "rect": {
+              "height": 11,
+              "width": 156,
+              "x": 478,
+              "y": 156
+            },
+            "visualKey": "shape-010"
+          }
+        ],
+        "partial": false,
+        "state": "readable",
+        "valid": true
+      },
+      "pickupsRead": true
+    },
+    {
+      "atMs": 3700,
+      "pickups": {
+        "lines": [
+          {
+            "key": "party_exp:2",
+            "kind": "party_exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 143,
+              "x": 491,
+              "y": 86
+            },
+            "visualKey": "shape-008"
+          },
+          {
+            "key": "exp:23",
+            "kind": "exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 126,
+              "x": 508,
+              "y": 100
+            },
+            "visualKey": "shape-007"
+          },
+          {
+            "key": "party_exp:2",
+            "kind": "party_exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 143,
+              "x": 491,
+              "y": 114
+            },
+            "visualKey": "shape-008"
+          },
+          {
+            "key": "exp:15",
+            "kind": "exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 126,
+              "x": 508,
+              "y": 128
+            },
+            "visualKey": "shape-009"
+          },
+          {
+            "key": "party_exp:2",
+            "kind": "party_exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 143,
+              "x": 491,
+              "y": 142
+            },
+            "visualKey": "shape-008"
+          },
+          {
+            "key": "mesos:9",
+            "kind": "meso",
+            "mesos": 9,
+            "rect": {
+              "height": 11,
+              "width": 156,
+              "x": 478,
+              "y": 156
+            },
+            "visualKey": "shape-010"
+          }
+        ],
+        "partial": false,
+        "state": "readable",
+        "valid": true
+      },
+      "pickupsRead": true
+    },
+    {
+      "atMs": 3900,
+      "pickups": {
+        "lines": [
+          {
+            "key": "visual:shape-011",
+            "kind": "unknown",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 143,
+              "x": 491,
+              "y": 86
+            },
+            "visualKey": "shape-011"
+          },
+          {
+            "key": "exp:23",
+            "kind": "exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 126,
+              "x": 508,
+              "y": 100
+            },
+            "visualKey": "shape-007"
+          },
+          {
+            "key": "visual:shape-012",
+            "kind": "unknown",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 143,
+              "x": 491,
+              "y": 114
+            },
+            "visualKey": "shape-012"
+          },
+          {
+            "key": "exp:15",
+            "kind": "exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 126,
+              "x": 508,
+              "y": 128
+            },
+            "visualKey": "shape-009"
+          },
+          {
+            "key": "party_exp:2",
+            "kind": "party_exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 143,
+              "x": 491,
+              "y": 142
+            },
+            "visualKey": "shape-008"
+          },
+          {
+            "key": "mesos:9",
+            "kind": "meso",
+            "mesos": 9,
+            "rect": {
+              "height": 11,
+              "width": 156,
+              "x": 478,
+              "y": 156
+            },
+            "visualKey": "shape-010"
+          }
+        ],
+        "partial": true,
+        "state": "readable",
+        "valid": true
+      },
+      "pickupsRead": true
+    },
+    {
+      "atMs": 4100,
+      "pickups": {
+        "lines": [
+          {
+            "key": "visual:shape-013",
+            "kind": "unknown",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 576,
+              "x": 58,
+              "y": 86
+            },
+            "visualKey": "shape-013"
+          },
+          {
+            "key": "exp:23",
+            "kind": "exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 126,
+              "x": 508,
+              "y": 100
+            },
+            "visualKey": "shape-007"
+          },
+          {
+            "key": "visual:shape-014",
+            "kind": "unknown",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 143,
+              "x": 491,
+              "y": 114
+            },
+            "visualKey": "shape-014"
+          },
+          {
+            "key": "exp:15",
+            "kind": "exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 126,
+              "x": 508,
+              "y": 128
+            },
+            "visualKey": "shape-009"
+          },
+          {
+            "key": "party_exp:2",
+            "kind": "party_exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 143,
+              "x": 491,
+              "y": 142
+            },
+            "visualKey": "shape-008"
+          },
+          {
+            "key": "mesos:9",
+            "kind": "meso",
+            "mesos": 9,
+            "rect": {
+              "height": 11,
+              "width": 156,
+              "x": 478,
+              "y": 156
+            },
+            "visualKey": "shape-010"
+          }
+        ],
+        "partial": true,
+        "state": "readable",
+        "valid": true
+      },
+      "pickupsRead": true
+    },
+    {
+      "atMs": 4300,
+      "pickups": {
+        "lines": [
+          {
+            "key": "exp:15",
+            "kind": "exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 126,
+              "x": 508,
+              "y": 86
+            },
+            "visualKey": "shape-009"
+          },
+          {
+            "key": "party_exp:2",
+            "kind": "party_exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 143,
+              "x": 491,
+              "y": 100
+            },
+            "visualKey": "shape-008"
+          },
+          {
+            "key": "exp:23",
+            "kind": "exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 126,
+              "x": 508,
+              "y": 114
+            },
+            "visualKey": "shape-007"
+          },
+          {
+            "key": "party_exp:2",
+            "kind": "party_exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 143,
+              "x": 491,
+              "y": 128
+            },
+            "visualKey": "shape-008"
+          },
+          {
+            "key": "exp:15",
+            "kind": "exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 126,
+              "x": 508,
+              "y": 142
+            },
+            "visualKey": "shape-009"
+          },
+          {
+            "key": "party_exp:2",
+            "kind": "party_exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 143,
+              "x": 491,
+              "y": 156
+            },
+            "visualKey": "shape-008"
+          }
+        ],
+        "partial": false,
+        "state": "readable",
+        "valid": true
+      },
+      "pickupsRead": true
+    },
+    {
+      "atMs": 4804,
+      "pickups": {
+        "lines": [
+          {
+            "key": "exp:15",
+            "kind": "exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 126,
+              "x": 508,
+              "y": 86
+            },
+            "visualKey": "shape-009"
+          },
+          {
+            "key": "party_exp:2",
+            "kind": "party_exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 143,
+              "x": 491,
+              "y": 100
+            },
+            "visualKey": "shape-008"
+          },
+          {
+            "key": "exp:23",
+            "kind": "exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 126,
+              "x": 508,
+              "y": 114
+            },
+            "visualKey": "shape-007"
+          },
+          {
+            "key": "party_exp:2",
+            "kind": "party_exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 143,
+              "x": 491,
+              "y": 128
+            },
+            "visualKey": "shape-008"
+          },
+          {
+            "key": "exp:15",
+            "kind": "exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 126,
+              "x": 508,
+              "y": 142
+            },
+            "visualKey": "shape-009"
+          },
+          {
+            "key": "party_exp:2",
+            "kind": "party_exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 143,
+              "x": 491,
+              "y": 156
+            },
+            "visualKey": "shape-008"
+          }
+        ],
+        "partial": false,
+        "state": "readable",
+        "valid": true
+      },
+      "pickupsRead": true
+    },
+    {
+      "atMs": 5200,
+      "pickups": {
+        "lines": [
+          {
+            "key": "exp:23",
+            "kind": "exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 126,
+              "x": 508,
+              "y": 86
+            },
+            "visualKey": "shape-007"
+          },
+          {
+            "key": "party_exp:2",
+            "kind": "party_exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 143,
+              "x": 491,
+              "y": 100
+            },
+            "visualKey": "shape-008"
+          },
+          {
+            "key": "exp:15",
+            "kind": "exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 126,
+              "x": 508,
+              "y": 114
+            },
+            "visualKey": "shape-009"
+          },
+          {
+            "key": "visual:shape-015",
+            "kind": "unknown",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 143,
+              "x": 491,
+              "y": 128
+            },
+            "visualKey": "shape-015"
+          },
+          {
+            "key": "mesos:19",
+            "kind": "meso",
+            "mesos": 19,
+            "rect": {
+              "height": 11,
+              "width": 163,
+              "x": 471,
+              "y": 142
+            },
+            "visualKey": "shape-016"
+          },
+          {
+            "key": "mesos:18",
+            "kind": "meso",
+            "mesos": 18,
+            "rect": {
+              "height": 11,
+              "width": 163,
+              "x": 471,
+              "y": 156
+            },
+            "visualKey": "shape-001"
+          }
+        ],
+        "partial": true,
+        "state": "readable",
+        "valid": true
+      },
+      "pickupsRead": true
+    },
+    {
+      "atMs": 5700,
+      "pickups": {
+        "lines": [
+          {
+            "key": "mesos:19",
+            "kind": "meso",
+            "mesos": 19,
+            "rect": {
+              "height": 11,
+              "width": 163,
+              "x": 471,
+              "y": 100
+            },
+            "visualKey": "shape-016"
+          },
+          {
+            "key": "mesos:18",
+            "kind": "meso",
+            "mesos": 18,
+            "rect": {
+              "height": 11,
+              "width": 163,
+              "x": 471,
+              "y": 114
+            },
+            "visualKey": "shape-001"
+          },
+          {
+            "key": "mesos:20",
+            "kind": "meso",
+            "mesos": 20,
+            "rect": {
+              "height": 11,
+              "width": 163,
+              "x": 471,
+              "y": 128
+            },
+            "visualKey": "shape-017"
+          },
+          {
+            "key": "exp:15",
+            "kind": "exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 126,
+              "x": 508,
+              "y": 142
+            },
+            "visualKey": "shape-009"
+          },
+          {
+            "key": "party_exp:2",
+            "kind": "party_exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 143,
+              "x": 491,
+              "y": 156
+            },
+            "visualKey": "shape-008"
+          }
+        ],
+        "partial": false,
+        "state": "readable",
+        "valid": true
+      },
+      "pickupsRead": true
+    },
+    {
+      "atMs": 6300,
+      "pickups": {
+        "lines": [
+          {
+            "key": "mesos:18",
+            "kind": "meso",
+            "mesos": 18,
+            "rect": {
+              "height": 11,
+              "width": 163,
+              "x": 471,
+              "y": 86
+            },
+            "visualKey": "shape-001"
+          },
+          {
+            "key": "mesos:20",
+            "kind": "meso",
+            "mesos": 20,
+            "rect": {
+              "height": 11,
+              "width": 163,
+              "x": 471,
+              "y": 100
+            },
+            "visualKey": "shape-017"
+          },
+          {
+            "key": "exp:15",
+            "kind": "exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 126,
+              "x": 508,
+              "y": 114
+            },
+            "visualKey": "shape-009"
+          },
+          {
+            "key": "party_exp:2",
+            "kind": "party_exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 143,
+              "x": 491,
+              "y": 128
+            },
+            "visualKey": "shape-008"
+          },
+          {
+            "key": "exp:7",
+            "kind": "exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 119,
+              "x": 515,
+              "y": 142
+            },
+            "visualKey": "shape-002"
+          },
+          {
+            "key": "party_exp:1",
+            "kind": "party_exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 143,
+              "x": 491,
+              "y": 156
+            },
+            "visualKey": "shape-003"
+          }
+        ],
+        "partial": false,
+        "state": "readable",
+        "valid": true
+      },
+      "pickupsRead": true
+    },
+    {
+      "atMs": 6500,
+      "pickups": {
+        "lines": [
+          {
+            "key": "mesos:20",
+            "kind": "meso",
+            "mesos": 20,
+            "rect": {
+              "height": 11,
+              "width": 163,
+              "x": 471,
+              "y": 100
+            },
+            "visualKey": "shape-017"
+          },
+          {
+            "key": "exp:15",
+            "kind": "exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 126,
+              "x": 508,
+              "y": 114
+            },
+            "visualKey": "shape-009"
+          },
+          {
+            "key": "visual:shape-018",
+            "kind": "unknown",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 143,
+              "x": 491,
+              "y": 128
+            },
+            "visualKey": "shape-018"
+          },
+          {
+            "key": "exp:7",
+            "kind": "exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 119,
+              "x": 515,
+              "y": 142
+            },
+            "visualKey": "shape-002"
+          },
+          {
+            "key": "party_exp:1",
+            "kind": "party_exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 143,
+              "x": 491,
+              "y": 156
+            },
+            "visualKey": "shape-003"
+          }
+        ],
+        "partial": true,
+        "state": "readable",
+        "valid": true
+      },
+      "pickupsRead": true
+    },
+    {
+      "atMs": 7000,
+      "pickups": {
+        "lines": [
+          {
+            "key": "exp:7",
+            "kind": "exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 119,
+              "x": 515,
+              "y": 142
+            },
+            "visualKey": "shape-002"
+          }
+        ],
+        "partial": false,
+        "state": "readable",
+        "valid": true
+      },
+      "pickupsRead": true
+    },
+    {
+      "atMs": 7200,
+      "pickups": {
+        "lines": [
+          {
+            "key": "exp:15",
+            "kind": "exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 126,
+              "x": 508,
+              "y": 142
+            },
+            "visualKey": "shape-009"
+          },
+          {
+            "key": "party_exp:2",
+            "kind": "party_exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 143,
+              "x": 491,
+              "y": 156
+            },
+            "visualKey": "shape-008"
+          }
+        ],
+        "partial": false,
+        "state": "readable",
+        "valid": true
+      },
+      "pickupsRead": true
+    },
+    {
+      "atMs": 7401,
+      "pickups": {
+        "lines": [
+          {
+            "key": "exp:15",
+            "kind": "exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 126,
+              "x": 508,
+              "y": 128
+            },
+            "visualKey": "shape-009"
+          },
+          {
+            "key": "party_exp:2",
+            "kind": "party_exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 143,
+              "x": 491,
+              "y": 142
+            },
+            "visualKey": "shape-008"
+          },
+          {
+            "key": "item:receipt-003",
+            "kind": "item",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 153,
+              "x": 481,
+              "y": 156
+            },
+            "visualKey": "shape-019"
+          }
+        ],
+        "partial": false,
+        "state": "readable",
+        "valid": true
+      },
+      "pickupsRead": true
+    },
+    {
+      "atMs": 7601,
+      "pickups": {
+        "lines": [
+          {
+            "key": "exp:15",
+            "kind": "exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 126,
+              "x": 508,
+              "y": 114
+            },
+            "visualKey": "shape-009"
+          },
+          {
+            "key": "party_exp:2",
+            "kind": "party_exp",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 143,
+              "x": 491,
+              "y": 128
+            },
+            "visualKey": "shape-008"
+          },
+          {
+            "key": "item:receipt-003",
+            "kind": "item",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 153,
+              "x": 481,
+              "y": 142
+            },
+            "visualKey": "shape-019"
+          },
+          {
+            "key": "item:receipt-004",
+            "kind": "item",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 180,
+              "x": 454,
+              "y": 156
+            },
+            "visualKey": "shape-020"
+          }
+        ],
+        "partial": false,
+        "state": "readable",
+        "valid": true
+      },
+      "pickupsRead": true
+    },
+    {
+      "atMs": 8000,
+      "pickups": {
+        "lines": [
+          {
+            "key": "visual:shape-021",
+            "kind": "unknown",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 468,
+              "x": 166,
+              "y": 86
+            },
+            "visualKey": "shape-021"
+          },
+          {
+            "key": "mesos:21",
+            "kind": "meso",
+            "mesos": 21,
+            "rect": {
+              "height": 11,
+              "width": 163,
+              "x": 471,
+              "y": 100
+            },
+            "visualKey": "shape-022"
+          },
+          {
+            "key": "item:receipt-005",
+            "kind": "item",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 160,
+              "x": 474,
+              "y": 114
+            },
+            "visualKey": "shape-023"
+          },
+          {
+            "key": "mesos:30",
+            "kind": "meso",
+            "mesos": 30,
+            "rect": {
+              "height": 11,
+              "width": 163,
+              "x": 471,
+              "y": 128
+            },
+            "visualKey": "shape-024"
+          },
+          {
+            "key": "mesos:20",
+            "kind": "meso",
+            "mesos": 20,
+            "rect": {
+              "height": 11,
+              "width": 163,
+              "x": 471,
+              "y": 142
+            },
+            "visualKey": "shape-017"
+          },
+          {
+            "key": "item:receipt-001",
+            "kind": "item",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 167,
+              "x": 467,
+              "y": 156
+            },
+            "visualKey": "shape-004"
+          }
+        ],
+        "partial": true,
+        "state": "readable",
+        "valid": true
+      },
+      "pickupsRead": true
+    },
+    {
+      "atMs": 8600,
+      "pickups": {
+        "lines": [
+          {
+            "key": "visual:shape-025",
+            "kind": "unknown",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 468,
+              "x": 166,
+              "y": 86
+            },
+            "visualKey": "shape-025"
+          },
+          {
+            "key": "mesos:21",
+            "kind": "meso",
+            "mesos": 21,
+            "rect": {
+              "height": 11,
+              "width": 163,
+              "x": 471,
+              "y": 100
+            },
+            "visualKey": "shape-022"
+          },
+          {
+            "key": "item:receipt-005",
+            "kind": "item",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 160,
+              "x": 474,
+              "y": 114
+            },
+            "visualKey": "shape-023"
+          },
+          {
+            "key": "mesos:30",
+            "kind": "meso",
+            "mesos": 30,
+            "rect": {
+              "height": 11,
+              "width": 163,
+              "x": 471,
+              "y": 128
+            },
+            "visualKey": "shape-024"
+          },
+          {
+            "key": "mesos:20",
+            "kind": "meso",
+            "mesos": 20,
+            "rect": {
+              "height": 11,
+              "width": 163,
+              "x": 471,
+              "y": 142
+            },
+            "visualKey": "shape-017"
+          },
+          {
+            "key": "item:receipt-001",
+            "kind": "item",
+            "mesos": null,
+            "rect": {
+              "height": 11,
+              "width": 167,
+              "x": 467,
+              "y": 156
+            },
+            "visualKey": "shape-004"
+          }
+        ],
+        "partial": true,
+        "state": "readable",
+        "valid": true
+      },
+      "pickupsRead": true
+    },
+    {
+      "atMs": 9118,
+      "pickups": {
+        "lines": [],
+        "partial": false,
+        "state": "empty",
+        "valid": true
+      },
+      "pickupsRead": true
+    },
+    {
+      "atMs": 9401,
+      "pickups": {
+        "lines": [],
+        "partial": false,
+        "state": "empty",
+        "valid": true
+      },
+      "pickupsRead": true
+    },
+    {
+      "atMs": 9600,
+      "pickups": {
+        "lines": [],
+        "partial": false,
+        "state": "empty",
+        "valid": true
+      },
+      "pickupsRead": true
+    },
+    {
+      "atMs": 9900,
+      "pickups": {
+        "lines": [],
+        "partial": false,
+        "state": "empty",
+        "valid": true
+      },
+      "pickupsRead": true
+    },
+    {
+      "atMs": 10100,
+      "pickups": {
+        "lines": [],
+        "partial": false,
+        "state": "empty",
+        "valid": true
+      },
+      "pickupsRead": true
+    },
+    {
+      "atMs": 10300,
+      "pickups": {
+        "lines": [],
+        "partial": false,
+        "state": "empty",
+        "valid": true
+      },
+      "pickupsRead": true
+    },
+    {
+      "atMs": 10500,
+      "pickups": {
+        "lines": [],
+        "partial": false,
+        "state": "empty",
+        "valid": true
+      },
+      "pickupsRead": true
+    },
+    {
+      "atMs": 10700,
+      "pickups": {
+        "lines": [],
+        "partial": false,
+        "state": "empty",
+        "valid": true
+      },
+      "pickupsRead": true
+    }
+  ]
+}

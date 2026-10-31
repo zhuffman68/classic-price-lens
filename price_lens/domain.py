@@ -7,6 +7,7 @@ import time
 WORLD = "Classic World"
 DEFAULT_TTL = 15 * 60
 MAX_MARKET_AGE = 24 * 60 * 60
+MAX_SNAPSHOT_AGE = 60 * 60
 
 
 def number(value):
@@ -167,7 +168,7 @@ class Quote:
 
     def expires_at(self, ttl=DEFAULT_TTL):
         if self.published_at is not None:
-            return min(self.fetched_at + ttl, self.published_at + 3600)
+            return min(self.fetched_at + ttl, self.published_at + MAX_SNAPSHOT_AGE)
         return self.fetched_at + ttl
 
     def cache_valid(self, now=None, ttl=DEFAULT_TTL):

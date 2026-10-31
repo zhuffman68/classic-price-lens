@@ -157,7 +157,8 @@ class SnapshotTests(unittest.TestCase):
                 updater.refresh();updater.set_enabled(True)
                 self.assertEqual(start.call_count, 1)
                 updater.accept(document(self.now))
-                self.assertEqual(updater.timer.interval(),900000)
+                self.assertGreater(updater.timer.interval(),895000)
+                self.assertLessEqual(updater.timer.interval(),900000)
                 updater.set_interval(300)
                 self.assertGreater(updater.timer.interval(),295000)
                 self.assertLessEqual(updater.timer.interval(),300000)
@@ -174,7 +175,8 @@ class SnapshotTests(unittest.TestCase):
             updater.enabled = True
             doc = document(self.now);doc["generated_at"] = iso(self.now-3601)
             updater.accept(doc)
-            self.assertEqual(updater.timer.interval(), 900000)
+            self.assertGreater(updater.timer.interval(), 59000)
+            self.assertLessEqual(updater.timer.interval(), 60000)
             self.assertFalse(self.store.quote(self.item).fresh(self.now))
         finally:updater.close()
 

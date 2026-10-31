@@ -155,8 +155,159 @@ class ExperienceUiTests(unittest.TestCase):
     def test_global_context_loss_does_not_count_hidden_gain(self):
         self.panel.set_connected(True);self.panel.start();self.feed(2000);self.feed(2010,1)
         self.panel.set_connected(False);self.panel.set_connected(True)
-        self.feed(2500,1);self.feed(2510,1)
+        self.feed(2500,1);self.assertTrue(self.panel.recognition_held)
+        self.feed(2510,1);self.assertFalse(self.panel.recognition_held)
+        self.feed(2520,1)
         self.assertEqual(self.panel.tracker.run.exp,20)
+
+    def test_recognition_hold_preserves_session_and_pace_while_another_character_is_visible(self):
+        self.train();self.pickup();self.pickup(600);self.pickup(600)
+        panel=self.panel;run=panel.tracker.run
+        panel.tracker.map_name=run.map_name='Original map'
+        self.now+=2;panel.refresh()
+        panel.set_connected(True,frame_at=self.now)
+        totals=panel.totals();seconds=panel.mesos.seconds;money=panel.mesos.gain
+        current=panel.tracker.current;events=list(panel.tracker.events);recent=list(panel.mesos.recent)
+        pace=(panel.rate.text(),panel.hour_rate.text(),panel.eta.text(),panel.meso_rate.text())
+        epoch=panel.tracking_epoch
+        panel.set_connected(False,frame_at=0)
+        self.assertGreater(panel.tracking_epoch,epoch)
+        self.now+=60
+        panel.feed({'atMs':int(self.now*1000),'trackingEpoch':panel.tracking_epoch,
+                    'experience':payload(5000),'pickupsRead':True,'pickups':{'valid':True,'lines':[]}})
+        panel.set_connected(True,frame_at=self.now)
+        for _ in range(3):
+            self.now+=1;panel.set_connected(True,frame_at=self.now)
+            panel.feed({'atMs':int(self.now*1000),'trackingEpoch':panel.tracking_epoch,
+                        'experience':{**payload(5000,name='OtherCharacter'),'mapRead':True,'map':{'map':'Other map'}}})
+        self.assertTrue(panel.recognition_held);self.assertFalse(panel.user_paused)
+        self.assertIs(panel.tracker.run,run);self.assertEqual(panel.tracker.current,current)
+        self.assertEqual(panel.tracker.map_name,'Original map');self.assertEqual(panel.totals(),totals)
+        self.assertEqual(panel.mesos.seconds,seconds);self.assertEqual(panel.mesos.gain,money)
+        self.assertEqual(list(panel.tracker.events),events);self.assertEqual(list(panel.mesos.recent),recent)
+        self.assertEqual((panel.rate.text(),panel.hour_rate.text(),panel.eta.text(),panel.meso_rate.text()),pace)
+        self.assertEqual(panel.mesos.last_pickup,600);self.assertEqual(panel.history.rows(),[])
+        self.assertEqual(panel.overlay_rows(),[])
+        self.now+=1;panel.set_connected(True,frame_at=self.now);self.feed(current.exp+100)
+        self.assertTrue(panel.recognition_held)
+        self.now+=1;panel.set_connected(True,frame_at=self.now);self.feed(current.exp+110)
+        self.assertFalse(panel.recognition_held);self.assertIs(panel.tracker.run,run)
+        self.assertEqual(panel.totals(),totals);self.assertEqual(panel.mesos.seconds,seconds)
+        panel.set_connected(True);self.feed(current.exp+120,1)
+        self.assertEqual(panel.totals()['exp'],totals['exp']+10)
+        self.pickup(900);self.pickup(900,50);self.pickup(900,50)
+        self.assertEqual(panel.mesos.gain,money+50)
+
+    def test_verified_frame_clock_never_counts_delivery_delay_or_dead_capture(self):
+        panel=self.panel;panel.set_connected(True,frame_at=self.now);panel.start();self.feed(2000)
+        started=self.now
+        self.now+=1;panel.set_connected(True,frame_at=started+1)
+        self.assertAlmostEqual(panel.mesos.seconds,1)
+        self.now+=.7;panel.refresh()
+        self.assertAlmostEqual(panel.mesos.seconds,1)
+        self.now+=1;panel.set_connected(False,frame_at=0)
+        self.now+=90;panel.refresh()
+        self.assertAlmostEqual(panel.mesos.seconds,1)
+        panel.set_connected(True,frame_at=self.now)
+        self.feed(2500,1);panel.set_connected(True,frame_at=self.now)
+        self.feed(2510,1);panel.set_connected(True,frame_at=self.now)
+        self.assertFalse(panel.recognition_held)
+        self.assertAlmostEqual(panel.mesos.seconds,2)
+
+    def test_epoch_and_source_timestamp_reject_pending_results_across_transitions(self):
+        panel=self.panel;panel.set_connected(True);panel.start();self.feed(2000);self.feed(2010,1)
+        old_epoch=panel.tracking_epoch;old_at=int(self.now*1000);old_exp=panel.tracker.current.exp
+        panel.toggle_pause();self.now+=1;panel.toggle_pause()
+        self.assertEqual(panel.tracking_epoch,old_epoch+2)
+        for epoch,at in ((old_epoch,int(self.now*1000)),(panel.tracking_epoch,old_at),(True,int(self.now*1000))):
+            panel.feed({'atMs':at,'trackingEpoch':epoch,'experience':payload(4000)})
+            self.assertEqual(panel.tracker.current.exp,old_exp)
+        self.feed(2500,1);self.feed(2510,1)
+        self.assertEqual(panel.tracker.run.exp,20)
+        epoch=panel.tracking_epoch;panel.stop();self.assertEqual(panel.tracking_epoch,epoch+1)
+        panel.start();self.assertEqual(panel.tracking_epoch,epoch+2)
+        panel.feed({'atMs':int(self.now*1000),'trackingEpoch':epoch,'experience':payload(5000)})
+        self.assertIsNone(panel.tracker.run)
+
+    def test_returning_same_visual_identity_can_rebaseline_several_hidden_levels(self):
+        from test_tracking_identity import proof
+        panel=self.panel;panel.set_connected(True);panel.start()
+        def named(exp,level=27,total=10000):
+            panel.feed({'atMs':int(self.now*1000),'trackingEpoch':panel.tracking_epoch,
+                        'experience':{**payload(exp,total,level),'nameProof':proof()}})
+        named(2000)
+        for _ in range(31):self.now+=1;named(panel.tracker.current.exp+10)
+        run=panel.tracker.run;totals=panel.totals();events=list(panel.tracker.events)
+        panel.set_connected(False);self.now+=60;panel.set_connected(True)
+        self.now+=1;named(4000,30,20000)
+        self.assertTrue(panel.recognition_held);self.assertEqual(panel.tracker.current.level,27)
+        self.now+=1;named(4010,30,20000)
+        self.assertFalse(panel.recognition_held);self.assertIs(panel.tracker.run,run)
+        self.assertEqual(panel.tracker.current.level,30);self.assertEqual(panel.totals(),totals)
+        self.assertEqual(list(panel.tracker.events),events);self.assertEqual(panel.history.rows(),[])
+        self.now+=1;named(4020,30,20000)
+        self.assertEqual(panel.totals()['exp'],totals['exp']+10)
+
+    def test_held_identity_requires_two_consistent_levels_and_never_counts_duplicate_frames(self):
+        panel=self.panel;panel.set_connected(True);panel.start();self.feed(2000)
+        panel.set_connected(False);self.now+=1;panel.set_connected(True)
+        self.feed(2500)
+        self.feed(2500);self.assertTrue(panel.recognition_held)
+        self.now+=1
+        panel.feed({'atMs':int(self.now*1000),'experience':payload(3000,20000,30)})
+        self.assertTrue(panel.recognition_held)
+        self.now+=1
+        panel.feed({'atMs':int(self.now*1000),'experience':payload(3010,20000,30)})
+        self.assertFalse(panel.recognition_held);self.assertEqual(panel.tracker.current.level,30)
+        self.assertEqual(panel.tracker.run.exp,0)
+
+    def test_bad_exp_digits_keep_verified_pickup_tracking_active(self):
+        panel=self.panel;panel.set_connected(True);panel.start();self.feed(2000)
+        epoch=panel.tracking_epoch
+        self.now+=1;panel.feed({'atMs':int(self.now*1000),'experience':{}})
+        self.pickup();self.pickup(600);self.pickup(600)
+        self.assertEqual(panel.mesos.gain,600);self.assertFalse(panel.recognition_held)
+        self.assertEqual(panel.tracking_epoch,epoch)
+
+    def test_meso_only_tracking_reseeds_after_recognition_returns_without_waiting_for_exp(self):
+        panel=self.panel;panel.set_connected(True);panel.start()
+        self.pickup();self.pickup(600);self.pickup(600)
+        panel.set_connected(False);self.now+=10;panel.set_connected(True)
+        self.assertFalse(panel.recognition_held)
+        self.pickup(900);self.pickup(900,50);self.pickup(900,50)
+        self.assertEqual(panel.mesos.gain,650);self.assertIsNone(panel.tracker.current)
+
+    def test_pickup_frame_identity_proof_cannot_switch_or_retrain_the_captured_character(self):
+        from test_tracking_identity import proof
+        from test_meso_tracking import log
+        panel=self.panel;panel.set_connected(True);panel.start()
+        panel.feed({'atMs':int(self.now*1000),'experience':{**payload(),'nameProof':proof()}})
+        reference=panel.identity.reference;run=panel.tracker.run
+        for rows in ((),(600,),(600,)):
+            self.now+=.2
+            panel.feed({'atMs':int(self.now*1000),'trackingEpoch':panel.tracking_epoch,
+                        'pickupsRead':True,'pickupNameProof':proof(),'pickups':log(*rows)})
+        self.assertEqual(panel.mesos.gain,600)
+        epoch=panel.tracking_epoch;self.now+=.2
+        panel.feed({'atMs':int(self.now*1000),'trackingEpoch':epoch,'pickupsRead':True,
+                    'pickupNameProof':proof(True),'pickups':log(600,5000)})
+        self.assertTrue(panel.recognition_held);self.assertGreater(panel.tracking_epoch,epoch)
+        self.assertEqual(panel.mesos.gain,600);self.assertIs(panel.tracker.run,run)
+        self.assertIs(panel.identity.reference,reference);self.assertIsNone(panel.mesos.lines)
+        for _ in range(2):
+            self.now+=1
+            panel.feed({'atMs':int(self.now*1000),'trackingEpoch':panel.tracking_epoch,
+                        'experience':{**payload(2500),'nameProof':proof()}})
+        self.assertFalse(panel.recognition_held);self.assertEqual(panel.mesos.gain,600)
+
+    def test_missing_pickup_name_proof_holds_when_a_visual_identity_is_established(self):
+        from test_tracking_identity import proof
+        panel=self.panel;panel.set_connected(True);panel.start()
+        panel.feed({'atMs':int(self.now*1000),'experience':{**payload(),'nameProof':proof()}})
+        self.now+=.2
+        panel.feed({'atMs':int(self.now*1000),'pickupsRead':True,'pickupNameProof':None,
+                    'pickups':{'valid':True,'lines':[]}})
+        self.assertTrue(panel.recognition_held);self.assertFalse(panel.mesos.observed)
 
     def test_paused_session_survives_another_character_and_map_without_resetting(self):
         self.train();self.pickup();self.pickup(1200);self.pickup(1200)

@@ -1,6 +1,7 @@
 """EXP controls and local history; pixel capture remains in the existing reader."""
 from datetime import datetime
 from dataclasses import replace
+import math
 import sqlite3
 import time
 
@@ -9,7 +10,7 @@ from PySide6.QtWidgets import QFileDialog, QTableWidgetItem, QVBoxLayout, QWidge
 
 from .experience import ExperienceTracker, SessionHistory, Run, Reading, MAX_GAP, duration_text, clock_text
 from .mesos import PickupTracker
-from .tracking_identity import TrackingIdentity
+from .tracking_identity import TrackingIdentity, proof_pixels
 
 
 
@@ -18,6 +19,7 @@ class ExperiencePanel(QWidget):
     enabled_changed = Signal(bool)
     overlay_changed = Signal(bool)
     meso_overlay_changed = Signal(bool)
+    tracking_epoch_changed = Signal(int)
 
     def __init__(self, history_path, *, parent=None):
         super().__init__(parent)
@@ -36,6 +38,10 @@ class ExperiencePanel(QWidget):
         except (OSError, sqlite3.Error) as error:
             self.storage_error = "Session storage unavailable: " + str(error)
         self.connected = False
+        self.capture_frame_at = None
+        self.tracking_epoch = 0
+        self.tracking_floor_ms = 0
+        self.recognition_held = False
         self.requested = False
         self.paused_window = None
         self.paused_meso_rate = None
@@ -46,6 +52,7 @@ class ExperiencePanel(QWidget):
         self.user_paused = False
         self.paused_context_ready = True
         self.pause_match_at = None
+        self.pause_match_reading = None
         self.watch_approximate = False
         self.watch_epoch = time.time()
         self.watch_totals = {"seconds":0.0,"progress":0.0,"exp":0.0}
@@ -81,23 +88,55 @@ class ExperiencePanel(QWidget):
     def set_enabled(self, enabled):
         self.start() if enabled else self.stop()
 
-    def set_connected(self, connected):
-        if self.requested:self.mesos.tick(time.monotonic(), self.connected)
+    def clock_at(self):
+        now=time.monotonic()
+        if self.capture_frame_at is not None:now=min(now,self.capture_frame_at)
+        return max(now,self.mesos.last_tick) if self.mesos.last_tick is not None else now
+
+    def tick_mesos(self):
+        if self.requested:
+            self.mesos.tick(self.clock_at(),self.connected and not self.recognition_held)
+
+    def invalidate_tracking(self):
+        self.tracking_epoch+=1
+        self.tracking_floor_ms=int(time.monotonic()*1000)
+        self.tracking_epoch_changed.emit(self.tracking_epoch)
+
+    def set_connected(self, connected, *, frame_at=None, refresh=True):
+        # A missing/covered frame never advances the active clock beyond the
+        # last verified pixels. Direct panel users may omit a capture clock.
+        if frame_at is None:self.capture_frame_at=None
+        elif type(frame_at) in (int,float) and math.isfinite(frame_at) and frame_at>0:
+            self.capture_frame_at=frame_at
+        self.tick_mesos()
+        changed=self.connected!=bool(connected)
         if self.connected and not connected:
             self.interrupt_context()
             self.mesos.interrupt()
-        self.connected = connected
-        self.refresh()
+        self.connected = bool(connected)
+        if (self.connected and self.recognition_held
+                and not (self.tracker.current and self.tracker.current.character)):
+            # Pickup tracking can run with an unreadable EXP bar. If no
+            # character has ever been captured there is no identity to match.
+            self.recognition_held=False
+            self.identity_ready=True
+        if refresh or changed:self.refresh()
+        if changed:self.changed.emit()
 
     def interrupt_context(self):
-        if self.requested and not self.user_paused:
-            self.hold_pace()
-            self.reacquiring=True
+        if self.requested and not self.recognition_held:
+            if not self.user_paused:self.hold_pace()
+            self.recognition_held=True
+            self.reacquiring=not self.user_paused
+            self.invalidate_tracking()
+            self.paused_context_ready=False
+            self.pause_match_at=None;self.pause_match_reading=None
         self.tracker.interrupt()
+        self.mesos.interrupt()
         self.identity.candidate=None
         if self.tracker.current:self.identity_ready=False
         if self.user_paused and self.tracker.current and self.tracker.current.character:
-            self.paused_context_ready=False;self.pause_match_at=None
+            self.paused_context_ready=False;self.pause_match_at=None;self.pause_match_reading=None
 
     def observe_paused_context(self,payload,at):
         """Identify the visible character without mutating a paused session."""
@@ -105,26 +144,61 @@ class ExperiencePanel(QWidget):
         reading=Reading.parse(payload,at)
         if not original or not original.character or reading is None or at<=original.at:return
         if not reading.same_character(original):
-            self.paused_context_ready=False;self.pause_match_at=None
+            self.paused_context_ready=False;self.pause_match_at=None;self.pause_match_reading=None
         elif not self.paused_context_ready:
-            if self.pause_match_at is not None and 0<at-self.pause_match_at<=MAX_GAP:
+            prior=self.pause_match_reading
+            consistent=bool(prior and prior.level==reading.level and reading.exp>=prior.exp
+                            and max(prior.bounds[0],reading.bounds[0])<=min(prior.bounds[1],reading.bounds[1]))
+            if self.pause_match_at is not None and 0<at-self.pause_match_at<=MAX_GAP and consistent:
                 self.paused_context_ready=True;self.pause_match_at=None
-            else:self.pause_match_at=at
+            else:self.pause_match_at=at;self.pause_match_reading=reading
         self.identity_ready=self.paused_context_ready
 
     def feed(self, result):
-        if not self.enabled:
+        if not self.enabled or not self.connected:
             return
+        epoch=result.get('trackingEpoch',self.tracking_epoch)
+        at_ms=result.get('atMs',0)
+        if (type(epoch) is not int or epoch!=self.tracking_epoch
+                or type(at_ms) is not int or at_ms<self.tracking_floor_ms):return
+        if result.get('pickupsRead') and 'pickupNameProof' in result and self.identity.reference:
+            proof=result['pickupNameProof'];pixels=proof_pixels(proof)
+            reference=self.identity.reference
+            if pixels is None or not self.identity.visual_match(reference,pixels,proof,reference.name)[0]:
+                # A same-position game can retain its locator anchors while
+                # showing another character. Check this job's name pixels
+                # without teaching a new identity or accepting old pickups.
+                self.tick_mesos();self.interrupt_context()
+                self.refresh();self.changed.emit();return
         raw = result.get("experience") or {}
         payload = self.identity.prepare(raw) if 'experience' in result else {}
-        at = result.get("atMs", 0)/1000
-        if self.user_paused:
+        at = at_ms/1000
+        resumed_level=None
+        if self.user_paused or self.recognition_held:
             self.observe_paused_context(payload,at)
-            self.refresh();self.changed.emit()
-            return
+            if not self.paused_context_ready:
+                self.refresh();self.changed.emit();return
+            if self.recognition_held:
+                # Reanchor the active clock before releasing the automatic
+                # hold, excluding the time spent confirming the old identity.
+                self.mesos.tick(self.clock_at(),False)
+                self.recognition_held=False
+                reading=Reading.parse(payload,at)
+                if reading and self.tracker.current and reading.level!=self.tracker.current.level:
+                    resumed_level=reading
+            if self.user_paused:
+                self.refresh();self.changed.emit();return
         previous = self.tracker.current
         if previous and payload.get('identityKey') and previous.identity_key:
             if payload['identityKey']!=previous.identity_key:self.identity_ready=False
+        if resumed_level is not None:
+            # Two matching identity/level/bounds observations establish a new
+            # baseline after hidden level gains, without closing the old run.
+            prior=self.pause_match_reading
+            self.tracker.current=replace(resumed_level,at=previous.at)
+            self.tracker.bounds=(max(prior.bounds[0],resumed_level.bounds[0]),
+                                 min(prior.bounds[1],resumed_level.bounds[1]))
+            self.tracker.baseline=None;self.tracker.candidate=None;self.tracker.recovery.clear()
         accepted = self.tracker.ingest(payload, at) if 'experience' in result else False
         if accepted:
             display_name=self.identity.accept(payload,at)
@@ -159,7 +233,7 @@ class ExperiencePanel(QWidget):
         else:same_character=not previous or not character or character==previous.character or accepted
         if (result.get('pickupsRead') and same_character and self.tracker.candidate is None
                 and not (previous and not self.identity_ready)):
-            self.mesos.tick(time.monotonic(), self.connected)
+            self.tick_mesos()
             self.mesos.ingest(result.get('pickups'), at)
         if accepted and self.connected and not self.tracker.run and self.tracker.current.character:
             self.begin_run()
@@ -169,9 +243,11 @@ class ExperiencePanel(QWidget):
     def start(self):
         if not self.connected:return
         if not self.requested:
+            self.invalidate_tracking()
             self.requested=True;self.user_paused=False;self.paused_window=None
             self.paused_meso_rate=None;self.reacquiring=True
-            self.paused_context_ready=True;self.pause_match_at=None
+            self.recognition_held=False
+            self.paused_context_ready=True;self.pause_match_at=None;self.pause_match_reading=None
             self.watch_totals={"seconds":0.0,"progress":0.0,"exp":0.0}
             self.watch_epoch=time.time();self.watch_approximate=False
             self.mesos.reset(time.monotonic())
@@ -185,12 +261,14 @@ class ExperiencePanel(QWidget):
             if self.user_paused:self.tracker.pause(True)
 
     def stop(self):
-        self.mesos.tick(time.monotonic(), self.connected)
+        self.tick_mesos()
+        self.invalidate_tracking()
         self.finish_meso_only('Stopped')
         self.tracker.finish("Stopped");self.persist_completed()
         self.requested=False;self.user_paused=False;self.paused_window=None
         self.paused_meso_rate=None;self.reacquiring=False
-        self.paused_context_ready=True;self.pause_match_at=None
+        self.recognition_held=False
+        self.paused_context_ready=True;self.pause_match_at=None;self.pause_match_reading=None
         self.enabled_changed.emit(False);self.refresh();self.changed.emit()
 
     def hold_pace(self):
@@ -201,12 +279,14 @@ class ExperiencePanel(QWidget):
     def toggle_pause(self):
         if not self.requested:return
         if self.user_paused and not self.paused_context_ready:return
+        self.tick_mesos()
+        self.invalidate_tracking()
         if not self.user_paused:self.hold_pace()
         self.user_paused = not self.user_paused
-        self.paused_context_ready=True;self.pause_match_at=None
+        self.paused_context_ready=not self.recognition_held
+        self.pause_match_at=None;self.pause_match_reading=None
         self.reacquiring=not self.user_paused
         self.tracker.pause(self.user_paused)
-        self.mesos.tick(time.monotonic(), self.connected)
         self.mesos.pause(self.user_paused)
         self.refresh()
         self.changed.emit()
@@ -253,11 +333,11 @@ class ExperiencePanel(QWidget):
         """One two-second numeric snapshot shared by the panel and overlays."""
         now=time.monotonic() if now is None else now
         run=self.tracker.run;reading=self.tracker.current
-        state=(self.requested,self.user_paused,self.reacquiring,self.identity_ready,self.paused_context_ready,self.connected,self.display_mode,
+        state=(self.requested,self.user_paused,self.recognition_held,self.reacquiring,self.identity_ready,self.paused_context_ready,self.connected,self.display_mode,
                run.id if run else None,(reading.identity_key or reading.character) if reading else '',reading.level if reading else None,self.mesos.observed)
         if self.numeric_snapshot is not None and state==self.numeric_state and now-self.numeric_at<2:return self.numeric_snapshot
         held=(self.user_paused or self.reacquiring) and self.paused_window is not None
-        meso_held=(self.user_paused or not self.connected or self.reacquiring and not self.identity_ready) and self.paused_window is not None
+        meso_held=(self.user_paused or self.recognition_held or not self.connected or self.reacquiring and not self.identity_ready) and self.paused_window is not None
         window=self.paused_window if held else self.tracker.window(300)
         self.numeric_state=state;self.numeric_at=now
         self.numeric_snapshot=dict(run=run,reading=reading,window=window.copy(),totals=self.totals(),
@@ -282,7 +362,7 @@ class ExperiencePanel(QWidget):
         tracker = self.tracker
         reading, run = tracker.current, tracker.run
         fresh = self.connected and tracker.fresh(time.monotonic())
-        if self.requested:self.mesos.tick(time.monotonic(),self.connected)
+        self.tick_mesos()
         self.elapsed.setText(clock_text(self.mesos.seconds))
         if reading:
             self.character.setText(reading.character or 'Character')
@@ -307,6 +387,7 @@ class ExperiencePanel(QWidget):
         if update:self.rendered_numbers=values;self.refresh_numbers(values)
         state=('' if not self.requested else
                "Screen reading is paused · tracking is held." if not self.connected else
+               f"Paused · confirming {reading.character}." if self.recognition_held and reading else
                f"Paused · waiting for {reading.character}." if self.user_paused and not self.paused_context_ready and reading else
                "Paused · elapsed time and gains are held." if self.user_paused else
                self.exp_waiting()[0] if reading and not fresh else
@@ -341,7 +422,6 @@ class ExperiencePanel(QWidget):
     def refresh_mesos(self,values,update):
         pickups = self.mesos
         now = time.monotonic()
-        if self.requested:pickups.tick(now, self.connected)
         if update:
             self.meso_gain.setText(f"{values['meso_gain']:+,} mesos" if values['meso_observed'] else '—')
             rate=values['meso_rate']
@@ -354,6 +434,8 @@ class ExperiencePanel(QWidget):
             status = 'Screen reading paused · pickups are held.'
         elif self.user_paused:
             status = 'Paused · recent pace held.'
+        elif self.recognition_held:
+            status = 'Paused · confirming the captured character.'
         elif pickups.fresh(now):
             status = 'Recent pace · watching pickups' + (f" · {values['meso_gaps']} gap(s)" if values['meso_gaps'] else '')
         elif pickups.candidate:
@@ -367,7 +449,7 @@ class ExperiencePanel(QWidget):
 
     def overlay_rows(self, now=None):
         now=time.monotonic() if now is None else now
-        if not self.requested or self.user_paused and not self.paused_context_ready:
+        if not self.requested or self.recognition_held or self.user_paused and not self.paused_context_ready:
             return []
         tracker=self.tracker;values=self.numeric_values(now);run=values['run'];reading=values['reading'];window=values['window']
         rate,hour=window['rate'],window['exp_hour'];totals=values['totals']

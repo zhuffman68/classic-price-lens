@@ -11,6 +11,7 @@ class TrayController(QObject):
         self.window = window
         self.minimize_pending = False
         self.message_kind=''
+        self.update_notice_version=''
         self.icon = QSystemTrayIcon(app_icon(window.root), window)
         self.icon.setToolTip("Lupin")
         self.menu = QMenu(window)
@@ -46,6 +47,7 @@ class TrayController(QObject):
         self.labels.blockSignals(False)
         updater=getattr(self.window,'updates',None)
         self.update_action.setVisible(bool(updater and updater.offer))
+        if updater and updater.offer:self.update_action.setText('Update to Lupin '+updater.offer['manifest']['version']+'…')
 
     def minimize(self):
         # Wayland can acknowledge a minimize request with a normal-state
@@ -84,8 +86,10 @@ class TrayController(QObject):
             QSystemTrayIcon.MessageIcon.Information,3500)
 
     def update_available(self,version):
+        if self.update_notice_version==version:return
+        self.update_notice_version=version
         self.message_kind='update'
-        self.icon.showMessage('Lupin '+version+' is available','Click to download and install, or update later from Settings.',
+        self.icon.showMessage('Lupin '+version+' is available','Click to review the update. Download and install when you are ready, or update later from Settings.',
                               QSystemTrayIcon.MessageIcon.Information,6000)
 
     def update_notice(self,title,message):

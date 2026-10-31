@@ -1,10 +1,11 @@
 """Launch and selected-interval full-market refresh, independent of item views."""
 import time
 import sqlite3
+from math import ceil
 
-from PySide6.QtCore import QObject, QTimer, Signal
+from PySide6.QtCore import QObject, QTimer, Signal, Qt
 
-from .domain import age_text
+from .domain import MAX_SNAPSHOT_AGE, age_text
 from .snapshot_fetcher import SnapshotFetcher
 
 
@@ -22,11 +23,17 @@ class SnapshotUpdater(QObject):
         self.error = ""
         self.startup_pending = False
         self.interval = 900
+        self.retry_at = None
+        self.stale_publication = None
+        self.stale_checks = 0
         self.fetcher = SnapshotFetcher(store.cache.path.parent / "market-webview", self)
         self.fetcher.ready.connect(self.accept)
         self.fetcher.failed.connect(self.failed)
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
+        # A coarse timer can fire before publication expiry and repeatedly
+        # fetch the same still-valid document as that deadline approaches.
+        self.timer.setTimerType(Qt.TimerType.PreciseTimer)
         self.timer.timeout.connect(self.refresh)
 
     def set_enabled(self, enabled):
@@ -47,6 +54,7 @@ class SnapshotUpdater(QObject):
         if self.closed or not self.enabled or self.busy:
             return
         self.timer.stop()
+        self.retry_at = None
         self.busy = True
         self.error = ""
         self.changed.emit()
@@ -55,9 +63,21 @@ class SnapshotUpdater(QObject):
     def set_interval(self,seconds):
         self.interval=max(300,min(3600,int(seconds)))
         if self.enabled and not self.closed and not self.busy:
-            checked=(self.store.meta or {}).get('checked_at',0)
-            remaining=max(0,checked+self.interval-time.time())
-            self.timer.start(round(remaining*1000))
+            self.schedule()
+
+    def schedule(self):
+        now = time.time()
+        if self.startup_pending:
+            deadline = now
+        elif self.retry_at is not None:
+            deadline = self.retry_at
+        else:
+            meta = self.store.meta or {}
+            deadline = meta.get('checked_at', 0) + self.interval
+            published = meta.get('published_at')
+            if published is not None:
+                deadline = min(deadline, published + MAX_SNAPSHOT_AGE)
+        self.timer.start(max(0, ceil((deadline-now)*1000)))
 
     def accept(self, document):
         if self.closed or not self.enabled:
@@ -72,9 +92,20 @@ class SnapshotUpdater(QObject):
         self.failures = 0
         self.error = ""
         self.startup_pending = False
-        # Source publication age stays separate from the next fetch. An old
-        # publication cannot trigger a browser loop or acquire a false new age.
-        self.timer.start(self.interval*1000)
+        published = self.store.meta['published_at']
+        now = time.time()
+        if now >= published + MAX_SNAPSHOT_AGE:
+            # The source may publish just after expiry. Retry soon, then back
+            # off independently of transport failures; never refresh its age.
+            self.stale_checks = self.stale_checks + 1 if published == self.stale_publication else 1
+            self.stale_publication = published
+            delay = min(self.interval, (60, 300, 900)[min(self.stale_checks-1, 2)])
+            self.retry_at = now + delay
+        else:
+            self.stale_publication = None
+            self.stale_checks = 0
+            self.retry_at = None
+        self.schedule()
         self.updated.emit()
         self.changed.emit()
 
@@ -90,7 +121,8 @@ class SnapshotUpdater(QObject):
         if quick_retry:
             self.error += " Retrying shortly…"
             self.failures = 0  # The single startup retry precedes normal backoff.
-        self.timer.start((15 if quick_retry else (300, 900, 3600)[min(self.failures-1, 2)]) * 1000)
+        self.retry_at = time.time() + (15 if quick_retry else (300, 900, 3600)[min(self.failures-1, 2)])
+        self.schedule()
         self.changed.emit()
 
     def summary(self):
@@ -100,7 +132,11 @@ class SnapshotUpdater(QObject):
             return self.error
         if self.store.meta:
             meta = self.store.meta
-            return f"{meta['priced']:,} market prices cached · checked {age_text(time.time()-meta['checked_at'])} ago"
+            now = time.time()
+            summary = f"{meta['priced']:,} market prices cached · checked {age_text(now-meta['checked_at'])} ago"
+            if now >= meta['published_at'] + MAX_SNAPSHOT_AGE:
+                summary += " · source snapshot old"
+            return summary
         return ""
 
     def close(self):

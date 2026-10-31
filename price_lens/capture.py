@@ -15,6 +15,7 @@ from .platform_paths import reader_binary
 from .capture_platform import uses_system_picker
 from .tracking_identity import name_proof
 from .tooltip_association import TooltipAssociation,association_state
+from .pickup_capture import PickupWorker
 
 
 class PixelReader(QObject):
@@ -33,7 +34,19 @@ class PixelReader(QObject):
         self.image_sequence = 0
         self.submitted_sequence = -1
         self.latest_latency_ms = None
-        self.experience_enabled = False
+        self._experience_enabled = False
+        self.pickups_enabled = True
+        self.tracking_epoch = 0
+        self.pending_tracking_epoch = 0
+        self.tracking_frame_at = 0.0
+        self.tracking_identity_area = None
+        self.pickup_worker = None
+        self.pickup_covered_at = 0
+        self.manual_game_area = None
+        self.manual_game_guards = []
+        self.manual_game_footer = None
+        self.pending_tracking_locate = False
+        self.tracking_location_origin = QPoint()
         self.prices_enabled = True
         self.pending_locate_only = False
         self.last_experience = 0.0
@@ -41,7 +54,6 @@ class PixelReader(QObject):
         self.last_pickup = self.last_pickup_frame = 0.0
         self.pending_experience = False
         self.experience_source = None
-        self.pending_pickups = False
         self.exclude_regions = lambda: []
         self.writer_regions = lambda: []
         self.timings = deque(maxlen=240)
@@ -159,6 +171,7 @@ class PixelReader(QObject):
         self.validate_area()
         path.unlink(missing_ok=True)
         self.last_frame = time.monotonic()
+        self.mark_tracking_frame()
         self.image_sequence += 1
         self.image_ready.emit(self.image)
         self.scan()
@@ -170,6 +183,7 @@ class PixelReader(QObject):
             self.last_frame = captured_at
             self.image = image
             self.validate_area()
+            self.mark_tracking_frame()
             self.image_sequence += 1
             self.image_ready.emit(self.image)
             self.scan()
@@ -196,10 +210,46 @@ class PixelReader(QObject):
     def auto_active(self):
         return self.auto_enabled and self.live_source and self.crop is None
 
+    @property
+    def experience_enabled(self):
+        return self._experience_enabled
+
+    @experience_enabled.setter
+    def experience_enabled(self, enabled):
+        self._experience_enabled=bool(enabled)
+        worker=getattr(self,'pickup_worker',None)
+        if not enabled and worker is not None:
+            worker.close()
+            self.pickup_worker=None
+
+    @property
+    def tracking_area(self):
+        return self.game_area if self.auto_active else self.manual_game_area
+
+    @property
+    def tracking_ready(self):
+        guards = self.game_guards if self.auto_active else self.manual_game_guards
+        return bool(self.live_source and not self.paused and self.tracking_area is not None
+                    and guards and 0 <= time.monotonic() - self.tracking_frame_at < 1.5)
+
+    def mark_tracking_frame(self):
+        area = self.tracking_area
+        guards = self.game_guards if self.auto_active else self.manual_game_guards
+        if area is not None and guards:
+            self.tracking_frame_at = self.last_frame
+
     def reset_area(self):
         self.game_area = None
         self.game_guards = []
         self.game_footer = None
+        self.manual_game_area = None
+        self.manual_game_guards = []
+        self.manual_game_footer = None
+        self.tracking_frame_at = 0.0
+        self.tracking_identity_area = None
+        self.pickup_covered_at = 0
+        if self.pickup_worker is not None:
+            self.pickup_worker.invalidate()
         self.next_area_search = 0
         self.shop_rect = self.shop_fingerprint = self.shop_context = None
         self.tooltip_rect = self.tooltip_fingerprint = None
@@ -235,6 +285,11 @@ class PixelReader(QObject):
             # Discard results from the old position before drawing another label.
             self.generation += 1
             self.reset_area()
+        elif self.manual_game_area is not None and any(
+                not self.guard_matches(self.image, area, digest)
+                for area, digest in self.manual_game_guards):
+            self.generation += 1
+            self.reset_area()
 
     @staticmethod
     def guard_signature(image, area):
@@ -254,6 +309,13 @@ class PixelReader(QObject):
     def scan(self):
         if self.paused:
             return
+        now = time.monotonic()
+        if not self.experience_enabled and self.pickup_worker is not None:
+            self.pickup_worker.close()
+            self.pickup_worker = None
+        if (self.experience_enabled and self.pickups_enabled and self.tracking_ready
+                and now-self.last_pickup >= .2 and self.last_frame > self.last_pickup_frame):
+            self.scan_pickups(now)
         if self.pending:
             if time.monotonic() - self.pending_since > 25:
                 self.process.kill()
@@ -261,16 +323,16 @@ class PixelReader(QObject):
             return
         if self.image.isNull() or self.process.state() != QProcess.ProcessState.Running:
             return
-        now = time.monotonic()
+        if (self.live_source and self.crop is not None and
+                (self.manual_game_area is None or now-self.last_locator_check >= 1)
+                and now >= self.next_area_search):
+            self.scan_location(now, tracking_only=True)
+            return
         exp_due = (self.experience_enabled and self.live_source and now-self.last_frame < 3
                 and now-self.last_experience >= 1
-                and (self.game_area is not None if self.auto_active else self.crop is not None))
-        pickups_due = (self.experience_enabled and self.live_source and now-self.last_frame < 1.5
-                and now-self.last_pickup >= .2 and self.last_frame > self.last_pickup_frame
-                and (self.game_area is not None if self.auto_active else self.crop is not None))
+                and self.tracking_ready)
         if self.image_sequence == self.submitted_sequence:
             if exp_due:self.scan_experience(now)
-            elif pickups_due:self.scan_pickups(now)
             return
         if self.auto_active and self.game_area is None and time.monotonic() < self.next_area_search:
             return
@@ -278,7 +340,6 @@ class PixelReader(QObject):
             if self.auto_active and (self.game_area is None or now-self.last_locator_check>=1):
                 self.scan_location(now)
             elif exp_due:self.scan_experience(now)
-            elif pickups_due:self.scan_pickups(now)
             else:self.submitted_sequence=self.image_sequence
             return
         image = self.image.copy(self.crop) if self.crop else self.image
@@ -302,20 +363,15 @@ class PixelReader(QObject):
                     and (not self.auto_active or now-self.last_locator_check<1.0)):
                 self.submitted_sequence = self.image_sequence
                 if exp_due:self.scan_experience(now)
-                elif pickups_due:self.scan_pickups(now)
                 return
         elif self.shop_rect is None and tooltip_same:
             self.submitted_sequence = self.image_sequence
             if exp_due:self.scan_experience(now)
-            elif pickups_due:self.scan_pickups(now)
             return
         if self.shop_rect is None and time.monotonic() - self.pending_since < 0.2:
             return
         if exp_due and now-self.last_experience>=1.6:
             self.scan_experience(now)
-            return
-        if pickups_due and now-self.last_pickup>=.45:
-            self.scan_pickups(now)
             return
         origin = {"x": 0, "y": 0}
         self.using_roi = bool(self.shop_rect and self.roi_clean and not hover_check)
@@ -332,8 +388,8 @@ class PixelReader(QObject):
         path.write_bytes(image.constBits())
         self.pending = True
         self.pending_locate_only=False
+        self.pending_tracking_locate=False
         self.pending_experience = False
-        self.pending_pickups = False
         self.pending_generation = self.generation
         self.pending_since = time.monotonic()
         self.last_geometry_check = self.pending_since
@@ -362,10 +418,13 @@ class PixelReader(QObject):
         self.tooltip_retry_requested=True;self.image_sequence+=1
         QTimer.singleShot(0,self.scan)
 
-    def scan_location(self,now):
-        image=self.image.convertToFormat(QImage.Format.Format_RGBA8888)
+    def scan_location(self,now,tracking_only=False):
+        self.tracking_location_origin = self.crop.topLeft() if tracking_only and self.crop else QPoint()
+        source = self.image.copy(self.crop) if tracking_only and self.crop else self.image
+        image=source.convertToFormat(QImage.Format.Format_RGBA8888)
         path=Path(self.temp.name)/'location.rgba';path.write_bytes(image.constBits())
-        self.pending=True;self.pending_experience=False;self.pending_pickups=False;self.pending_locate_only=True
+        self.pending=True;self.pending_experience=False;self.pending_locate_only=True
+        self.pending_tracking_locate=tracking_only
         self.pending_local_roi=False;self.pending_generation=self.generation
         self.pending_since=self.last_locator_check=now
         self.submitted_sequence=self.image_sequence;self.submitted_image=self.image
@@ -375,8 +434,8 @@ class PixelReader(QObject):
     def scan_experience(self, now):
         # Reuse this capture and this OCR process. Map search is infrequent;
         # ordinary EXP samples transport only the bottom 256 pixels.
-        area = self.game_area if self.auto_active else self.crop
-        if area is None:
+        area = self.tracking_area
+        if area is None or not self.tracking_ready:
             return
         area = area.intersected(self.image.rect())
         read_map = now-self.last_map_read >= 5
@@ -388,8 +447,10 @@ class PixelReader(QObject):
         path = Path(self.temp.name)/"experience.rgba"
         path.write_bytes(image.constBits())
         self.pending = self.pending_experience = True
-        self.pending_pickups = self.pending_locate_only = False
+        self.pending_locate_only = False
+        self.pending_tracking_locate = False
         self.pending_generation = self.generation
+        self.pending_tracking_epoch = self.tracking_epoch
         self.pending_since = self.last_experience = now
         self.experience_source=(image,area.topLeft())
         if read_map:
@@ -408,23 +469,59 @@ class PixelReader(QObject):
         return QRect(game.right()+1-width,max(game.y(),game.bottom()+1-footer-height),width,height).intersected(game)
 
     def scan_pickups(self,now):
-        game=self.game_area if self.auto_active else self.crop
-        if game is None:return
+        game=self.tracking_area
+        if game is None or not self.tracking_ready or not self.pickups_enabled:return
         area=self.pickup_area(game).intersected(self.image.rect())
         if any(area.intersects(region) for region in self.exclude_regions()):
             self.last_pickup=now;self.last_pickup_frame=self.last_frame
+            self.pickup_covered_at=int(self.last_frame*1000)
+            if self.pickup_worker is not None:self.pickup_worker.invalidate()
             self.experience.emit({'atMs':int(self.last_frame*1000),'pickupsRead':True,
+                                  'trackingEpoch':self.tracking_epoch,
                                   'pickups':{'valid':False,'covered':True,'lines':[]}})
             return
+        if self.pickup_worker is not None and self.pickup_worker.pending:return
         image=self.image.copy(area).convertToFormat(QImage.Format.Format_RGBA8888)
         if image.isNull():return
-        path=Path(self.temp.name)/'pickups.rgba';path.write_bytes(image.constBits())
-        self.pending=self.pending_pickups=True
-        self.pending_experience=self.pending_locate_only=False
-        self.pending_generation=self.generation;self.pending_since=self.last_pickup=now
-        self.last_pickup_frame=self.last_frame
-        self.process.write((json.dumps({'path':str(path),'width':image.width(),'height':image.height(),
-            'at_ms':int(self.last_frame*1000),'pickups_only':True})+'\n').encode())
+        if self.pickup_worker is None:
+            self.pickup_worker=PickupWorker(self.root,self.temp.name,self)
+            self.pickup_worker.result.connect(self.on_pickup_result)
+        identity_proof=name_proof(self.image,self.tracking_identity_area,QPoint())
+        if self.pickup_worker.submit(image,self.last_frame,self.generation,self.tracking_epoch,identity_proof):
+            self.last_pickup=now;self.last_pickup_frame=self.last_frame
+
+    def on_pickup_result(self,result):
+        if (self.tracking_ready and self.experience_enabled and self.pickups_enabled
+                and result.get('captureGeneration')==self.generation
+                and result.get('trackingEpoch')==self.tracking_epoch
+                and result.get('atMs',0)>self.pickup_covered_at
+                and 0<=time.monotonic()*1000-result.get('atMs',0)<1500):
+            self.experience.emit(result)
+
+    def accept_tracking_location(self,result):
+        self.pending_tracking_locate=False
+        area=result.get('gameArea')
+        guards=[QRect(*(rect[k] for k in ('x','y','width','height'))).translated(self.tracking_location_origin)
+                for rect in result.get('gameGuards') or []]
+        fingerprints=[(rect,self.guard_signature(self.submitted_image,rect)) for rect in guards]
+        if area and fingerprints and all(self.guard_matches(self.image,rect,digest) for rect,digest in fingerprints):
+            selected=QRect(*(area[k] for k in ('x','y','width','height'))).translated(self.tracking_location_origin)
+            if self.crop is None or not self.crop.contains(selected):
+                selected=None
+        else:
+            selected=None
+        changed=selected!=self.manual_game_area
+        self.manual_game_area=selected
+        self.manual_game_guards=fingerprints if selected is not None else []
+        footer=result.get('gameFooter')
+        self.manual_game_footer=(QRect(*(footer[k] for k in ('x','y','width','height')))
+            .translated(self.tracking_location_origin).intersected(selected)
+            if selected is not None and isinstance(footer,dict) else None)
+        if selected is None:
+            self.next_area_search=time.monotonic()+.4
+            self.tracking_frame_at=0.0
+        else:self.mark_tracking_frame()
+        if changed:self.area_changed.emit()
 
     def on_output(self):
         self.buffer += bytes(self.process.readAllStandardOutput())
@@ -438,14 +535,22 @@ class PixelReader(QObject):
                 if result.get("error"):
                     self.status.emit("Reader: " + result["error"])
                 else:
-                    if self.pending_experience or self.pending_pickups:
-                        if self.experience_enabled and time.monotonic()*1000-result.get("atMs",0) < 3000:
+                    if self.pending_tracking_locate:
+                        self.accept_tracking_location(result)
+                        continue
+                    if self.pending_experience:
+                        if (self.experience_enabled and self.tracking_ready
+                                and self.pending_tracking_epoch==self.tracking_epoch
+                                and 0<=time.monotonic()*1000-result.get("atMs",0) < 1500):
                             if self.pending_experience and self.experience_source:
                                 source,origin=self.experience_source
                                 self.experience_source=None
                                 experience=result.get('experience')
                                 if isinstance(experience,dict):
                                     experience['nameProof']=name_proof(source,experience.get('area'),origin)
+                                    if experience['nameProof'] is not None:
+                                        self.tracking_identity_area=experience.get('area')
+                            result['trackingEpoch']=self.pending_tracking_epoch
                             self.experience.emit(result)
                         continue
                     if self.auto_active and not self.pending_local_roi:
@@ -458,6 +563,7 @@ class PixelReader(QObject):
                         selected = QRect(area["x"], area["y"], area["width"], area["height"]) if area else None
                         changed = selected != self.game_area
                         self.game_area, self.game_guards = selected, fingerprints
+                        self.mark_tracking_frame()
                         footer=result.get('gameFooter')
                         self.game_footer=(QRect(*(footer[k] for k in ('x','y','width','height'))).intersected(selected)
                                           if selected is not None and isinstance(footer,dict) else None)
@@ -556,6 +662,9 @@ class PixelReader(QObject):
         self.paused=True
         self.timer.stop()
         self.screenshot_timer.stop()
+        if self.pickup_worker is not None:
+            self.pickup_worker.close()
+            self.pickup_worker=None
         if self.screenshot.state() != QProcess.ProcessState.NotRunning:
             self.screenshot.kill()
             self.screenshot.waitForFinished(1000)
