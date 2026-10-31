@@ -1,0 +1,134 @@
+{
+  "synthetic": true,
+  "game_screenshot": false,
+  "font_family": "Liberation Sans",
+  "renderer": "Qt6.11.2NoAntialias",
+  "cases": [
+    {
+      "file": "clear.png",
+      "texts": [
+        "You have gained mesos (+29)"
+      ],
+      "options": {},
+      "sha256": "672112b4e1320ab80daa9db2625ca4260b4e8c982bc7d296eb9295fa4884d47c",
+      "bytes": 1935
+    },
+    {
+      "file": "faded-moved.png",
+      "texts": [
+        "You have gained mesos (+29)"
+      ],
+      "options": {
+        "brightness": "#555555",
+        "offset": 20
+      },
+      "sha256": "3f9cee4ca44c3defa49d5f708a9131a679e073fcc83fdeab227aff732ee55527",
+      "bytes": 1943
+    },
+    {
+      "file": "classic-anchors.png",
+      "texts": [
+        "You received EXP (+23)",
+        "Bonus EXP for PARTY (+2)",
+        "Green Mushroom x1 earned. (Etc)",
+        "You have gained mesos (+29)"
+      ],
+      "options": {},
+      "sha256": "e6aa821e1a105cd578320874f14fc40b8fe903b838fbaf08db0e6de3ca6b6cfe",
+      "bytes": 3904
+    },
+    {
+      "file": "budget.png",
+      "texts": [
+        "You have gained mesos (+29)",
+        "An unclassified system notice number 0",
+        "An unclassified system notice number 1",
+        "An unclassified system notice number 2",
+        "An unclassified system notice number 3",
+        "An unclassified system notice number 4",
+        "An unclassified system notice number 5",
+        "An unclassified system notice number 6",
+        "An unclassified system notice number 7",
+        "An unclassified system notice number 8",
+        "An unclassified system notice number 9",
+        "An unclassified system notice number 10",
+        "An unclassified system notice number 11",
+        "An unclassified system notice number 12",
+        "An unclassified system notice number 13",
+        "An unclassified system notice number 14"
+      ],
+      "options": {
+        "height": 320
+      },
+      "sha256": "16306369935ee4591da264c820eef2d9c72487f3da416dca3af8fc51bf395307",
+      "bytes": 14000
+    },
+    {
+      "file": "empty.png",
+      "texts": [],
+      "options": {},
+      "sha256": "b82ca9d647a2c57c00889c8789fbadf77882472c98b2a47fbccf7c7f56e8f2f9",
+      "bytes": 1191
+    },
+    {
+      "file": "unreadable.png",
+      "texts": [
+        "Your inventory is full"
+      ],
+      "options": {},
+      "sha256": "5fdc9b01c90821bb7748b9b42d29758cc65370c84884f275e9e709d7955eda08",
+      "bytes": 1679
+    },
+    {
+      "file": "chat-prefix.png",
+      "texts": [
+        "Player: You have gained mesos (+29)"
+      ],
+      "options": {},
+      "sha256": "1f799b6913c6489d338b802fd3a91eee4f9d78bcbf669dc2925cfa68dceedda1",
+      "bytes": 2118
+    },
+    {
+      "file": "abbreviated-amount.png",
+      "texts": [
+        "You have gained mesos (+2.5m)"
+      ],
+      "options": {},
+      "sha256": "637a7d92ccb698ca22e1e760aea7bd7dd7fe60d2a6647450323b81066d66fb82",
+      "bytes": 1981
+    },
+    {
+      "file": "invalid-grouping.png",
+      "texts": [
+        "You have gained mesos (+2,50)"
+      ],
+      "options": {},
+      "sha256": "1e2e44a4b513b3724961744bd63ffbbc3ce1d7431890f70aa0f8caea629b73f2",
+      "bytes": 1981
+    },
+    {
+      "file": "negative-amount.png",
+      "texts": [
+        "You have gained mesos (-29)"
+      ],
+      "options": {},
+      "sha256": "a9edb1a5c3c10e11ce31f14b4735e7a05ba1e52c46ce69382ab45f4699059988",
+      "bytes": 1917
+    },
+    {
+      "file": "same-amount-sizes.png",
+      "texts": [
+        "You have gained mesos (+29)",
+        "You have gained mesos (+29)",
+        "You have gained mesos (+29)"
+      ],
+      "pixel_sizes": [
+        12,
+        14,
+        16
+      ],
+      "sha256": "eaede3b348fd023c85ddb15e1821193dee7b09d3fcee5c0596a11fca676088b8",
+      "bytes": 3221
+    }
+  ]
+}

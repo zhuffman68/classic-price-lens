@@ -1,9 +1,9 @@
-# Verification — 2026-10-30
+# Verification — 2026-10-31
 
 ## 1.0.1 regression coverage
 
 - The configured source environment passes **863 Python tests**, with three
-  platform/offscreen skips, in 86.301 seconds. Nine release-tool tests pass.
+  platform/offscreen skips. Nine release-tool tests pass.
   New cases exercise lost recognition, manual-crop validation, source-frame
   clocks, original-character reacquisition, epoch rejection, independent pickup
   work, covered/late results, snapshot expiry and real update-timer delivery.
@@ -28,6 +28,12 @@
 - Linux musl and Windows gnullvm readers were rebuilt with pinned Rust 1.98.1.
   Linux is static PIE without dynamic dependencies; Windows retains the prior
   DLL import set and existing unmodified libunwind dependency.
+- Production-worker checks read the real clear/faded pickup pair with exact
+  amounts, visual evidence and job context. RTen's own thread limit is explicitly
+  set to one inference worker; Rayon/OpenMP settings alone do not control it.
+  The bounded process exits cleanly. Portable synthetic raster fixtures avoid
+  Wine font-substitution failures; identical PNGs produce identical pickup
+  results in the Linux and Windows readers, including the actual game crops.
 - A separate 30-second candidate check reused the approved sharing session in
   the Free Market without restarting the installed app. It kept approximately
   five crop samples per second and added no false income in the absence of

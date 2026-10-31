@@ -206,6 +206,7 @@ class PickupWorkerTests(unittest.TestCase):
 
     def test_invalidation_keeps_one_inflight_buffer_and_discards_its_result(self):
         worker=self.worker;first=self.frame('#302c29');second=self.frame('#282f36')
+        self.assertEqual(worker.process.processEnvironment().value('RTEN_NUM_THREADS'),'1')
         self.assertFalse(worker.submit(first,time.monotonic(),1,2))
         self.wait(lambda:worker.process.state()==QProcess.ProcessState.Running)
         self.assertTrue(worker.submit(first,time.monotonic(),1,2,{'submitted':'first'}))

@@ -23,6 +23,7 @@ class PickupWorker(QObject):
         environment = QProcessEnvironment.systemEnvironment()
         environment.insert("RAYON_NUM_THREADS", "1")
         environment.insert("OMP_NUM_THREADS", "1")
+        environment.insert("RTEN_NUM_THREADS", "1")
         self.process.setProcessEnvironment(environment)
         self.process.readyReadStandardOutput.connect(self.on_output)
         self.process.readyReadStandardError.connect(self.drain_errors)
