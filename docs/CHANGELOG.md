@@ -10,6 +10,8 @@ remain in [VERIFICATION.md](../VERIFICATION.md).
 - Tracking automatically holds when Classic World can no longer be recognized,
   including manually selected capture areas. Timers, gains and pace are preserved,
   and returning to another character cannot silently replace the current run.
+  Stop and a new Start release the previous character binding, including after
+  a paused session. A tracking-hotkey pause stays manual during recognition loss.
 - Meso tracking follows pickup lines through scrolling and fading, recognizes
   EXP, party and item messages as scrolling evidence, and preserves uncertain
   reads without treating them as an empty log. Pickup reading has its own bounded

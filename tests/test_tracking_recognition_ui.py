@@ -104,6 +104,29 @@ class TrackingRecognitionUiTests(unittest.TestCase):
         self.assertFalse(panel.user_paused);self.assertTrue(reader.pickups_enabled)
         self.assertGreater(reader.tracking_epoch,epoch)
 
+    def test_exp_hotkey_can_set_sticky_pause_during_lost_recognition_and_waits_to_resume(self):
+        w=self.window;panel=w.exp_panel;reader=w.reader
+        w.on_exp_hotkey();self.exp();self.frame();self.exp(2010)
+        run=panel.tracker.run;totals=panel.totals()
+        self.frame(False,seconds=0)
+        self.assertFalse(panel.connected);self.assertTrue(panel.recognition_held)
+        w.on_exp_hotkey()
+        self.assertTrue(panel.user_paused);self.assertTrue(panel.tracker.paused)
+        self.assertFalse(w.pending_exp_start);self.assertFalse(reader.pickups_enabled)
+        epoch=panel.tracking_epoch;w.on_exp_hotkey()
+        self.assertTrue(panel.user_paused);self.assertEqual(panel.tracking_epoch,epoch)
+        self.frame()
+        for _ in range(2):self.frame();self.exp(5000,name='OtherCharacter')
+        self.assertFalse(panel.paused_context_ready);self.assertFalse(panel.pause_button.isEnabled())
+        w.on_exp_hotkey();self.assertTrue(panel.user_paused)
+        for value in (2500,2510):self.frame();self.exp(value)
+        self.assertTrue(panel.user_paused);self.assertTrue(panel.paused_context_ready)
+        self.assertFalse(panel.recognition_held);self.assertFalse(reader.pickups_enabled)
+        self.assertIs(panel.tracker.run,run);self.assertEqual(panel.totals(),totals)
+        w.on_exp_hotkey()
+        self.assertFalse(panel.user_paused);self.assertTrue(reader.pickups_enabled)
+        self.assertFalse(w.pending_exp_start)
+
     def test_unreadable_exp_does_not_turn_verified_game_context_into_a_recognition_pause(self):
         w=self.window;panel=w.exp_panel;reader=w.reader
         w.on_exp_hotkey();self.exp();epoch=panel.tracking_epoch

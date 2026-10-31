@@ -244,6 +244,12 @@ class ExperiencePanel(QWidget):
         if not self.connected:return
         if not self.requested:
             self.invalidate_tracking()
+            # Start after Stop begins a new watch, with no authority from the
+            # previous character. Keep any completed runs awaiting persistence.
+            self.tracker.current=None;self.tracker.bounds=None;self.tracker.paused=False
+            self.tracker.map_name='';self.tracker.map_candidate=None
+            self.tracker.map_count=0;self.tracker.last_map_at=None;self.tracker.read_issue=''
+            self.identity=TrackingIdentity();self.identity_ready=True;self.last_character=None
             self.requested=True;self.user_paused=False;self.paused_window=None
             self.paused_meso_rate=None;self.reacquiring=True
             self.recognition_held=False

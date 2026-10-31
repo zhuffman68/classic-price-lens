@@ -2,11 +2,14 @@
 
 ## 1.0.1 regression coverage
 
-- The configured source environment passes **863 Python tests**, with three
+- The configured source environment passes **867 Python tests**, with three
   platform/offscreen skips. Nine release-tool tests pass.
   New cases exercise lost recognition, manual-crop validation, source-frame
   clocks, original-character reacquisition, epoch rejection, independent pickup
   work, covered/late results, snapshot expiry and real update-timer delivery.
+- Additional session-control regressions cover Stop then Start on another
+  character, stopping while paused, preserving a pending failed history save,
+  and a sticky tracking-hotkey pause while the game is unrecognized.
 - Six real-OCR Python checks and four Rust pickup checks cover system-message
   parsing and fade normalization. Private replay of 205 captured crops recovers
   the complete annotated eight-arrival burst: 165 mesos, including the previously

@@ -751,10 +751,11 @@ class LensWindow(QMainWindow):
             return
         self.pending_exp_start=False
         self.sync_tracking_context()
+        if self.exp_panel.requested:
+            self.exp_panel.toggle_pause();return
         if not self.exp_panel.connected:
             self.pending_exp_start=True;return
-        if self.exp_panel.requested:self.exp_panel.toggle_pause()
-        else:self.exp_panel.start()
+        self.exp_panel.start()
 
     def configure_write_hotkey(self):self.configure_shortcuts('write')
 

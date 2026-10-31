@@ -309,6 +309,82 @@ class ExperienceUiTests(unittest.TestCase):
                     'pickups':{'valid':True,'lines':[]}})
         self.assertTrue(panel.recognition_held);self.assertFalse(panel.mesos.observed)
 
+    def test_stop_then_start_on_another_character_discards_only_the_old_session_binding(self):
+        from test_tracking_identity import proof
+        from test_meso_tracking import log
+        panel=self.panel;panel.set_connected(True);panel.start()
+        def exp(name,amount,alternate):
+            self.now+=.2
+            panel.feed({'atMs':int(self.now*1000),'trackingEpoch':panel.tracking_epoch,
+                        'experience':{**payload(amount,name=name),'nameProof':proof(alternate)}})
+        exp('Fixture A',2000,False);exp('Fixture A',2010,False)
+        old_run=panel.tracker.run;old_key=panel.identity.reference.key;old_epoch=panel.tracking_epoch
+        panel.stop();saved=panel.history.rows()
+        self.assertEqual(len(saved),1);self.assertEqual(saved[0]['character'],'Fixture A')
+        self.now+=.2;panel.start()
+        epoch=panel.tracking_epoch
+        # A fresh job from B can finish before its first EXP result. It must
+        # not require reconfirming A after the user explicitly ended A's run.
+        self.now+=.2
+        panel.feed({'atMs':int(self.now*1000),'trackingEpoch':epoch,'pickupsRead':True,
+                    'pickupNameProof':proof(True),'pickups':log()})
+        self.assertFalse(panel.recognition_held)
+        self.assertEqual(panel.tracking_epoch,epoch)
+        self.assertIsNone(panel.tracker.current)
+        self.assertIsNone(panel.identity.reference)
+        self.assertTrue(panel.mesos.observed)
+        panel.feed({'atMs':int(self.now*1000),'trackingEpoch':old_epoch,'pickupsRead':True,
+                    'pickupNameProof':proof(),'pickups':log(9999)})
+        self.assertEqual(panel.mesos.gain,0)
+        exp('Fixture B',2000,True);exp('Fixture B',2010,True)
+        for _ in range(2):
+            self.now+=.2
+            panel.feed({'atMs':int(self.now*1000),'trackingEpoch':panel.tracking_epoch,
+                        'pickupsRead':True,'pickupNameProof':proof(True),'pickups':log(29)})
+        self.assertFalse(panel.recognition_held)
+        self.assertIsNot(panel.tracker.run,old_run)
+        self.assertEqual(panel.tracker.current.character,'Fixture B')
+        self.assertNotEqual(panel.identity.reference.key,old_key)
+        self.assertEqual(panel.tracker.run.exp,10)
+        self.assertEqual(panel.mesos.gain,29)
+        self.assertEqual(panel.history.rows(),saved)
+
+    def test_fresh_start_keeps_an_unsaved_completed_run_while_clearing_old_identity(self):
+        from test_tracking_identity import proof
+        panel=self.panel;panel.set_connected(True);panel.start()
+        for exp in (2000,2010):
+            self.now+=.2
+            panel.feed({'atMs':int(self.now*1000),'trackingEpoch':panel.tracking_epoch,
+                        'experience':{**payload(exp,name='Fixture A'),'nameProof':proof()}})
+        finished=panel.tracker.run
+        with patch.object(panel.history,'save',side_effect=OSError('Fixture history unavailable')):
+            panel.stop()
+            self.assertEqual(panel.tracker.completed,[finished])
+            self.now+=.2;panel.start()
+            self.assertEqual(panel.tracker.completed,[finished])
+            self.assertIsNone(panel.tracker.current)
+            self.assertIsNone(panel.identity.reference)
+        panel.persist_completed()
+        self.assertEqual(panel.tracker.completed,[])
+        self.assertEqual(len(panel.history.rows()),1)
+        self.assertEqual(panel.history.rows()[0]['character'],'Fixture A')
+        self.assertEqual(panel.history.rows()[0]['exp'],10)
+
+    def test_stop_while_paused_then_fresh_start_clears_pause_but_preserves_manual_fields(self):
+        panel=self.panel;panel.set_connected(True);panel.start()
+        panel.map_input.setText('Manual route');panel.notes.setText('Manual notes')
+        panel.tracker.map_name='Previously detected map'
+        panel.toggle_pause();self.assertTrue(panel.tracker.paused)
+        panel.stop();self.now+=.2;panel.start()
+        self.assertFalse(panel.user_paused);self.assertFalse(panel.tracker.paused)
+        self.assertFalse(panel.recognition_held)
+        self.assertIsNone(panel.tracker.current);self.assertIsNone(panel.identity.reference)
+        self.assertEqual(panel.tracker.map_name,'')
+        self.assertEqual((panel.map_input.text(),panel.notes.text()),('Manual route','Manual notes'))
+        self.feed(2000,.2);self.feed(2010,.2)
+        self.assertEqual(panel.tracker.run.exp,10)
+        self.assertEqual((panel.tracker.run.map_name,panel.tracker.run.notes),('Manual route','Manual notes'))
+
     def test_paused_session_survives_another_character_and_map_without_resetting(self):
         self.train();self.pickup();self.pickup(1200);self.pickup(1200)
         panel=self.panel;run=panel.tracker.run;panel.tracker.map_name=run.map_name='Original map'
