@@ -42,6 +42,11 @@ Pause and resume a session, save it with a map label and notes, or compare past 
 
 Both directions run on your device, with everything included.
 
+<p align="center">
+  <a href="https://raw.githubusercontent.com/zhuffman68/lupin/main/docs/media/lupinenglishkorean.gif"><img src="https://raw.githubusercontent.com/zhuffman68/lupin/main/docs/media/lupinenglishkorean.gif" width="390" alt="Lupin translating English to Korean and copying the translation to the clipboard"></a>
+  <a href="https://raw.githubusercontent.com/zhuffman68/lupin/main/docs/media/lupinkoreanenglish.gif"><img src="https://raw.githubusercontent.com/zhuffman68/lupin/main/docs/media/lupinkoreanenglish.gif" width="390" alt="Lupin translating Korean messages to English beside the original text"></a>
+</p>
+
 ## Database
 
 Browse Classic World **Items, Monsters, Skills, Maps, and Quests**. Search for an entry or explore illustrated categories and jobs.
